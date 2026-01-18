@@ -149,8 +149,7 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `std` | ✅ | Standard library support (implies alloc) |
-| `alloc` | ❌ | Heap allocation without std |
+| `std` | ✅ | Standard library support (required) |
 | `simd` | ❌ | SIMD acceleration via wide/multiversed |
 
 ### Color Quantization Backends
@@ -167,13 +166,6 @@ Choose one or more quantization backends for high-quality GIF encoding:
 **Without any quantization feature, zengif is purely MIT/Apache-2.0 licensed.**
 
 [imagequant-license]: https://supso.org/projects/pngquant
-
-## no_std Support
-
-```toml
-[dependencies]
-zengif = { version = "0.1", default-features = false, features = ["alloc"] }
-```
 
 ## Performance
 

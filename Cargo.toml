@@ -14,7 +14,7 @@ readme = "README.md"
 [features]
 default = ["std"]
 std = ["enough/std", "whereat/std"]
-alloc = ["enough/alloc"]
+# NOTE: no_std support not yet implemented - std is required
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
 

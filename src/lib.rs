@@ -76,8 +76,7 @@
 //!
 //! ## Feature Flags
 //!
-//! - **`std`** (default): Standard library support
-//! - **`alloc`**: Heap allocation without std
+//! - **`std`** (default, required): Standard library support
 //! - **`simd`**: SIMD acceleration via wide/multiversed
 //! - **`rgb-interop`**: Interop with the `rgb` crate
 //! - **`imgref-interop`**: Interop with the `imgref` crate
@@ -115,12 +114,9 @@
 //!
 //! [imagequant-license]: https://supso.org/projects/pngquant
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// NOTE: no_std support not yet implemented - std is required
 #![warn(missing_docs)]
 #![warn(clippy::all)]
-
-#[cfg(feature = "alloc")]
-extern crate alloc;
 
 // Crate info for whereat error tracing
 whereat::define_at_crate_info!();
