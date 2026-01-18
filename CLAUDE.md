@@ -416,11 +416,25 @@ Note: `linear-srgb` crate exists at `~/work/linear-srgb` if needed for future ex
 Frame differencing now implemented in `compute_frame_diff()` in `src/encode/mod.rs`.
 See P0 section above for details.
 
-### Pngquant Integration Points
+### Pngquant Integration Points ✅ ENHANCED (2026-01-17)
 
-- `imagequant::Attributes` for quality settings (already used)
-- Frame-to-frame palette consistency for smoother animations (future enhancement)
-- Temporal dithering: spread error across frames, not just spatially (future enhancement)
+Round-trip bloat/degradation causes identified and fixed:
+
+**Root causes:**
+1. Per-frame palettes → flickering + poor compression
+2. Full dithering (1.0) → noise that compresses poorly
+3. No palette preservation → re-quantization artifacts
+
+**Solutions implemented in `src/encode/mod.rs`:**
+- `encode_gif_shared_palette()` - single palette from all frames via imagequant Histogram
+- Configurable `dithering` (0.0-1.0), default 0.5 (was 1.0)
+- `EncoderConfig::for_round_trip()` - zero dithering + shared palette mode
+- `Encoder::from_metadata()` uses quality=100, dithering=0.0 for round-trip
+- `PaletteStrategy` enum documents the three approaches: PerFrame, Shared, Global
+
+**Still future enhancements:**
+- Temporal dithering: spread error across frames, not just spatially (opt-in only)
+- Random vs deterministic dithering option
 
 ### Buffer Capacity Bug ✅ FIXED (2026-01-17)
 
