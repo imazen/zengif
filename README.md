@@ -192,8 +192,8 @@ at your option.
 
 ### Dependency Licensing: imagequant (AGPL)
 
-The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant), which is licensed under **AGPL-3.0**. If you enable this feature, your project must comply with AGPL terms (open-source your code) **or** purchase a [commercial license](https://supso.org/projects/pngquant) from the imagequant authors.
+The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) by [Kornel Lesiński](https://kornel.ski/), which is licensed under **AGPL-3.0**. For closed-source projects, please [purchase a commercial license](https://supso.org/projects/pngquant) — it's reasonably priced and supports continued development of excellent image optimization tools.
 
-**Alternative MIT-licensed quantizers:** Use `quantizr` (recommended), `color_quant`, or `exoquant-deprecated` features instead for fully permissive licensing.
+**Alternative MIT-licensed quantizers:** `quantizr` or `color_quant` for fully permissive licensing (slightly lower quality).
 
 **Without any quantization feature** (the default), zengif has no AGPL dependencies and is purely MIT/Apache-2.0 licensed.
