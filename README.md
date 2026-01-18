@@ -21,7 +21,7 @@ Existing GIF libraries leave gaps when building server-side image processing:
 | Memory tracking | ❌ | ❌ | ✅ |
 | Cancellation | ❌ | ❌ | ✅ |
 | Error tracing | ❌ | ❌ | ✅ |
-| Round-trip metadata | ❌ | ❌ | ✅ |
+| Round-trip GIF metadata | ❌ | ❌ | ✅ |
 | High-quality encode | ❌ | ❌ | ✅ |
 
 ## Features
@@ -31,7 +31,7 @@ Existing GIF libraries leave gaps when building server-side image processing:
 - **Memory bounded** - Track current/peak usage, enforce configurable limits, reject oversized inputs before allocating
 - **Production ready** - Error tracing via [`whereat`](https://crates.io/crates/whereat), cancellation via [`enough`](https://crates.io/crates/enough)
 - **Zero-trust design** - Validate headers, bounds-check frames, limit decompression ratio
-- **Round-trip fidelity** - Timing, loop count, and metadata preserved
+- **Round-trip fidelity** - Frame timing, loop count, palette, and disposal methods preserved
 - **High-quality encoding** - Optional imagequant integration for small file sizes
 
 ## Quick Start
