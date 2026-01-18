@@ -391,13 +391,17 @@ Returns `DecompressionRatioExceeded` error if exceeded.
 
 Tests added: `decompression_ratio_check`, `decompression_ratio_ok`
 
-### P5: Color Space / Linear Alpha Blending
-**Status: sRGB assumed but undocumented**
+### P5: Color Space / Linear Alpha Blending ⚠️ NOT NEEDED
+**Status: sRGB blending is correct for GIF**
 
-- GIF is inherently sRGB, we correctly assume sRGB input/output
-- RGBA32 (8 bits × 4 channels) is supported
-- BUT: Alpha blending in `disposal.rs` happens in sRGB space, should be linear
-- Consider using `linear-rgb` crate per global CLAUDE.md
+Analysis:
+- GIF only has 1-bit transparency (via transparent color index)
+- The main decode path (`blit_indexed`) doesn't do alpha blending - just copies non-transparent pixels
+- The `alpha_blend()` in `disposal.rs` is only used for `blit_rgba()` (RGBA frame compositing)
+- sRGB blending is actually correct for GIF-to-GIF operations since all pixels are in sRGB space
+- Linear blending would only matter for compositing GIF onto external content, which is out of scope
+
+Note: `linear-srgb` crate exists at `~/work/linear-srgb` if needed for future extensions.
 
 ## Investigation Notes
 
