@@ -316,14 +316,14 @@ MIT OR Apache-2.0 (dual license)
 - ✅ Pre-validation of GIF headers before gif crate allocation
 - ✅ 65 passing tests (unit, cancellation, malformed, round-trip)
 - ✅ Basic example in examples/basic.rs
+- ✅ Fallible allocations with try_reserve() throughout
 
-**NOT DONE (blockers for production):**
-- ❌ Fallible allocations (28 infallible `vec![]` calls)
-- ❌ Pngquant/imagequant frame optimization
+**NOT DONE (nice to have):**
+- ❌ Pngquant/imagequant frame optimization (P0)
 - ❌ Frame differencing for small output
-- ❌ Decompression ratio check
-- ❌ Codec-corpus testing
-- ❌ RGB/imgref interop
+- ❌ Decompression ratio check (P4)
+- ❌ Codec-corpus testing (P2)
+- ❌ RGB/imgref interop (P3)
 
 **Key files:**
 - `src/decode/mod.rs` - Streaming decoder with `pre_validate_header()` for zero-trust
@@ -351,19 +351,18 @@ Need to implement in src/encode/mod.rs:
 
 Reference: gifski source for frame differencing algorithm
 
-### P1: Fallible Allocations (BLOCKING for production)
-**Status: NOT IMPLEMENTED**
+### P1: Fallible Allocations ✅ DONE
+**Status: IMPLEMENTED (2026-01-17)**
 
-Currently using infallible `vec![]` and `Vec::new()` throughout (28 occurrences). Per global CLAUDE.md rules, all allocations must be fallible using `try_reserve()` or `Vec::try_with_capacity()`.
+All large allocations now use `try_reserve()` with proper error handling:
+- `src/decode/mod.rs` - pixel buffer, frame data copy, decode_all vector
+- `src/encode/mod.rs` - output buffer pre-allocation
+- `src/screen.rs` - canvas initialization, composed frame pixels
+- `src/disposal.rs` - saved pixels for Previous disposal
 
-Files needing conversion:
-- `src/decode/mod.rs` - 5 infallible allocations
-- `src/encode/mod.rs` - 7 infallible allocations
-- `src/screen.rs` - 10 infallible allocations
-- `src/disposal.rs` - 3 infallible allocations
-- `src/types.rs` - 2 infallible allocations
+Pattern used: `stats.try_alloc()` check + `vec.try_reserve()` + `AllocationFailed` error on failure.
 
-Use helper from `src/stats.rs`: `tracked_vec_with_capacity()` and `tracked_vec_filled()`.
+Note: `src/types.rs` Palette allocations remain infallible as palettes are bounded to 256 colors (~1KB max).
 
 ### P2: Codec-Corpus Testing
 **Status: No real-world GIF corpus testing**
