@@ -1,0 +1,57 @@
+[package]
+name = "zengif"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Server-side GIF codec with zero-trust design, memory bounds, streaming, and full animation transparency support"
+repository = "https://github.com/imazen/zengif"
+documentation = "https://docs.rs/zengif"
+keywords = ["gif", "image", "animation", "codec", "server"]
+categories = ["multimedia::images", "encoding"]
+readme = "README.md"
+
+[features]
+default = ["std"]
+std = ["enough/std", "whereat/std"]
+alloc = ["enough/alloc"]
+# SIMD acceleration (opt-in)
+simd = ["wide", "multiversed"]
+# High-quality quantization via imagequant
+quantize = ["imagequant"]
+
+[dependencies]
+# Core GIF codec (we may fork if needed)
+gif = "0.14"
+
+# Error tracing for production debugging
+# TODO: Change to crates.io version when published
+whereat = { path = "../whereat" }
+
+# Cooperative cancellation
+# TODO: Change to crates.io version when published
+enough = { path = "../enough/crates/enough" }
+
+# Color quantization (optional, for encoding)
+imagequant = { version = "4.4", optional = true }
+
+# SIMD acceleration (optional)
+wide = { version = "0.8", optional = true }
+multiversed = { version = "0.1", features = ["x86-64-v4", "aarch64-sve2"], optional = true }
+
+[dev-dependencies]
+# Testing
+# TODO: Change to crates.io version when published
+almost-enough = { path = "../enough/crates/almost-enough" }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+lto = "thin"
+debug = 1  # For profiling
+
+[profile.test]
+opt-level = 2  # Tests need speed for processing
+
+[[bench]]
+name = "codec"
+harness = false
