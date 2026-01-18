@@ -9,8 +9,8 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `quantizr` | **Best** | Fast | Medium | MIT | **Recommended** for most uses |
-//! | `imagequant` | Good | Medium | **Smallest** | AGPL-3.0 | When file size is critical |
+//! | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 | **Recommended** for quality |
+//! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //!
 //! # Frame-Aware Quantization
@@ -118,8 +118,13 @@ impl QuantizeConfig {
 
 /// Quantizer selection with backend-specific configuration.
 ///
-/// Each backend has different trade-offs for quality, speed, and file size.
-/// See the [module documentation](self) for a comparison table.
+/// Each backend has different trade-offs for quality, speed, and file size:
+///
+/// | Feature | Quality | Speed | File Size | License |
+/// |---------|---------|-------|-----------|---------|
+/// | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 |
+/// | `quantizr` | Good | Fast | Medium | MIT |
+/// | `color_quant` | Good | **Fastest** | Large | MIT |
 ///
 /// # Example
 ///
@@ -147,10 +152,9 @@ impl QuantizeConfig {
     feature = "color_quant"
 ))]
 pub enum Quantizer {
-    /// Quantizr: Best quality, fast, MIT licensed.
+    /// Quantizr: Good quality, fast, MIT licensed.
     ///
-    /// Recommended for most use cases. Produces high-quality output
-    /// with good encoding speed.
+    /// Best MIT-licensed option with good quality/speed balance.
     #[cfg(feature = "quantizr")]
     Quantizr {
         /// Dithering level (0.0 = none, 1.0 = full).
@@ -160,9 +164,9 @@ pub enum Quantizer {
         dithering: f32,
     },
 
-    /// Imagequant (libimagequant): Best compression, AGPL-3.0 licensed.
+    /// Imagequant (libimagequant): Best quality, AGPL-3.0 licensed.
     ///
-    /// Produces the smallest files through optimized dithering patterns.
+    /// **Recommended** - produces the best quality and smallest files.
     /// **Requires AGPL-3.0 compliance** (source disclosure).
     /// Commercial license available at <https://pngquant.org>.
     #[cfg(feature = "imagequant")]
@@ -213,7 +217,7 @@ pub enum Quantizer {
 impl Quantizer {
     /// Create a Quantizr quantizer with default settings.
     ///
-    /// This is the **recommended** quantizer for most use cases.
+    /// Best MIT-licensed option with good quality/speed balance.
     #[cfg(feature = "quantizr")]
     #[must_use]
     pub fn quantizr() -> Self {
@@ -281,30 +285,30 @@ impl Quantizer {
 
     /// Create the default quantizer based on available features.
     ///
-    /// Priority: quantizr > imagequant > color_quant > exoquant-deprecated
+    /// Priority: imagequant > quantizr > color_quant > exoquant-deprecated
     #[must_use]
     #[allow(clippy::needless_return)] // Returns needed for conditional compilation branches
     pub fn auto() -> Self {
-        #[cfg(feature = "quantizr")]
-        {
-            return Self::quantizr();
-        }
-        #[cfg(all(feature = "imagequant", not(feature = "quantizr")))]
+        #[cfg(feature = "imagequant")]
         {
             return Self::imagequant();
         }
+        #[cfg(all(feature = "quantizr", not(feature = "imagequant")))]
+        {
+            return Self::quantizr();
+        }
         #[cfg(all(
             feature = "color_quant",
-            not(feature = "quantizr"),
-            not(feature = "imagequant")
+            not(feature = "imagequant"),
+            not(feature = "quantizr")
         ))]
         {
             return Self::color_quant();
         }
         #[cfg(all(
             feature = "exoquant-deprecated",
-            not(feature = "quantizr"),
             not(feature = "imagequant"),
+            not(feature = "quantizr"),
             not(feature = "color_quant")
         ))]
         {

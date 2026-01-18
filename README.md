@@ -149,8 +149,8 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `std` | ✅ | Standard library support |
-| `alloc` | ✅ | Heap allocation (via std) |
+| `std` | ✅ | Standard library support (implies alloc) |
+| `alloc` | ❌ | Heap allocation without std |
 | `simd` | ❌ | SIMD acceleration via wide/multiversed |
 
 ### Color Quantization Backends
@@ -159,10 +159,10 @@ Choose one or more quantization backends for high-quality GIF encoding:
 
 | Feature | License | Quality | Speed | Notes |
 |---------|---------|---------|-------|-------|
-| `imagequant` | AGPL-3.0 | Excellent | Medium | Best quality, [commercial license available][imagequant-license] |
-| `exoquant` | MIT | Very Good | Medium | K-Means optimization, Floyd-Steinberg dithering |
-| `quantizr` | MIT | Good | Fast | Good balance of quality and speed |
-| `color_quant` | MIT | Good | Fast | NEUQUANT algorithm |
+| `imagequant` | AGPL-3.0 | **Best** | Medium | **Recommended** - best quality, [commercial license available][imagequant-license] |
+| `quantizr` | MIT | Good | Fast | Best MIT-licensed option |
+| `color_quant` | MIT | Good | **Fastest** | High-throughput servers |
+| `exoquant-deprecated` | MIT | Good | Slow | **Deprecated** - use quantizr instead |
 
 **Without any quantization feature, zengif is purely MIT/Apache-2.0 licensed.**
 
@@ -202,6 +202,6 @@ at your option.
 
 The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant), which is licensed under **AGPL-3.0**. If you enable this feature, your project must comply with AGPL terms (open-source your code) **or** purchase a [commercial license](https://supso.org/projects/pngquant) from the imagequant authors.
 
-**Alternative MIT-licensed quantizers:** Use `exoquant`, `quantizr`, or `color_quant` features instead for fully permissive licensing.
+**Alternative MIT-licensed quantizers:** Use `quantizr` (recommended), `color_quant`, or `exoquant-deprecated` features instead for fully permissive licensing.
 
 **Without any quantization feature** (the default), zengif has no AGPL dependencies and is purely MIT/Apache-2.0 licensed.

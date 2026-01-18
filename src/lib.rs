@@ -88,8 +88,8 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `quantizr` | **Best** | Fast | Medium | MIT | **Recommended** for most uses |
-//! | `imagequant` | Good | Medium | **Smallest** | AGPL-3.0 | When file size is critical |
+//! | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 | **Recommended** for quality |
+//! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //! | `exoquant-deprecated` | Good | Slow | Medium | MIT | Legacy compatibility only |
 //!
@@ -98,13 +98,13 @@
 //! ```rust,ignore
 //! use zengif::{EncoderConfig, Quantizer};
 //!
-//! // Use quantizr (recommended) with custom dithering
-//! let config = EncoderConfig::new(100, 100)
-//!     .quantizer(Quantizer::quantizr_with_dithering(0.3));
-//!
-//! // Use imagequant (AGPL) for smallest files
+//! // Use imagequant (recommended) for best quality
 //! let config = EncoderConfig::new(100, 100)
 //!     .quantizer(Quantizer::imagequant());
+//!
+//! // Use quantizr (MIT) for permissive licensing
+//! let config = EncoderConfig::new(100, 100)
+//!     .quantizer(Quantizer::quantizr_with_dithering(0.3));
 //!
 //! // Auto-select best available
 //! let config = EncoderConfig::new(100, 100)
