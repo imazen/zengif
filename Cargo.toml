@@ -17,7 +17,7 @@ std = ["enough/std", "whereat/std"]
 alloc = ["enough/alloc"]
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
-# High-quality quantization via imagequant
+# High-quality quantization via imagequant (AGPL - see README for licensing)
 quantize = ["imagequant"]
 # RGB/imgref ecosystem interop
 rgb-interop = ["rgb"]

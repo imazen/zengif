@@ -151,8 +151,10 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 |---------|---------|-------------|
 | `std` | ✅ | Standard library support |
 | `alloc` | ✅ | Heap allocation (via std) |
-| `quantize` | ❌ | imagequant for high-quality encoding |
+| `quantize` | ❌ | High-quality encoding via [imagequant] (see [License](#license)) |
 | `simd` | ❌ | SIMD acceleration via wide/multiversed |
+
+[imagequant]: https://github.com/ImageOptim/libimagequant
 
 ## no_std Support
 
@@ -183,3 +185,9 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+### Dependency Licensing: imagequant (AGPL)
+
+The optional `quantize` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant), which is licensed under **AGPL-3.0**. If you enable this feature, your project must comply with AGPL terms (open-source your code) **or** purchase a [commercial license](https://supso.org/projects/pngquant) from the imagequant authors.
+
+**Without the `quantize` feature** (the default), zengif has no AGPL dependencies and is purely MIT/Apache-2.0 licensed.

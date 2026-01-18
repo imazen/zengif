@@ -73,6 +73,20 @@
 //!
 //! // Decoder will return GifError::Cancelled
 //! ```
+//!
+//! ## Feature Flags
+//!
+//! - **`std`** (default): Standard library support
+//! - **`alloc`**: Heap allocation without std
+//! - **`quantize`**: High-quality color quantization via [libimagequant].
+//!   **Note:** libimagequant is AGPL-3.0 licensed. Commercial licenses are
+//!   [available](https://supso.org/projects/pngquant). Without this feature,
+//!   zengif is purely MIT/Apache-2.0.
+//! - **`simd`**: SIMD acceleration via wide/multiversed
+//! - **`rgb-interop`**: Interop with the `rgb` crate
+//! - **`imgref-interop`**: Interop with the `imgref` crate
+//!
+//! [libimagequant]: https://github.com/ImageOptim/libimagequant
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
