@@ -268,7 +268,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
 
     /// Get the canvas height.
     pub fn height(&self) -> u16 {
-        self.screen.height
+        self.screen.height()
     }
 
     /// Get the metadata.
@@ -319,7 +319,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
 
         // Validate frame bounds
         if frame_info.left as u32 + frame_info.width as u32 > self.screen.width() as u32
-            || frame_info.top as u32 + frame_info.height as u32 > self.screen.height as u32
+            || frame_info.top as u32 + frame_info.height as u32 > self.screen.height() as u32
         {
             // Frame extends beyond canvas - this is technically invalid but common
             // We'll clip it during compositing
