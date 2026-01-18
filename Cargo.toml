@@ -17,8 +17,17 @@ std = ["enough/std", "whereat/std"]
 alloc = ["enough/alloc"]
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
-# High-quality quantization via imagequant (AGPL - see README for licensing)
-quantize = ["imagequant"]
+
+# Color quantization backends (choose one or more)
+# imagequant: Highest quality, AGPL-3.0 licensed (commercial license available)
+imagequant = ["dep:imagequant"]
+# quantizr: Fast, MIT licensed
+quantizr = ["dep:quantizr"]
+# exoquant: High quality K-Means, MIT licensed
+exoquant = ["dep:exoquant"]
+# color_quant: NEUQUANT algorithm, MIT licensed (already a transitive dep of gif crate)
+color_quant = ["dep:color_quant"]
+
 # RGB/imgref ecosystem interop
 rgb-interop = ["rgb"]
 imgref-interop = ["imgref", "rgb-interop"]
@@ -33,8 +42,11 @@ whereat = "0.1"
 # Cooperative cancellation
 enough = "0.3"
 
-# Color quantization (optional, for encoding)
+# Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
+quantizr = { version = "1.4", optional = true }
+exoquant = { version = "0.2", optional = true }
+color_quant = { version = "1.1", optional = true }
 
 # SIMD acceleration (optional)
 wide = { version = "1.1", optional = true }
@@ -48,6 +60,9 @@ imgref = { version = "1.12", optional = true }
 # Testing
 almost-enough = "0.3"
 criterion = { version = "0.8", features = ["html_reports"] }
+# Quality metrics for quantizer comparison tests
+fast-ssim2 = { version = "0.6", features = ["imgref"] }
+imgref = "1.12"
 
 [profile.release]
 lto = "thin"

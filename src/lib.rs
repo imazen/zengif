@@ -78,15 +78,22 @@
 //!
 //! - **`std`** (default): Standard library support
 //! - **`alloc`**: Heap allocation without std
-//! - **`quantize`**: High-quality color quantization via [libimagequant].
-//!   **Note:** libimagequant is AGPL-3.0 licensed. Commercial licenses are
-//!   [available](https://supso.org/projects/pngquant). Without this feature,
-//!   zengif is purely MIT/Apache-2.0.
 //! - **`simd`**: SIMD acceleration via wide/multiversed
 //! - **`rgb-interop`**: Interop with the `rgb` crate
 //! - **`imgref-interop`**: Interop with the `imgref` crate
 //!
-//! [libimagequant]: https://github.com/ImageOptim/libimagequant
+//! ### Color Quantization Backends
+//!
+//! Choose one or more quantization backends for encoding:
+//!
+//! - **`imagequant`**: Highest quality (AGPL-3.0, [commercial license available][imagequant-license])
+//! - **`exoquant`**: High quality K-Means (MIT)
+//! - **`quantizr`**: Fast, good quality (MIT)
+//! - **`color_quant`**: NEUQUANT algorithm (MIT)
+//!
+//! Without any quantization feature, zengif is purely MIT/Apache-2.0 licensed.
+//!
+//! [imagequant-license]: https://supso.org/projects/pngquant
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
@@ -112,13 +119,19 @@ mod types;
 // Public API
 pub use decode::{decode_gif, Decoder, FrameIterator};
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
-#[cfg(feature = "quantize")]
+#[cfg(feature = "imagequant")]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
 pub use error::{GifError, Result};
 pub use limits::Limits;
-#[cfg(feature = "quantize")]
+#[cfg(feature = "color_quant")]
+pub use quantize::ColorQuantQuantizer;
+#[cfg(feature = "exoquant")]
+pub use quantize::ExoquantQuantizer;
+#[cfg(feature = "imagequant")]
 pub use quantize::ImagequantQuantizer;
-pub use quantize::{QuantizeConfig, QuantizedFrame, Quantizer};
+#[cfg(feature = "quantizr")]
+pub use quantize::QuantizrQuantizer;
+pub use quantize::{QuantizeConfig, QuantizedFrame, Quantizer, QuantizerBackend};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{
     tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc,

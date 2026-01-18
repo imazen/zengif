@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multiple quantization backends**: Choose from different color quantizers:
+  - `imagequant`: Highest quality (AGPL-3.0, commercial license available)
+  - `exoquant`: High quality K-Means (MIT)
+  - `quantizr`: Fast, good quality (MIT)
+  - `color_quant`: NEUQUANT algorithm (MIT)
+
+### Changed
+
+- Renamed `quantize` feature to `imagequant` for clarity
+- Each quantization backend is now a separate feature flag
+
 ## [0.1.0] - 2025-01-18
 
 ### Added
