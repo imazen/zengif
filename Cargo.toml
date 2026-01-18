@@ -50,7 +50,7 @@ imgref = { version = "1.12", optional = true }
 # Testing
 # TODO: Change to crates.io version when published
 almost-enough = { path = "../enough/crates/almost-enough" }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [profile.release]
 lto = "thin"
