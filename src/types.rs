@@ -83,6 +83,55 @@ impl Rgba {
     }
 }
 
+// RGB crate interop
+#[cfg(feature = "rgb-interop")]
+impl From<rgb::RGBA8> for Rgba {
+    #[inline]
+    fn from(c: rgb::RGBA8) -> Self {
+        Self {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
+#[cfg(feature = "rgb-interop")]
+impl From<Rgba> for rgb::RGBA8 {
+    #[inline]
+    fn from(c: Rgba) -> Self {
+        rgb::RGBA8 {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
+#[cfg(feature = "rgb-interop")]
+impl From<rgb::RGB8> for Rgba {
+    #[inline]
+    fn from(c: rgb::RGB8) -> Self {
+        Self {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: 255,
+        }
+    }
+}
+
+#[cfg(feature = "rgb-interop")]
+impl From<Rgba> for rgb::RGB8 {
+    /// Note: Alpha channel is discarded.
+    #[inline]
+    fn from(c: Rgba) -> Self {
+        rgb::RGB8 { r: c.r, g: c.g, b: c.b }
+    }
+}
+
 /// GIF disposal method.
 ///
 /// Determines what happens to the canvas area after displaying a frame.
@@ -355,6 +404,55 @@ impl ComposedFrame {
             core::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 4)
         }
     }
+
+    /// Convert to imgref ImgVec<RGBA8>.
+    #[cfg(feature = "imgref-interop")]
+    pub fn into_imgvec(self) -> imgref::ImgVec<rgb::RGBA8> {
+        let rgba8_pixels: Vec<rgb::RGBA8> = self
+            .pixels
+            .into_iter()
+            .map(|p| rgb::RGBA8::new(p.r, p.g, p.b, p.a))
+            .collect();
+        imgref::ImgVec::new(rgba8_pixels, self.width as usize, self.height as usize)
+    }
+
+    /// Get an imgref ImgRef view of the pixels.
+    ///
+    /// Note: This requires the pixel data to be reinterpreted as RGBA8.
+    /// Since Rgba and rgb::RGBA8 have the same memory layout (repr(C)),
+    /// this is safe.
+    #[cfg(feature = "imgref-interop")]
+    pub fn as_imgref(&self) -> imgref::ImgRef<'_, rgb::RGBA8> {
+        // Safety: Rgba and rgb::RGBA8 have identical repr(C) layout
+        let rgba8_slice: &[rgb::RGBA8] = unsafe {
+            core::slice::from_raw_parts(
+                self.pixels.as_ptr() as *const rgb::RGBA8,
+                self.pixels.len(),
+            )
+        };
+        imgref::ImgRef::new(rgba8_slice, self.width as usize, self.height as usize)
+    }
+}
+
+/// Create a ComposedFrame from imgref ImgVec.
+#[cfg(feature = "imgref-interop")]
+impl From<(usize, u16, imgref::ImgVec<rgb::RGBA8>)> for ComposedFrame {
+    fn from((index, delay, img): (usize, u16, imgref::ImgVec<rgb::RGBA8>)) -> Self {
+        let width = img.width() as u16;
+        let height = img.height() as u16;
+        let pixels: Vec<Rgba> = img
+            .into_buf()
+            .into_iter()
+            .map(|p| Rgba::new(p.r, p.g, p.b, p.a))
+            .collect();
+        Self {
+            index,
+            width,
+            height,
+            delay,
+            pixels,
+        }
+    }
 }
 
 /// Metadata about a GIF file.
@@ -429,6 +527,42 @@ impl FrameInput {
         let pixels = bytes
             .chunks_exact(4)
             .map(|c| Rgba::new(c[0], c[1], c[2], c[3]))
+            .collect();
+        Self {
+            delay,
+            pixels,
+            width,
+            height,
+        }
+    }
+
+    /// Create from imgref ImgVec<RGBA8>.
+    #[cfg(feature = "imgref-interop")]
+    pub fn from_imgvec(delay: u16, img: imgref::ImgVec<rgb::RGBA8>) -> Self {
+        let width = img.width() as u16;
+        let height = img.height() as u16;
+        let pixels: Vec<Rgba> = img
+            .into_buf()
+            .into_iter()
+            .map(|p| Rgba::new(p.r, p.g, p.b, p.a))
+            .collect();
+        Self {
+            delay,
+            pixels,
+            width,
+            height,
+        }
+    }
+
+    /// Create from imgref ImgRef<RGBA8> (copies pixels).
+    #[cfg(feature = "imgref-interop")]
+    pub fn from_imgref(delay: u16, img: imgref::ImgRef<'_, rgb::RGBA8>) -> Self {
+        let width = img.width() as u16;
+        let height = img.height() as u16;
+        let pixels: Vec<Rgba> = img
+            .buf()
+            .iter()
+            .map(|p| Rgba::new(p.r, p.g, p.b, p.a))
             .collect();
         Self {
             delay,

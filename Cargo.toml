@@ -19,6 +19,9 @@ alloc = ["enough/alloc"]
 simd = ["wide", "multiversed"]
 # High-quality quantization via imagequant
 quantize = ["imagequant"]
+# RGB/imgref ecosystem interop
+rgb-interop = ["rgb"]
+imgref-interop = ["imgref", "rgb-interop"]
 
 [dependencies]
 # Core GIF codec (we may fork if needed)
@@ -38,6 +41,10 @@ imagequant = { version = "4.4", optional = true }
 # SIMD acceleration (optional)
 wide = { version = "0.8", optional = true }
 multiversed = { version = "0.1", features = ["x86-64-v4", "aarch64-sve2"], optional = true }
+
+# RGB/imgref ecosystem interop (optional)
+rgb = { version = "0.8", optional = true }
+imgref = { version = "1.12", optional = true }
 
 [dev-dependencies]
 # Testing
