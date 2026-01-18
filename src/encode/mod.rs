@@ -358,7 +358,18 @@ pub fn encode_gif<S: Stop>(
     limits: Limits,
     stop: S,
 ) -> Result<Vec<u8>> {
+    // Estimate initial output size (header + per-frame overhead)
+    // GIF header ~13 bytes, each frame has overhead of ~100-500 bytes + compressed data
+    // This is a conservative estimate to reduce reallocations
+    let estimated_size = 1024 + frames.len() * 512;
+
     let mut output = Vec::new();
+    output.try_reserve(estimated_size).map_err(|_| {
+        at!(GifError::AllocationFailed {
+            requested: estimated_size
+        })
+    })?;
+
     let mut encoder = Encoder::new(&mut output, config, limits, stop)?;
 
     for frame in frames {

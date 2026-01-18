@@ -62,8 +62,15 @@ impl Screen {
             _ => Rgba::TRANSPARENT,
         };
 
-        // Initialize canvas with background color
-        let pixels = vec![background; pixel_count];
+        // Initialize canvas with background color (fallible)
+        let mut pixels = Vec::new();
+        pixels.try_reserve(pixel_count).map_err(|_| {
+            stats.track_dealloc(canvas_bytes); // Undo tracking
+            whereat::at!(crate::error::GifError::AllocationFailed {
+                requested: canvas_bytes
+            })
+        })?;
+        pixels.resize(pixel_count, background);
 
         Ok(Self {
             width,
@@ -182,20 +189,28 @@ impl Screen {
             }
         }
 
-        // 6. Create the composed frame (copy of current canvas)
+        // 6. Create the composed frame (copy of current canvas, fallible)
         let composed_bytes = self.pixels.len() * core::mem::size_of::<Rgba>();
         stats.try_alloc(composed_bytes, limits)?;
+
+        let mut composed_pixels = Vec::new();
+        composed_pixels
+            .try_reserve(self.pixels.len())
+            .map_err(|_| {
+                stats.track_dealloc(composed_bytes); // Undo tracking
+                whereat::at!(crate::error::GifError::AllocationFailed {
+                    requested: composed_bytes
+                })
+            })?;
+        composed_pixels.extend_from_slice(&self.pixels);
 
         let composed = ComposedFrame::new(
             frame.index,
             self.width,
             self.height,
             frame.delay,
-            self.pixels.clone(),
+            composed_pixels,
         );
-
-        // Track the allocation for the cloned pixels
-        // (will be deallocated when ComposedFrame is dropped by caller)
 
         Ok(composed)
     }

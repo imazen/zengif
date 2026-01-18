@@ -65,7 +65,14 @@ impl Disposal {
             // Check memory limit before allocating
             stats.try_alloc(byte_size, limits)?;
 
-            let mut saved = Vec::with_capacity(region_size);
+            // Fallible allocation
+            let mut saved = Vec::new();
+            saved.try_reserve(region_size).map_err(|_| {
+                stats.track_dealloc(byte_size); // Undo tracking
+                whereat::at!(crate::error::GifError::AllocationFailed {
+                    requested: byte_size
+                })
+            })?;
 
             // Extract the region from the canvas
             for y in 0..height as usize {

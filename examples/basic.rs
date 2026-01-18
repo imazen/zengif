@@ -48,8 +48,7 @@ fn create_animation() -> Vec<u8> {
         .use_transparency(true); // Enable transparency optimization
 
     // Encode using convenience function
-    encode_gif(&frames, config, Limits::default(), Unstoppable)
-        .expect("Failed to encode GIF")
+    encode_gif(&frames, config, Limits::default(), Unstoppable).expect("Failed to encode GIF")
 }
 
 /// Create a solid color frame.
@@ -148,8 +147,8 @@ fn track_memory(data: &[u8]) {
     let limits = Limits::default();
 
     {
-        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable)
-            .expect("Failed to create decoder");
+        let mut decoder =
+            Decoder::new(cursor, limits, &stats, Unstoppable).expect("Failed to create decoder");
 
         println!("  After decoder creation: {} bytes", stats.current());
 

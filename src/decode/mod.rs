@@ -168,12 +168,19 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Create the compositing screen
         let screen = ScreenBuilder::from_decoder(&reader).build(stats, &limits)?;
 
-        // Allocate pixel buffer
+        // Allocate pixel buffer (fallible)
         let buffer_size = width as usize * height as usize;
         let buffer_bytes = buffer_size;
         stats.try_alloc(buffer_bytes, &limits)?;
 
-        let pixel_buffer = vec![0u8; buffer_size];
+        let mut pixel_buffer = Vec::new();
+        pixel_buffer.try_reserve(buffer_size).map_err(|_| {
+            stats.track_dealloc(buffer_bytes); // Undo tracking
+            at!(GifError::AllocationFailed {
+                requested: buffer_bytes
+            })
+        })?;
+        pixel_buffer.resize(buffer_size, 0u8);
 
         Ok(Self {
             reader,
@@ -228,10 +235,18 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Create the compositing screen
         let screen = ScreenBuilder::from_decoder(&reader).build(&stats, &limits)?;
 
-        // Allocate pixel buffer
+        // Allocate pixel buffer (fallible)
         let buffer_size = width as usize * height as usize;
         stats.try_alloc(buffer_size, &limits)?;
-        let pixel_buffer = vec![0u8; buffer_size];
+
+        let mut pixel_buffer = Vec::new();
+        pixel_buffer.try_reserve(buffer_size).map_err(|_| {
+            stats.track_dealloc(buffer_size); // Undo tracking
+            at!(GifError::AllocationFailed {
+                requested: buffer_size
+            })
+        })?;
+        pixel_buffer.resize(buffer_size, 0u8);
 
         Ok(Self {
             reader,
@@ -319,7 +334,15 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             .read_into_buffer(buffer_slice)
             .map_err(|e| at!(GifError::from(e)))?;
 
-        // Create RawFrame
+        // Create RawFrame (fallible pixel copy)
+        let mut pixels = Vec::new();
+        pixels.try_reserve(buffer_slice.len()).map_err(|_| {
+            at!(GifError::AllocationFailed {
+                requested: buffer_slice.len()
+            })
+        })?;
+        pixels.extend_from_slice(buffer_slice);
+
         let raw_frame = RawFrame {
             index: self.frame_index,
             left: frame_info.left,
@@ -335,7 +358,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
                 .palette
                 .as_ref()
                 .map(|p| Palette::from_rgb_bytes(p)),
-            pixels: buffer_slice.to_vec(),
+            pixels,
         };
 
         // Compose the frame
@@ -361,6 +384,13 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         while let Some(frame) = self.next_frame()? {
             // Check cancellation between frames
             self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+            // Fallible push
+            frames.try_reserve(1).map_err(|_| {
+                at!(GifError::AllocationFailed {
+                    requested: core::mem::size_of::<ComposedFrame>()
+                })
+            })?;
             frames.push(frame);
         }
 
