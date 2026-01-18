@@ -224,11 +224,7 @@ impl fmt::Display for GifError {
                 )
             }
             GifError::TotalPixelsTooLarge { pixels, max_pixels } => {
-                write!(
-                    f,
-                    "total pixels {} exceeds limit {}",
-                    pixels, max_pixels
-                )
+                write!(f, "total pixels {} exceeds limit {}", pixels, max_pixels)
             }
             GifError::TooManyFrames { count, max } => {
                 write!(f, "frame count {} exceeds limit {}", count, max)

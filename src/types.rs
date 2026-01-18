@@ -234,10 +234,7 @@ impl Palette {
 
     /// Convert to RGB bytes (for gif crate).
     pub fn to_rgb_bytes(&self) -> Vec<u8> {
-        self.colors
-            .iter()
-            .flat_map(|c| [c.r, c.g, c.b])
-            .collect()
+        self.colors.iter().flat_map(|c| [c.r, c.g, c.b]).collect()
     }
 }
 
@@ -355,10 +352,7 @@ impl ComposedFrame {
     pub fn as_bytes(&self) -> &[u8] {
         // Safety: Rgba is repr(C) with 4 u8 fields
         unsafe {
-            core::slice::from_raw_parts(
-                self.pixels.as_ptr() as *const u8,
-                self.pixels.len() * 4,
-            )
+            core::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 4)
         }
     }
 }

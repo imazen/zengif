@@ -100,7 +100,9 @@ pub use encode::{encode_gif, Encoder, EncoderConfig};
 pub use error::{GifError, Result};
 pub use limits::Limits;
 pub use screen::{Screen, ScreenBuilder};
-pub use stats::{tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc};
+pub use stats::{
+    tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc,
+};
 pub use types::{
     ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, RawFrame, Repeat, Rgba,
 };

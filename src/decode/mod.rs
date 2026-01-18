@@ -3,7 +3,7 @@
 //! Provides a streaming decoder that produces composited RGBA frames
 //! with proper disposal method handling.
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 
 use enough::Stop;
 use whereat::at;
@@ -14,13 +14,57 @@ use crate::screen::{Screen, ScreenBuilder};
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat};
 
+/// GIF header size: magic (6) + logical screen descriptor (7) = 13 bytes
+const GIF_HEADER_SIZE: usize = 13;
+
+/// Pre-validate the GIF header before passing to the gif crate.
+///
+/// This allows us to check dimensions before the gif crate allocates memory.
+/// Returns (width, height) on success.
+fn pre_validate_header<R: BufRead>(reader: &mut R, limits: &Limits) -> Result<(u16, u16)> {
+    // Peek at the header (don't consume it)
+    let buf = reader.fill_buf().map_err(|e| {
+        at!(GifError::Io {
+            kind: e.kind(),
+            context: Some("reading GIF header")
+        })
+    })?;
+
+    if buf.len() < GIF_HEADER_SIZE {
+        return Err(at!(GifError::GifCrate {
+            message: "truncated header".to_string()
+        }));
+    }
+
+    // Validate magic (GIF87a or GIF89a)
+    if &buf[0..3] != b"GIF" {
+        return Err(at!(GifError::InvalidHeader));
+    }
+
+    let version = &buf[3..6];
+    if version != b"87a" && version != b"89a" {
+        return Err(at!(GifError::UnsupportedVersion {
+            version: [version[0], version[1], version[2]]
+        }));
+    }
+
+    // Read dimensions from Logical Screen Descriptor
+    let width = u16::from_le_bytes([buf[6], buf[7]]);
+    let height = u16::from_le_bytes([buf[8], buf[9]]);
+
+    // Pre-check dimensions BEFORE the gif crate can allocate
+    limits.check_dimensions(width, height)?;
+
+    Ok((width, height))
+}
+
 /// Streaming GIF decoder.
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
 pub struct Decoder<R: Read, S: Stop> {
-    /// Underlying gif crate reader.
-    reader: gif::Decoder<R>,
+    /// Underlying gif crate reader (wrapped in BufReader for pre-validation).
+    reader: gif::Decoder<BufReader<R>>,
 
     /// Compositing screen.
     screen: Screen,
@@ -84,6 +128,12 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
+        // Wrap in BufReader for pre-validation
+        let mut buf_reader = BufReader::new(reader);
+
+        // Pre-validate header and check dimensions BEFORE gif crate can allocate
+        let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
+
         // Configure gif decoder
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::Indexed);
@@ -96,15 +146,10 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             }
         }
 
-        // Parse the GIF header
+        // Parse the GIF (header already validated, dimensions already checked)
         let reader = options
-            .read_info(reader)
+            .read_info(buf_reader)
             .map_err(|e| at!(GifError::from(e)))?;
-
-        // Validate dimensions
-        let width = reader.width();
-        let height = reader.height();
-        limits.check_dimensions(width, height)?;
 
         // Extract metadata
         let global_palette = reader.global_palette().map(Palette::from_rgb_bytes);
@@ -150,20 +195,21 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
+        // Wrap in BufReader for pre-validation
+        let mut buf_reader = BufReader::new(reader);
+
+        // Pre-validate header and check dimensions BEFORE gif crate can allocate
+        let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
+
         // Configure gif decoder
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::Indexed);
         options.allow_unknown_blocks(true);
 
-        // Parse the GIF header
+        // Parse the GIF (header already validated, dimensions already checked)
         let reader = options
-            .read_info(reader)
+            .read_info(buf_reader)
             .map_err(|e| at!(GifError::from(e)))?;
-
-        // Validate dimensions
-        let width = reader.width();
-        let height = reader.height();
-        limits.check_dimensions(width, height)?;
 
         // Extract metadata
         let global_palette = reader.global_palette().map(Palette::from_rgb_bytes);
@@ -285,7 +331,10 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             transparent: frame_info.transparent,
             needs_user_input: frame_info.needs_user_input,
             interlaced: frame_info.interlaced,
-            palette: frame_info.palette.as_ref().map(|p| Palette::from_rgb_bytes(p)),
+            palette: frame_info
+                .palette
+                .as_ref()
+                .map(|p| Palette::from_rgb_bytes(p)),
             pixels: buffer_slice.to_vec(),
         };
 

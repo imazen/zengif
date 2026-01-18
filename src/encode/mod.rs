@@ -112,12 +112,7 @@ pub struct Encoder<W: Write, S: Stop> {
 
 impl<W: Write, S: Stop> Encoder<W, S> {
     /// Create a new encoder.
-    pub fn new(
-        writer: W,
-        config: EncoderConfig,
-        limits: Limits,
-        stop: S,
-    ) -> Result<Self> {
+    pub fn new(writer: W, config: EncoderConfig, limits: Limits, stop: S) -> Result<Self> {
         // Check cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
@@ -133,13 +128,8 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
             .unwrap_or_default();
 
-        let encoder = gif::Encoder::new(
-            writer,
-            config.width,
-            config.height,
-            &global_palette_bytes,
-        )
-        .map_err(|e| at!(GifError::from(e)))?;
+        let encoder = gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
+            .map_err(|e| at!(GifError::from(e)))?;
 
         Ok(Self {
             encoder,
@@ -154,17 +144,15 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Create an encoder from metadata.
-    pub fn from_metadata(
-        writer: W,
-        metadata: &Metadata,
-        limits: Limits,
-        stop: S,
-    ) -> Result<Self> {
+    pub fn from_metadata(writer: W, metadata: &Metadata, limits: Limits, stop: S) -> Result<Self> {
         let config = EncoderConfig {
             width: metadata.width,
             height: metadata.height,
             repeat: metadata.repeat,
-            global_palette: metadata.global_palette.as_ref().map(|p| p.colors().to_vec()),
+            global_palette: metadata
+                .global_palette
+                .as_ref()
+                .map(|p| p.colors().to_vec()),
             use_transparency: true,
             #[cfg(feature = "quantize")]
             quality: 80,
@@ -270,8 +258,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             .flat_map(|p| [p.r, p.g, p.b, p.a])
             .collect();
 
-        let mut frame =
-            gif::Frame::from_rgba_speed(input.width, input.height, &mut rgba_bytes, 10);
+        let mut frame = gif::Frame::from_rgba_speed(input.width, input.height, &mut rgba_bytes, 10);
 
         frame.delay = input.delay;
 
@@ -285,8 +272,11 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         // Set up quantizer
         let mut attr = Attributes::new();
-        attr.set_quality(0, self.config.quality)
-            .map_err(|_| at!(GifError::QuantizationFailed { message: "failed to set quality" }))?;
+        attr.set_quality(0, self.config.quality).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "failed to set quality"
+            })
+        })?;
 
         // Prepare image data
         let rgba_slice: &[imagequant::RGBA] = unsafe {
@@ -298,21 +288,32 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         let mut img = attr
             .new_image(rgba_slice, input.width as usize, input.height as usize, 0.0)
-            .map_err(|_| at!(GifError::QuantizationFailed { message: "failed to create image" }))?;
+            .map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to create image"
+                })
+            })?;
 
         // Quantize
-        let mut result = attr
-            .quantize(&mut img)
-            .map_err(|_| at!(GifError::QuantizationFailed { message: "quantization failed" }))?;
+        let mut result = attr.quantize(&mut img).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "quantization failed"
+            })
+        })?;
 
         // Set dithering
-        result.set_dithering_level(1.0)
-            .map_err(|_| at!(GifError::QuantizationFailed { message: "failed to set dithering" }))?;
+        result.set_dithering_level(1.0).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "failed to set dithering"
+            })
+        })?;
 
         // Remap to palette
-        let (palette, pixels) = result
-            .remapped(&mut img)
-            .map_err(|_| at!(GifError::QuantizationFailed { message: "remapping failed" }))?;
+        let (palette, pixels) = result.remapped(&mut img).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "remapping failed"
+            })
+        })?;
 
         // Find transparent index (most transparent color)
         let transparent_index = palette
@@ -324,10 +325,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         // Build gif frame
         // Set palette
-        let palette_bytes: Vec<u8> = palette
-            .iter()
-            .flat_map(|c| [c.r, c.g, c.b])
-            .collect();
+        let palette_bytes: Vec<u8> = palette.iter().flat_map(|c| [c.r, c.g, c.b]).collect();
 
         let frame = gif::Frame {
             width: input.width,
@@ -437,10 +435,7 @@ mod tests {
         let config = EncoderConfig::new(2, 2);
         let limits = Limits::default();
 
-        let frames = vec![
-            make_red_frame(2, 2, 10),
-            make_red_frame(2, 2, 10),
-        ];
+        let frames = vec![make_red_frame(2, 2, 10), make_red_frame(2, 2, 10)];
 
         let output = encode_gif(&frames, config, limits, Unstoppable).unwrap();
 

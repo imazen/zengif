@@ -47,7 +47,11 @@ fn round_trip_single_frame() {
     // Note: Colors may not match exactly due to palette quantization
     // but should be close to red
     let first_pixel = frames[0].pixels[0];
-    assert!(first_pixel.r > 200, "Expected mostly red, got {:?}", first_pixel);
+    assert!(
+        first_pixel.r > 200,
+        "Expected mostly red, got {:?}",
+        first_pixel
+    );
 }
 
 #[test]
@@ -162,14 +166,7 @@ fn memory_tracking_during_round_trip() {
     let width = 16;
     let height = 16;
     let frames_in: Vec<_> = (0..5)
-        .map(|i| {
-            solid_frame(
-                width,
-                height,
-                Rgba::rgb((i * 50) as u8, 100, 150),
-                10,
-            )
-        })
+        .map(|i| solid_frame(width, height, Rgba::rgb((i * 50) as u8, 100, 150), 10))
         .collect();
 
     // Encode
@@ -202,8 +199,7 @@ fn streaming_decode_matches_batch() {
 
     // Batch decode
     let stats1 = Stats::new();
-    let (_, batch_frames) =
-        decode_gif(&encoded, Limits::default(), &stats1, Unstoppable).unwrap();
+    let (_, batch_frames) = decode_gif(&encoded, Limits::default(), &stats1, Unstoppable).unwrap();
 
     // Streaming decode
     let stats2 = Stats::new();

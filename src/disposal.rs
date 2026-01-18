@@ -93,7 +93,13 @@ impl Disposal {
     /// Apply the disposal to restore the canvas.
     ///
     /// This should be called BEFORE blitting the next frame.
-    pub fn apply(&mut self, canvas: &mut [Rgba], canvas_width: u16, background: Rgba, stats: &Stats) {
+    pub fn apply(
+        &mut self,
+        canvas: &mut [Rgba],
+        canvas_width: u16,
+        background: Rgba,
+        stats: &Stats,
+    ) {
         if self.width == 0 || self.height == 0 {
             return;
         }
@@ -285,8 +291,18 @@ mod tests {
         let mut canvas = make_canvas(4, 4, Rgba::WHITE);
 
         // Create disposal with Keep - should not save pixels
-        let mut disposal =
-            Disposal::new(DisposalMethod::Keep, 1, 1, 2, 2, &canvas, 4, &stats, &limits).unwrap();
+        let mut disposal = Disposal::new(
+            DisposalMethod::Keep,
+            1,
+            1,
+            2,
+            2,
+            &canvas,
+            4,
+            &stats,
+            &limits,
+        )
+        .unwrap();
 
         assert!(!disposal.has_saved_pixels());
 
@@ -306,9 +322,18 @@ mod tests {
         let limits = Limits::none();
         let mut canvas = make_canvas(4, 4, Rgba::WHITE);
 
-        let mut disposal =
-            Disposal::new(DisposalMethod::Background, 1, 1, 2, 2, &canvas, 4, &stats, &limits)
-                .unwrap();
+        let mut disposal = Disposal::new(
+            DisposalMethod::Background,
+            1,
+            1,
+            2,
+            2,
+            &canvas,
+            4,
+            &stats,
+            &limits,
+        )
+        .unwrap();
 
         // Apply disposal - should fill region with background
         let background = Rgba::rgb(0, 255, 0);
@@ -330,9 +355,18 @@ mod tests {
         let mut canvas = make_canvas(4, 4, Rgba::WHITE);
 
         // Save the original state
-        let mut disposal =
-            Disposal::new(DisposalMethod::Previous, 1, 1, 2, 2, &canvas, 4, &stats, &limits)
-                .unwrap();
+        let mut disposal = Disposal::new(
+            DisposalMethod::Previous,
+            1,
+            1,
+            2,
+            2,
+            &canvas,
+            4,
+            &stats,
+            &limits,
+        )
+        .unwrap();
 
         assert!(disposal.has_saved_pixels());
 
@@ -419,9 +453,18 @@ mod tests {
         let canvas = make_canvas(4, 4, Rgba::WHITE);
 
         // Previous disposal should allocate
-        let disposal =
-            Disposal::new(DisposalMethod::Previous, 1, 1, 2, 2, &canvas, 4, &stats, &limits)
-                .unwrap();
+        let disposal = Disposal::new(
+            DisposalMethod::Previous,
+            1,
+            1,
+            2,
+            2,
+            &canvas,
+            4,
+            &stats,
+            &limits,
+        )
+        .unwrap();
 
         let expected_bytes = 2 * 2 * core::mem::size_of::<Rgba>();
         assert_eq!(stats.current(), expected_bytes);

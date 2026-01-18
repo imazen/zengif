@@ -124,12 +124,8 @@ impl Screen {
             .unwrap_or(&[]);
 
         // 3. Validate frame bounds (clip if necessary, but warn)
-        let (left, top, width, height) = self.clip_frame_bounds(
-            frame.left,
-            frame.top,
-            frame.width,
-            frame.height,
-        );
+        let (left, top, width, height) =
+            self.clip_frame_bounds(frame.left, frame.top, frame.width, frame.height);
 
         // 4. Set up disposal for this frame (before blitting)
         self.disposal = Disposal::new(
@@ -369,8 +365,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::none();
 
-        let mut screen =
-            Screen::new(4, 4, Some(make_palette()), None, &stats, &limits).unwrap();
+        let mut screen = Screen::new(4, 4, Some(make_palette()), None, &stats, &limits).unwrap();
 
         // Frame that covers entire canvas
         let frame = make_raw_frame(
@@ -402,8 +397,7 @@ mod tests {
         let limits = Limits::none();
 
         // Initialize with green background
-        let mut screen =
-            Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
+        let mut screen = Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
 
         // Frame with some transparent pixels
         let frame = make_raw_frame(
@@ -435,8 +429,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::none();
 
-        let mut screen =
-            Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
+        let mut screen = Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
 
         // First frame: red square with Background disposal
         let frame1 = make_raw_frame(
@@ -488,8 +481,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::none();
 
-        let mut screen =
-            Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
+        let mut screen = Screen::new(4, 4, Some(make_palette()), Some(1), &stats, &limits).unwrap();
 
         // First frame: blue in corner, Keep disposal
         let frame1 = make_raw_frame(
@@ -542,8 +534,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::none();
 
-        let mut screen =
-            Screen::new(4, 4, Some(make_palette()), None, &stats, &limits).unwrap();
+        let mut screen = Screen::new(4, 4, Some(make_palette()), None, &stats, &limits).unwrap();
 
         // Frame that extends beyond canvas
         let frame = make_raw_frame(
