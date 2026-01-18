@@ -380,13 +380,13 @@ Note: `src/types.rs` Palette allocations remain infallible as palettes are bound
 ### P2: Codec-Corpus Testing ✅ DONE
 **Status: IMPLEMENTED (2026-01-17)**
 
-Tests in `tests/corpus.rs` validate against real-world GIF files from `/home/lilith/work/codec-corpus`:
-- 12 GIF files tested (image-rs test-images + imageflow inputs)
+Tests in `tests/corpus.rs` validate against real-world GIF files (local copies in tests/corpus/codec-corpus/):
+- 11 GIF files tested (image-rs test-images + imageflow inputs)
 - Decode all: verifies all files decode without panicking
 - Round-trip: animated GIFs preserve frame count, dimensions, delays
 - Disposal methods: any-disposal.gif, mixed-disposal.gif
 - Interlaced: interlaced.gif handling
-- Large animation: mountain_800.gif with memory tracking
+- Large animation: large-gif-anim-full-frame-replace.gif with memory tracking
 - Memory limits: enforced correctly
 - Transparency: alpha_gif_a.gif handling
 
