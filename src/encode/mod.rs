@@ -179,12 +179,12 @@ pub struct EncoderConfig {
     pub use_transparency: bool,
 
     /// Quality setting for quantization (1-100, higher = better quality).
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     pub quality: u8,
 
     /// Dithering level (0.0-1.0). Lower values = less noise = better compression.
     /// Default is 0.5. Use 0.0 for re-encoding already-dithered content.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     pub dithering: f32,
 
     /// If true, buffer frames and compute a shared palette before encoding.
@@ -194,17 +194,17 @@ pub struct EncoderConfig {
     /// frames are buffered until `max_buffer_frames` or `max_buffer_bytes` is
     /// reached, at which point the palette is computed and all buffered frames
     /// are encoded. Subsequent frames use the shared palette immediately.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     pub shared_palette: bool,
 
     /// Maximum frames to buffer before building shared palette.
     /// Default is 64. Only used when `shared_palette` is true.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     pub max_buffer_frames: usize,
 
     /// Maximum bytes to buffer before building shared palette.
     /// Default is 64MB. Only used when `shared_palette` is true.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     pub max_buffer_bytes: usize,
 
     /// Quantizer backend to use. Doc-hidden for internal/testing use.
@@ -228,15 +228,15 @@ impl EncoderConfig {
             repeat: Repeat::Infinite,
             global_palette: None,
             use_transparency: true,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             quality: 80,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             dithering: 0.5, // Lower default for better compression
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             shared_palette: false,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             max_buffer_frames: 64,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             max_buffer_bytes: 64 * 1024 * 1024, // 64 MB
             #[cfg(any(
                 feature = "imagequant",
@@ -286,7 +286,7 @@ impl EncoderConfig {
     }
 
     /// Set quality for quantization (1-100).
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn quality(mut self, quality: u8) -> Self {
         self.quality = quality.clamp(1, 100);
@@ -298,7 +298,7 @@ impl EncoderConfig {
     /// Lower values produce less noise and better LZW compression.
     /// Use 0.0 when re-encoding already-dithered content (round-trip).
     /// Default is 0.5.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn dithering(mut self, level: f32) -> Self {
         self.dithering = level.clamp(0.0, 1.0);
@@ -314,7 +314,7 @@ impl EncoderConfig {
     /// For streaming encoding, frames are buffered up to `max_buffer_frames`
     /// or `max_buffer_bytes`, then the palette is built and buffered frames
     /// are encoded. Subsequent frames use the shared palette immediately.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn shared_palette(mut self, shared: bool) -> Self {
         self.shared_palette = shared;
@@ -326,7 +326,7 @@ impl EncoderConfig {
     /// When `shared_palette` is enabled, frames are buffered until this
     /// limit is reached, then the palette is computed and encoding begins.
     /// Default is 64 frames.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn max_buffer_frames(mut self, max: usize) -> Self {
         self.max_buffer_frames = max;
@@ -338,7 +338,7 @@ impl EncoderConfig {
     /// When `shared_palette` is enabled, frames are buffered until this
     /// memory limit is reached, then the palette is computed and encoding begins.
     /// Default is 64 MB.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn max_buffer_bytes(mut self, max: usize) -> Self {
         self.max_buffer_bytes = max;
@@ -350,7 +350,7 @@ impl EncoderConfig {
     /// This sets parameters that minimize bloat when re-encoding a decoded GIF:
     /// - Zero dithering (content is already dithered)
     /// - Shared palette (consistent colors across frames)
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[must_use]
     pub fn for_round_trip(self) -> Self {
         self.dithering(0.0).shared_palette(true)
@@ -388,21 +388,41 @@ pub struct Encoder<W: Write, S: Stop> {
 
     /// Buffered frames for shared palette mode.
     /// Frames are buffered until limits are reached, then palette is built.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant",
+        feature = "color_quant"
+    ))]
     buffered_frames: Vec<FrameInput>,
 
     /// Current buffered memory in bytes.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant",
+        feature = "color_quant"
+    ))]
     buffered_bytes: usize,
 
     /// Shared palette (computed once buffer limits are reached).
     /// Once set, all subsequent frames use this palette.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant",
+        feature = "color_quant"
+    ))]
     computed_palette: Option<Vec<u8>>,
 
     /// Quantizer instance for shared palette mode.
-    #[cfg(feature = "imagequant")]
-    quantizer: crate::quantize::ImagequantQuantizer,
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant",
+        feature = "color_quant"
+    ))]
+    quantizer: Box<dyn crate::quantize::Quantizer>,
 }
 
 impl<W: Write, S: Stop> Encoder<W, S> {
@@ -426,6 +446,19 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         let encoder = gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
             .map_err(|e| at!(GifError::from(e)))?;
 
+        // Create quantizer from selected backend
+        #[cfg(any(
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant",
+            feature = "color_quant"
+        ))]
+        let quantizer = config.quantizer_backend.create_quantizer().ok_or_else(|| {
+            at!(GifError::QuantizationFailed {
+                message: "selected quantizer backend is not available"
+            })
+        })?;
+
         Ok(Self {
             encoder,
             config,
@@ -435,14 +468,34 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             stats,
             stop,
             repeat_written: false,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant",
+                feature = "color_quant"
+            ))]
             buffered_frames: Vec::new(),
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant",
+                feature = "color_quant"
+            ))]
             buffered_bytes: 0,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant",
+                feature = "color_quant"
+            ))]
             computed_palette: None,
-            #[cfg(feature = "imagequant")]
-            quantizer: crate::quantize::ImagequantQuantizer::new(),
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant",
+                feature = "color_quant"
+            ))]
+            quantizer,
         })
     }
 
@@ -460,15 +513,15 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 .as_ref()
                 .map(|p| p.colors().to_vec()),
             use_transparency: true,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             quality: 100, // Max quality for round-trip
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             dithering: 0.0, // No dithering for round-trip (already dithered)
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             shared_palette: false, // Will use global if available
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             max_buffer_frames: 64,
-            #[cfg(feature = "imagequant")]
+            #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
             max_buffer_bytes: 64 * 1024 * 1024,
             #[cfg(any(
                 feature = "imagequant",
@@ -539,14 +592,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         }
 
         // Check frame count (including buffered frames)
-        #[cfg(feature = "imagequant")]
+        #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
         let total_frames = self.frame_index + self.buffered_frames.len();
         #[cfg(not(feature = "imagequant"))]
         let total_frames = self.frame_index;
         self.limits.check_frame_count(total_frames)?;
 
         // Handle shared palette buffering mode
-        #[cfg(feature = "imagequant")]
+        #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
         if self.config.shared_palette && self.computed_palette.is_none() {
             return self.buffer_frame(input);
         }
@@ -556,7 +609,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Buffer a frame for later encoding with shared palette.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     fn buffer_frame(&mut self, input: FrameInput) -> Result<()> {
         let frame_bytes = input.pixels.len() * 4; // RGBA = 4 bytes per pixel
         self.buffered_frames.push(input);
@@ -574,9 +627,9 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Build shared palette from buffered frames and encode them all.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     fn flush_buffer(&mut self) -> Result<()> {
-        use crate::quantize::{QuantizeConfig, Quantizer};
+        use crate::quantize::QuantizeConfig;
 
         if self.buffered_frames.is_empty() {
             return Ok(());
@@ -645,7 +698,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
     /// Prepare a frame for encoding.
     fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
-        #[cfg(feature = "imagequant")]
+        #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
         {
             self.prepare_frame_quantized(input)
         }
@@ -718,9 +771,9 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Frame preparation with imagequant quantization.
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
-        use crate::quantize::{QuantizeConfig, Quantizer};
+        use crate::quantize::QuantizeConfig;
 
         // Check if we can optimize using frame differencing
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
@@ -828,7 +881,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     #[allow(unused_mut)]
     pub fn finish(mut self) -> Result<W> {
         // Flush any remaining buffered frames
-        #[cfg(feature = "imagequant")]
+        #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
         self.flush_buffer()?;
 
         let writer = self
@@ -880,7 +933,7 @@ pub fn encode_gif<S: Stop>(
 ///
 /// For round-trip encoding (decode -> encode), this combined with zero dithering
 /// significantly reduces output bloat.
-#[cfg(feature = "imagequant")]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
 pub fn encode_gif_shared_palette<S: Stop + Clone>(
     frames: Vec<FrameInput>,
     config: EncoderConfig,
@@ -902,7 +955,7 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
 /// implementation, allowing for custom quantization algorithms.
 ///
 /// See [`encode_gif_shared_palette`] for the default imagequant-based version.
-#[cfg(feature = "imagequant")]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
 pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::Quantizer>(
     frames: Vec<FrameInput>,
     config: EncoderConfig,
@@ -1240,7 +1293,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn shared_palette_encodes_animation() {
         // Create frames with different but similar colors
@@ -1281,7 +1334,7 @@ mod tests {
         assert_eq!(&output[0..6], b"GIF89a");
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn shared_palette_smaller_than_per_frame() {
         // Create an animation with similar colors across frames
@@ -1326,7 +1379,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn low_dithering_smaller_than_high_dithering() {
         let width = 64u16;
@@ -1366,7 +1419,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn for_round_trip_config() {
         let config = EncoderConfig::new(100, 100).for_round_trip();
@@ -1376,7 +1429,7 @@ mod tests {
         assert!(config.shared_palette);
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn buffered_streaming_shared_palette() {
         // Test that streaming encoder buffers frames and builds shared palette
@@ -1405,7 +1458,7 @@ mod tests {
         assert_eq!(&output[0..6], b"GIF89a");
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn buffered_streaming_flushes_on_finish() {
         // Test that finish() flushes remaining buffered frames
@@ -1433,7 +1486,7 @@ mod tests {
         assert_eq!(&output[0..6], b"GIF89a");
     }
 
-    #[cfg(feature = "imagequant")]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "exoquant", feature = "color_quant"))]
     #[test]
     fn buffered_streaming_memory_limit() {
         // Test that buffer flushes when memory limit is reached

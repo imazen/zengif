@@ -1,7 +1,7 @@
 //! Integration tests comparing quantizer quality using SSIMULACRA2.
 //!
-//! These tests decode real GIF files, re-encode them with different quantizers,
-//! and measure the quality degradation using the SSIMULACRA2 metric.
+//! These tests encode real PNG images to GIF with different quantizers,
+//! then decode and measure the quality degradation using SSIMULACRA2.
 //!
 //! SSIMULACRA2 scores (higher is better, max ~100):
 //! - 90+: Excellent (nearly indistinguishable)
@@ -9,8 +9,49 @@
 //! - 50-70: Fair (noticeable but acceptable)
 //! - <50: Poor (significant degradation)
 
-use std::fs;
-use zengif::{decode_gif, Limits, QuantizerBackend, Rgba, Stats, Unstoppable};
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
+use zengif::{Limits, QuantizerBackend, Rgba, Stats, Unstoppable};
+
+/// Decode a PNG file to RGBA pixels.
+fn decode_png(path: &Path) -> Option<(Vec<Rgba>, u32, u32)> {
+    let file = File::open(path).ok()?;
+    let decoder = png::Decoder::new(BufReader::new(file));
+    let mut reader = decoder.read_info().ok()?;
+
+    let mut buf = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buf).ok()?;
+
+    let width = info.width;
+    let height = info.height;
+
+    // Convert to RGBA
+    let pixels: Vec<Rgba> = match info.color_type {
+        png::ColorType::Rgba => buf[..info.buffer_size()]
+            .chunks_exact(4)
+            .map(|c| Rgba::new(c[0], c[1], c[2], c[3]))
+            .collect(),
+        png::ColorType::Rgb => buf[..info.buffer_size()]
+            .chunks_exact(3)
+            .map(|c| Rgba::rgb(c[0], c[1], c[2]))
+            .collect(),
+        png::ColorType::GrayscaleAlpha => buf[..info.buffer_size()]
+            .chunks_exact(2)
+            .map(|c| Rgba::new(c[0], c[0], c[0], c[1]))
+            .collect(),
+        png::ColorType::Grayscale => buf[..info.buffer_size()]
+            .iter()
+            .map(|&g| Rgba::rgb(g, g, g))
+            .collect(),
+        png::ColorType::Indexed => {
+            // For indexed, we'd need to look up the palette - skip for now
+            return None;
+        }
+    };
+
+    Some((pixels, width, height))
+}
 
 /// Calculate SSIMULACRA2 score between original and quantized frames.
 /// Returns a score where higher is better (max ~100).
@@ -45,9 +86,11 @@ struct QuantizerResult {
     output_size: Option<usize>,
 }
 
-/// Round-trip a GIF through a specific quantizer and measure quality.
-fn roundtrip_with_quantizer(
-    gif_data: &[u8],
+/// Encode PNG pixels to GIF with a specific quantizer, decode, and measure quality.
+fn test_quantizer_on_png(
+    pixels: &[Rgba],
+    width: u32,
+    height: u32,
     backend: QuantizerBackend,
 ) -> QuantizerResult {
     if !backend.is_available() {
@@ -59,37 +102,14 @@ fn roundtrip_with_quantizer(
         };
     }
 
-    let stats = Stats::new();
+    let _stats = Stats::new();
     let limits = Limits::default();
 
-    // Decode original
-    let (metadata, original_frames) = match decode_gif(gif_data, limits.clone(), &stats, Unstoppable) {
-        Ok(r) => r,
-        Err(_) => {
-            return QuantizerResult {
-                backend,
-                available: true,
-                ssim2_score: None,
-                output_size: None,
-            };
-        }
-    };
-
-    if original_frames.is_empty() {
-        return QuantizerResult {
-            backend,
-            available: true,
-            ssim2_score: None,
-            output_size: None,
-        };
-    }
-
     // Create encoder config with specific backend
-    let config = zengif::EncoderConfig::new(metadata.width, metadata.height)
-        .repeat(metadata.repeat)
+    let config = zengif::EncoderConfig::new(width as u16, height as u16)
         .quantizer_backend(backend);
 
-    // Encode with the specified quantizer
+    // Encode to GIF
     let mut output = Vec::new();
     let mut encoder = match zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable) {
         Ok(e) => e,
@@ -103,21 +123,14 @@ fn roundtrip_with_quantizer(
         }
     };
 
-    for frame in &original_frames {
-        let input = zengif::FrameInput::new(
-            frame.width,
-            frame.height,
-            frame.delay,
-            frame.pixels.clone(),
-        );
-        if encoder.add_frame(input).is_err() {
-            return QuantizerResult {
-                backend,
-                available: true,
-                ssim2_score: None,
-                output_size: None,
-            };
-        }
+    let input = zengif::FrameInput::new(width as u16, height as u16, 100, pixels.to_vec());
+    if encoder.add_frame(input).is_err() {
+        return QuantizerResult {
+            backend,
+            available: true,
+            ssim2_score: None,
+            output_size: None,
+        };
     }
 
     if encoder.finish().is_err() {
@@ -131,9 +144,9 @@ fn roundtrip_with_quantizer(
 
     let output_size = output.len();
 
-    // Decode the re-encoded GIF
+    // Decode the GIF back
     let stats2 = Stats::new();
-    let (_, decoded_frames) = match decode_gif(&output, limits, &stats2, Unstoppable) {
+    let (_, decoded_frames) = match zengif::decode_gif(&output, limits, &stats2, Unstoppable) {
         Ok(r) => r,
         Err(_) => {
             return QuantizerResult {
@@ -145,42 +158,37 @@ fn roundtrip_with_quantizer(
         }
     };
 
-    // Calculate average SSIM2 across all frames
-    let mut total_score = 0.0;
-    let mut frame_count = 0;
-
-    for (orig, decoded) in original_frames.iter().zip(decoded_frames.iter()) {
-        if orig.pixels.len() == decoded.pixels.len() && !orig.pixels.is_empty() {
-            let score = calculate_ssim2(
-                &orig.pixels,
-                &decoded.pixels,
-                orig.width as usize,
-                orig.height as usize,
-            );
-            total_score += score;
-            frame_count += 1;
-        }
+    if decoded_frames.is_empty() {
+        return QuantizerResult {
+            backend,
+            available: true,
+            ssim2_score: None,
+            output_size: Some(output_size),
+        };
     }
 
-    let avg_score = if frame_count > 0 {
-        Some(total_score / frame_count as f64)
-    } else {
-        None
-    };
+    // Calculate SSIM2 between original and decoded
+    let decoded = &decoded_frames[0];
+    let score = calculate_ssim2(
+        pixels,
+        &decoded.pixels,
+        width as usize,
+        height as usize,
+    );
 
     QuantizerResult {
         backend,
         available: true,
-        ssim2_score: avg_score,
+        ssim2_score: Some(score),
         output_size: Some(output_size),
     }
 }
 
-/// Test quantizer quality on a specific test file.
-fn test_quantizer_quality_on_file(path: &str) -> Vec<QuantizerResult> {
-    let gif_data = match fs::read(path) {
-        Ok(data) => data,
-        Err(_) => return vec![],
+/// Test quantizer quality on a PNG file.
+fn test_quantizer_quality_on_png(path: &Path) -> Vec<QuantizerResult> {
+    let (pixels, width, height) = match decode_png(path) {
+        Some(data) => data,
+        None => return vec![],
     };
 
     let backends = [
@@ -192,7 +200,7 @@ fn test_quantizer_quality_on_file(path: &str) -> Vec<QuantizerResult> {
 
     backends
         .into_iter()
-        .map(|backend| roundtrip_with_quantizer(&gif_data, backend))
+        .map(|backend| test_quantizer_on_png(&pixels, width, height, backend))
         .collect()
 }
 
@@ -205,14 +213,33 @@ fn test_quantizer_quality_on_file(path: &str) -> Vec<QuantizerResult> {
 ))]
 mod quality_tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn corpus_path() -> Option<PathBuf> {
+        let path = PathBuf::from(env!("HOME")).join("work/codec-corpus");
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
 
     #[test]
-    fn quantizer_quality_sample_1() {
-        let results = test_quantizer_quality_on_file(
-            "tests/corpus/codec-corpus/sample_1.gif",
-        );
+    fn quantizer_quality_kodak_01() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
 
-        println!("\n=== Quantizer Quality: sample_1.gif ===");
+        let path = corpus.join("kodak/1.png");
+        if !path.exists() {
+            println!("Skipping: {} not found", path.display());
+            return;
+        }
+
+        let results = test_quantizer_quality_on_png(&path);
+
+        println!("\n=== Quantizer Quality: kodak/1.png ===");
         for result in &results {
             if result.available {
                 if let Some(score) = result.ssim2_score {
@@ -222,9 +249,9 @@ mod quality_tests {
                         score,
                         result.output_size.unwrap_or(0)
                     );
-                    // All quantizers should produce at least "fair" quality
+                    // Kodak images are complex - expect some degradation but still reasonable
                     assert!(
-                        score > 30.0,
+                        score > 40.0,
                         "{:?} produced poor quality: {:.2}",
                         result.backend,
                         score
@@ -239,75 +266,44 @@ mod quality_tests {
     }
 
     #[test]
-    fn quantizer_quality_any_disposal() {
-        let results = test_quantizer_quality_on_file(
-            "tests/corpus/codec-corpus/any-disposal.gif",
+    fn quantizer_quality_kodak_comparison() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
+
+        // Test on several Kodak images
+        let test_images = ["1.png", "8.png", "19.png", "24.png"];
+
+        println!("\n=== Quantizer Quality Comparison (Kodak Images) ===\n");
+        println!(
+            "{:<15} {:>12} {:>12} {:>12} {:>12}",
+            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
         );
+        println!("{}", "-".repeat(67));
 
-        println!("\n=== Quantizer Quality: any-disposal.gif ===");
-        for result in &results {
-            if result.available {
-                if let Some(score) = result.ssim2_score {
-                    println!(
-                        "{:?}: SSIM2={:.2}, size={} bytes",
-                        result.backend,
-                        score,
-                        result.output_size.unwrap_or(0)
-                    );
-                } else {
-                    println!("{:?}: failed to process", result.backend);
-                }
+        let mut totals = [0.0f64; 4];
+        let mut counts = [0usize; 4];
+
+        for image in test_images {
+            let path = corpus.join("kodak").join(image);
+            if !path.exists() {
+                continue;
             }
-        }
-    }
 
-    #[test]
-    fn quantizer_quality_large_animation() {
-        let results = test_quantizer_quality_on_file(
-            "tests/corpus/codec-corpus/large-gif-anim-combine.gif",
-        );
-
-        println!("\n=== Quantizer Quality: large-gif-anim-combine.gif ===");
-        for result in &results {
-            if result.available {
-                if let Some(score) = result.ssim2_score {
-                    println!(
-                        "{:?}: SSIM2={:.2}, size={} bytes",
-                        result.backend,
-                        score,
-                        result.output_size.unwrap_or(0)
-                    );
-                } else {
-                    println!("{:?}: failed to process", result.backend);
-                }
-            }
-        }
-    }
-
-    /// Compare all quantizers and report which produces best quality/size tradeoff.
-    #[test]
-    fn quantizer_comparison_report() {
-        let test_files = [
-            "tests/corpus/codec-corpus/sample_1.gif",
-            "tests/corpus/codec-corpus/any-disposal.gif",
-            "tests/corpus/codec-corpus/mixed-disposal.gif",
-        ];
-
-        println!("\n=== Quantizer Comparison Report ===\n");
-        println!("{:<30} {:>12} {:>12} {:>12} {:>12}",
-            "File", "imagequant", "exoquant", "quantizr", "color_quant");
-        println!("{}", "-".repeat(80));
-
-        for file in test_files {
-            let results = test_quantizer_quality_on_file(file);
-            let filename = file.split('/').last().unwrap_or(file);
+            let results = test_quantizer_quality_on_png(&path);
 
             let scores: Vec<String> = results
                 .iter()
-                .map(|r| {
+                .enumerate()
+                .map(|(i, r)| {
                     if r.available {
                         r.ssim2_score
-                            .map(|s| format!("{:.1}", s))
+                            .map(|s| {
+                                totals[i] += s;
+                                counts[i] += 1;
+                                format!("{:.1}", s)
+                            })
                             .unwrap_or_else(|| "err".to_string())
                     } else {
                         "n/a".to_string()
@@ -316,15 +312,116 @@ mod quality_tests {
                 .collect();
 
             println!(
-                "{:<30} {:>12} {:>12} {:>12} {:>12}",
-                filename,
-                scores.first().unwrap_or(&"".to_string()),
-                scores.get(1).unwrap_or(&"".to_string()),
-                scores.get(2).unwrap_or(&"".to_string()),
-                scores.get(3).unwrap_or(&"".to_string()),
+                "{:<15} {:>12} {:>12} {:>12} {:>12}",
+                image,
+                scores.first().unwrap_or(&String::new()),
+                scores.get(1).unwrap_or(&String::new()),
+                scores.get(2).unwrap_or(&String::new()),
+                scores.get(3).unwrap_or(&String::new()),
             );
         }
 
+        // Print averages
+        println!("{}", "-".repeat(67));
+        let avgs: Vec<String> = totals
+            .iter()
+            .zip(counts.iter())
+            .map(|(&t, &c)| {
+                if c > 0 {
+                    format!("{:.1}", t / c as f64)
+                } else {
+                    "n/a".to_string()
+                }
+            })
+            .collect();
+
+        println!(
+            "{:<15} {:>12} {:>12} {:>12} {:>12}",
+            "AVERAGE", avgs[0], avgs[1], avgs[2], avgs[3]
+        );
+
         println!("\nNote: Higher SSIM2 scores are better (max ~100)");
+        println!("GIF is limited to 256 colors, so some degradation is expected.");
+    }
+
+    #[test]
+    fn quantizer_quality_gradients() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
+
+        // Gradients are particularly challenging for quantization
+        let path = corpus.join("imageflow/test_inputs/gradients.png");
+        if !path.exists() {
+            println!("Skipping: {} not found", path.display());
+            return;
+        }
+
+        let results = test_quantizer_quality_on_png(&path);
+
+        println!("\n=== Quantizer Quality: gradients.png (challenging) ===");
+        for result in &results {
+            if result.available {
+                if let Some(score) = result.ssim2_score {
+                    println!(
+                        "{:?}: SSIM2={:.2}, size={} bytes",
+                        result.backend,
+                        score,
+                        result.output_size.unwrap_or(0)
+                    );
+                } else {
+                    println!("{:?}: failed to process", result.backend);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quantizer_output_size_comparison() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
+
+        let test_images = ["1.png", "8.png"];
+
+        println!("\n=== Quantizer Output Size Comparison ===\n");
+        println!(
+            "{:<15} {:>12} {:>12} {:>12} {:>12}",
+            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
+        );
+        println!("{}", "-".repeat(67));
+
+        for image in test_images {
+            let path = corpus.join("kodak").join(image);
+            if !path.exists() {
+                continue;
+            }
+
+            let results = test_quantizer_quality_on_png(&path);
+
+            let sizes: Vec<String> = results
+                .iter()
+                .map(|r| {
+                    if r.available {
+                        r.output_size
+                            .map(|s| format!("{:.1}KB", s as f64 / 1024.0))
+                            .unwrap_or_else(|| "err".to_string())
+                    } else {
+                        "n/a".to_string()
+                    }
+                })
+                .collect();
+
+            println!(
+                "{:<15} {:>12} {:>12} {:>12} {:>12}",
+                image,
+                sizes.first().unwrap_or(&String::new()),
+                sizes.get(1).unwrap_or(&String::new()),
+                sizes.get(2).unwrap_or(&String::new()),
+                sizes.get(3).unwrap_or(&String::new()),
+            );
+        }
     }
 }
