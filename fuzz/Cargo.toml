@@ -15,13 +15,13 @@ arbitrary = { version = "1", features = ["derive"] }
 path = ".."
 features = ["std"]
 
-# Path deps required by zengif
+# Re-exported by zengif, but needed directly for fuzz targets
 [dependencies.enough]
-path = "../../enough/crates/enough"
+version = "0.3"
 features = ["std"]
 
 [dependencies.almost-enough]
-path = "../../enough/crates/almost-enough"
+version = "0.3"
 
 # Explicit features for fuzzing
 [features]

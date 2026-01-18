@@ -268,11 +268,7 @@ fn corpus_disposal_methods() {
             );
         }
 
-        eprintln!(
-            "Disposal test OK: {} ({} frames)",
-            filename,
-            frames.len()
-        );
+        eprintln!("Disposal test OK: {} ({} frames)", filename, frames.len());
     }
 }
 
@@ -313,7 +309,10 @@ fn corpus_interlaced_gif() {
 fn corpus_large_animation() {
     // Use the largest animation in local corpus
     let path = Path::new(LOCAL_CORPUS).join("large-gif-anim-full-frame-replace.gif");
-    assert!(path.exists(), "large-gif-anim-full-frame-replace.gif should exist in local corpus");
+    assert!(
+        path.exists(),
+        "large-gif-anim-full-frame-replace.gif should exist in local corpus"
+    );
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -445,7 +444,10 @@ const BOMBS_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/bo
 #[test]
 fn bomb_dimension_65535x65535() {
     let path = Path::new(BOMBS_CORPUS).join("dimension_bomb.gif");
-    assert!(path.exists(), "dimension_bomb.gif should exist in bombs corpus");
+    assert!(
+        path.exists(),
+        "dimension_bomb.gif should exist in bombs corpus"
+    );
 
     let data = fs::read(&path).expect("Failed to read bomb file");
     let stats = Stats::new();

@@ -486,7 +486,7 @@ impl ComposedFrame {
         }
     }
 
-    /// Convert to imgref ImgVec<RGBA8>.
+    /// Convert to imgref `ImgVec<RGBA8>`.
     #[cfg(feature = "imgref-interop")]
     pub fn into_imgvec(self) -> imgref::ImgVec<rgb::RGBA8> {
         let rgba8_pixels: Vec<rgb::RGBA8> = self
@@ -654,7 +654,7 @@ impl FrameInput {
         }
     }
 
-    /// Create from imgref ImgVec<RGBA8>.
+    /// Create from imgref `ImgVec<RGBA8>`.
     #[cfg(feature = "imgref-interop")]
     pub fn from_imgvec(delay: u16, img: imgref::ImgVec<rgb::RGBA8>) -> Self {
         let width = img.width() as u16;
@@ -673,7 +673,7 @@ impl FrameInput {
         }
     }
 
-    /// Create from imgref ImgRef<RGBA8> (copies pixels).
+    /// Create from imgref `ImgRef<RGBA8>` (copies pixels).
     #[cfg(feature = "imgref-interop")]
     pub fn from_imgref(delay: u16, img: imgref::ImgRef<'_, rgb::RGBA8>) -> Self {
         let width = img.width() as u16;

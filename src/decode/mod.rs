@@ -76,7 +76,10 @@ const GIF_HEADER_SIZE: usize = 13;
 /// This allows us to check dimensions before the gif crate allocates memory.
 /// Returns (header_bytes, width, height) on success. The header bytes must be
 /// chained back to the reader before passing to gif crate.
-fn pre_validate_header<R: Read>(reader: &mut R, limits: &Limits) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
+fn pre_validate_header<R: Read>(
+    reader: &mut R,
+    limits: &Limits,
+) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
     let mut buf = [0u8; GIF_HEADER_SIZE];
     reader.read_exact(&mut buf).map_err(|e| {
         at!(GifError::Io {

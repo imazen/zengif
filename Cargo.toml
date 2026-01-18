@@ -28,18 +28,16 @@ imgref-interop = ["imgref", "rgb-interop"]
 gif = "0.14"
 
 # Error tracing for production debugging
-# TODO: Change to crates.io version when published
-whereat = { path = "../whereat" }
+whereat = "0.1"
 
 # Cooperative cancellation
-# TODO: Change to crates.io version when published
-enough = { path = "../enough/crates/enough" }
+enough = "0.3"
 
 # Color quantization (optional, for encoding)
 imagequant = { version = "4.4", optional = true }
 
 # SIMD acceleration (optional)
-wide = { version = "0.8", optional = true }
+wide = { version = "1.1", optional = true }
 multiversed = { version = "0.1", features = ["x86-64-v4", "aarch64-sve2"], optional = true }
 
 # RGB/imgref ecosystem interop (optional)
@@ -48,8 +46,7 @@ imgref = { version = "1.12", optional = true }
 
 [dev-dependencies]
 # Testing
-# TODO: Change to crates.io version when published
-almost-enough = { path = "../enough/crates/almost-enough" }
+almost-enough = "0.3"
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [profile.release]
