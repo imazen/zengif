@@ -3,7 +3,7 @@
 use core::fmt;
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 use whereat::At;
 
@@ -323,8 +323,8 @@ impl From<crate::io::Error> for GifError {
     }
 }
 
-// Conversion from gif crate errors (requires std until gif crate fork)
-#[cfg(feature = "std")]
+// Conversion from gif crate errors
+#[cfg(feature = "gif")]
 impl From<gif::DecodingError> for GifError {
     fn from(err: gif::DecodingError) -> Self {
         use gif::DecodingError;
@@ -337,14 +337,15 @@ impl From<gif::DecodingError> for GifError {
                 context: Some("during GIF decoding"),
             },
             // Handle future variants of non-exhaustive enum
+            #[allow(unreachable_patterns)]
             _ => GifError::GifCrate {
-                message: format!("{:?}", err),
+                message: "unknown gif decoding error".to_string(),
             },
         }
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 impl From<gif::EncodingError> for GifError {
     fn from(err: gif::EncodingError) -> Self {
         use gif::EncodingError;
@@ -357,8 +358,9 @@ impl From<gif::EncodingError> for GifError {
                 context: Some("during GIF encoding"),
             },
             // Handle future variants of non-exhaustive enum
+            #[allow(unreachable_patterns)]
             _ => GifError::GifCrate {
-                message: format!("{:?}", err),
+                message: "unknown gif encoding error".to_string(),
             },
         }
     }

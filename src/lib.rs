@@ -133,26 +133,26 @@ whereat::define_at_crate_info!();
 pub mod io;
 
 // Internal modules
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 mod decode;
 mod disposal;
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 mod encode;
 mod error;
 mod limits;
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 mod quantize;
 mod screen;
 mod stats;
 mod types;
 
 // Public API
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 pub use decode::{decode_gif, Decoder, FrameIterator};
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
 #[cfg(all(
-    feature = "std",
+    feature = "gif",
     any(
         feature = "imagequant",
         feature = "quantizr",
@@ -163,14 +163,14 @@ pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
 pub use error::{GifError, Result};
 pub use limits::Limits;
-#[cfg(all(feature = "std", feature = "color_quant"))]
+#[cfg(all(feature = "gif", feature = "color_quant"))]
 pub use quantize::ColorQuantQuantizer;
-#[cfg(all(feature = "std", feature = "exoquant-deprecated"))]
+#[cfg(all(feature = "gif", feature = "exoquant-deprecated"))]
 pub use quantize::ExoquantQuantizer;
-#[cfg(all(feature = "std", feature = "imagequant"))]
+#[cfg(all(feature = "gif", feature = "imagequant"))]
 pub use quantize::ImagequantQuantizer;
 #[cfg(all(
-    feature = "std",
+    feature = "gif",
     any(
         feature = "imagequant",
         feature = "quantizr",
@@ -179,9 +179,9 @@ pub use quantize::ImagequantQuantizer;
     )
 ))]
 pub use quantize::Quantizer;
-#[cfg(all(feature = "std", feature = "quantizr"))]
+#[cfg(all(feature = "gif", feature = "quantizr"))]
 pub use quantize::QuantizrQuantizer;
-#[cfg(feature = "std")]
+#[cfg(feature = "gif")]
 pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{

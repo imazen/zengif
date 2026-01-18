@@ -230,6 +230,41 @@ pub trait ReadExt: Read + Sized {
 
 impl<T: Read> ReadExt for T {}
 
+// ============================================================================
+// std::io::Read implementations for use with gif crate in std mode
+// ============================================================================
+
+#[cfg(feature = "std")]
+impl<T: AsRef<[u8]>> std::io::Read for Cursor<T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let slice = self.inner.as_ref();
+        let pos = self.pos as usize;
+
+        if pos >= slice.len() {
+            return Ok(0);
+        }
+
+        let remaining = &slice[pos..];
+        let amt = core::cmp::min(buf.len(), remaining.len());
+        buf[..amt].copy_from_slice(&remaining[..amt]);
+        self.pos += amt as u64;
+        Ok(amt)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<A: std::io::Read, B: std::io::Read> std::io::Read for Chain<A, B> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if !self.first_done {
+            match self.first.read(buf)? {
+                0 => self.first_done = true,
+                n => return Ok(n),
+            }
+        }
+        self.second.read(buf)
+    }
+}
+
 /// Standard library I/O interoperability.
 ///
 /// Provides wrappers to use `std::io` types with `embedded_io` traits and vice versa.
@@ -309,6 +344,45 @@ pub mod std_io {
                     "embedded-io error",
                 )
             })
+        }
+    }
+}
+
+// ============================================================================
+// gif crate interop: implement gif::io::Read for our types (no_std only)
+// In std mode, gif crate has blanket impl: impl<T: std::io::Read> gif::io::Read for T
+// ============================================================================
+
+#[cfg(all(feature = "gif", not(feature = "std")))]
+mod gif_io {
+    use super::*;
+
+    impl<T: AsRef<[u8]>> gif::io::Read for Cursor<T> {
+        fn read(&mut self, buf: &mut [u8]) -> gif::io::Result<usize> {
+            let slice = self.inner.as_ref();
+            let pos = self.pos as usize;
+
+            if pos >= slice.len() {
+                return Ok(0);
+            }
+
+            let remaining = &slice[pos..];
+            let amt = core::cmp::min(buf.len(), remaining.len());
+            buf[..amt].copy_from_slice(&remaining[..amt]);
+            self.pos += amt as u64;
+            Ok(amt)
+        }
+    }
+
+    impl<A: gif::io::Read, B: gif::io::Read> gif::io::Read for Chain<A, B> {
+        fn read(&mut self, buf: &mut [u8]) -> gif::io::Result<usize> {
+            if !self.first_done {
+                match self.first.read(buf)? {
+                    0 => self.first_done = true,
+                    n => return Ok(n),
+                }
+            }
+            self.second.read(buf)
         }
     }
 }

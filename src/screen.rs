@@ -310,8 +310,8 @@ pub struct ScreenBuilder {
 
 impl ScreenBuilder {
     /// Create a new screen builder from a gif decoder.
-    #[cfg(feature = "std")]
-    pub(crate) fn from_decoder<R: std::io::Read>(decoder: &gif::Decoder<R>) -> Self {
+    #[cfg(feature = "gif")]
+    pub(crate) fn from_decoder<R: gif::io::ReadBuf>(decoder: &gif::Decoder<R>) -> Self {
         let global_palette = decoder.global_palette().map(Palette::from_rgb_bytes);
 
         Self {

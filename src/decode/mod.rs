@@ -3,7 +3,7 @@
 //! Provides a streaming decoder that produces composited RGBA frames
 //! with proper disposal method handling.
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::sync::Arc;
@@ -12,13 +12,26 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
 use std::sync::Arc;
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
-// TODO: When gif crate fork is ready, switch to crate::io types
-// For now, gif crate requires std::io
+// Use gif crate's io module
+#[cfg(not(feature = "std"))]
+use gif::io::{ErrorKind, IoError, Read};
+// Use our io module for Cursor, Chain, and ReadExt (no_std only)
+#[cfg(not(feature = "std"))]
+use crate::io::{Chain, Cursor, ReadExt};
+
+// Define a trait alias for reader bounds that works in both std and no_std
+// In std mode, gif crate requires std::io::Read via its blanket impl
+// In no_std mode, gif crate requires gif::io::Read
 #[cfg(feature = "std")]
-use std::io::{Cursor, Read};
+pub trait DecoderRead: std::io::Read {}
+#[cfg(feature = "std")]
+impl<T: std::io::Read> DecoderRead for T {}
+
+#[cfg(not(feature = "std"))]
+pub trait DecoderRead: gif::io::Read {}
+#[cfg(not(feature = "std"))]
+impl<T: gif::io::Read> DecoderRead for T {}
 
 use enough::Stop;
 use whereat::at;
@@ -46,13 +59,13 @@ use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, R
 /// For truly responsive cancellation, the gif crate would need native Stop support.
 struct StopCheckingRead<R, S: Stop> {
     inner: R,
-    bytes_read: Arc<AtomicU64>,
+    bytes_read: Arc<AtomicUsize>,
     stop: S,
 }
 
 impl<R, S: Stop> StopCheckingRead<R, S> {
-    fn new(inner: R, stop: S) -> (Self, Arc<AtomicU64>) {
-        let bytes_read = Arc::new(AtomicU64::new(0));
+    fn new(inner: R, stop: S) -> (Self, Arc<AtomicUsize>) {
+        let bytes_read = Arc::new(AtomicUsize::new(0));
         (
             Self {
                 inner,
@@ -64,19 +77,61 @@ impl<R, S: Stop> StopCheckingRead<R, S> {
     }
 }
 
+// Implement gif::io::Read for use with gif decoder (no_std only)
+// In std mode, gif crate has blanket impl: impl<T: std::io::Read> gif::io::Read for T
+// so we only need std::io::Read there
+#[cfg(not(feature = "std"))]
 impl<R: Read, S: Stop> Read for StopCheckingRead<R, S> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> gif::io::Result<usize> {
         // Check for cancellation on every read. This aligns with BufReader's 8KB refill cycle.
         // See struct doc comment for latency considerations.
         if self.stop.check().is_err() {
+            return Err(IoError::new(ErrorKind::Other)); // Interrupted
+        }
+
+        let n = self.inner.read(buf)?;
+        self.bytes_read.fetch_add(n, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
+// Implement embedded_io::Read for use with our Chain/Cursor types (no_std only)
+// In std mode, we use std::io::Read instead
+#[cfg(not(feature = "std"))]
+impl<R: Read, S: Stop> embedded_io::ErrorType for StopCheckingRead<R, S> {
+    type Error = crate::io::Error;
+}
+
+#[cfg(not(feature = "std"))]
+impl<R: Read, S: Stop> embedded_io::Read for StopCheckingRead<R, S> {
+    fn read(&mut self, buf: &mut [u8]) -> core::result::Result<usize, Self::Error> {
+        // Check for cancellation
+        if self.stop.check().is_err() {
+            return Err(crate::io::Error::new(embedded_io::ErrorKind::Other));
+        }
+
+        // Use gif::io::Read
+        let n = <Self as Read>::read(self, buf).map_err(|e| {
+            crate::io::Error::new(e.kind())
+        })?;
+        Ok(n)
+    }
+}
+
+// In std mode, also implement std::io::Read so the gif crate's blanket impl works
+#[cfg(feature = "std")]
+impl<R: std::io::Read, S: Stop> std::io::Read for StopCheckingRead<R, S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Check for cancellation
+        if self.stop.check().is_err() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Interrupted,
-                "operation cancelled",
+                "cancelled",
             ));
         }
 
         let n = self.inner.read(buf)?;
-        self.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
+        self.bytes_read.fetch_add(n, Ordering::Relaxed);
         Ok(n)
     }
 }
@@ -89,25 +144,26 @@ const GIF_HEADER_SIZE: usize = 13;
 /// This allows us to check dimensions before the gif crate allocates memory.
 /// Returns (header_bytes, width, height) on success. The header bytes must be
 /// chained back to the reader before passing to gif crate.
-fn pre_validate_header<R: Read>(
+fn pre_validate_header<R: DecoderRead>(
     reader: &mut R,
     limits: &Limits,
 ) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
     let mut buf = [0u8; GIF_HEADER_SIZE];
-    reader.read_exact(&mut buf).map_err(|e| {
-        use std::io::ErrorKind as StdKind;
-        let kind = match e.kind() {
-            StdKind::InvalidData => embedded_io::ErrorKind::InvalidData,
-            StdKind::InvalidInput => embedded_io::ErrorKind::InvalidInput,
-            StdKind::WriteZero => embedded_io::ErrorKind::WriteZero,
-            StdKind::OutOfMemory => embedded_io::ErrorKind::OutOfMemory,
-            _ => embedded_io::ErrorKind::Other,
-        };
-        at!(GifError::Io {
-            kind,
-            context: Some("reading GIF header")
-        })
-    })?;
+    #[cfg(feature = "std")]
+    {
+        reader.read_exact(&mut buf).map_err(|e| {
+            at!(GifError::from(e))
+        })?;
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        reader.read_exact(&mut buf).map_err(|e| {
+            at!(GifError::Io {
+                kind: e.kind(),
+                context: Some("reading GIF header")
+            })
+        })?;
+    }
 
     // Validate magic (GIF87a or GIF89a)
     if &buf[0..3] != b"GIF" {
@@ -132,15 +188,18 @@ fn pre_validate_header<R: Read>(
 }
 
 /// Reader type that chains the pre-read header bytes with the rest of the stream.
-// TODO: Replace with crate::io::Chain when gif crate fork is ready
 #[cfg(feature = "std")]
-type ChainedReader<R, S> = std::io::Chain<Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
+type ChainedReader<R, S> =
+    std::io::Chain<std::io::Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
+
+#[cfg(not(feature = "std"))]
+type ChainedReader<R, S> = Chain<Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
 
 /// Streaming GIF decoder.
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
-pub struct Decoder<R: Read, S: Stop + Clone> {
+pub struct Decoder<R: DecoderRead, S: Stop + Clone> {
     /// Underlying gif crate reader. Header bytes are chained back after pre-validation,
     /// and Stop is checked on every read for cancellation during LZW decompression.
     reader: gif::Decoder<ChainedReader<R, S>>,
@@ -170,7 +229,7 @@ pub struct Decoder<R: Read, S: Stop + Clone> {
     metadata: Metadata,
 
     /// Counter for compressed bytes read (for decompression ratio check).
-    bytes_read: Arc<AtomicU64>,
+    bytes_read: Arc<AtomicUsize>,
 
     /// Counter for total decompressed bytes output.
     bytes_decompressed: u64,
@@ -201,7 +260,7 @@ impl StatsRef {
 unsafe impl Send for StatsRef {}
 unsafe impl Sync for StatsRef {}
 
-impl<R: Read, S: Stop + Clone> Decoder<R, S> {
+impl<R: DecoderRead, S: Stop + Clone> Decoder<R, S> {
     /// Create a new decoder from a reader.
     ///
     /// # Arguments
@@ -220,6 +279,12 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
 
         // Chain header bytes back with the rest of the stream
+        #[cfg(feature = "std")]
+        let chained = {
+            use std::io::Read as _;
+            std::io::Cursor::new(header).chain(stop_reader)
+        };
+        #[cfg(not(feature = "std"))]
         let chained = Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
@@ -301,6 +366,12 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
 
         // Chain header bytes back with the rest of the stream
+        #[cfg(feature = "std")]
+        let chained = {
+            use std::io::Read as _;
+            std::io::Cursor::new(header).chain(stop_reader)
+        };
+        #[cfg(not(feature = "std"))]
         let chained = Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
@@ -473,7 +544,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         self.bytes_decompressed += frame_size as u64;
         let bytes_read = self.bytes_read.load(Ordering::Relaxed);
         self.limits
-            .check_decompression_ratio(bytes_read, self.bytes_decompressed)?;
+            .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
         // Create RawFrame (fallible pixel copy)
         let mut pixels = Vec::new();
@@ -569,7 +640,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         self.bytes_decompressed += frame_size as u64;
         let bytes_read = self.bytes_read.load(Ordering::Relaxed);
         self.limits
-            .check_decompression_ratio(bytes_read, self.bytes_decompressed)?;
+            .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
         // Create RawFrame (fallible pixel copy - unavoidable here)
         let mut pixels = Vec::new();
@@ -642,11 +713,11 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 }
 
 /// Iterator adapter for decoder frames.
-pub struct FrameIterator<R: Read, S: Stop + Clone> {
+pub struct FrameIterator<R: DecoderRead, S: Stop + Clone> {
     decoder: Decoder<R, S>,
 }
 
-impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
+impl<R: DecoderRead, S: Stop + Clone> Iterator for FrameIterator<R, S> {
     type Item = Result<ComposedFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -669,7 +740,10 @@ pub fn decode_gif<S: Stop + Clone>(
     stats: &Stats,
     stop: S,
 ) -> Result<(Metadata, Vec<ComposedFrame>)> {
+    #[cfg(feature = "std")]
     let cursor = std::io::Cursor::new(data);
+    #[cfg(not(feature = "std"))]
+    let cursor = Cursor::new(data);
     let mut decoder = Decoder::new(cursor, limits, stats, stop)?;
     let frames = decoder.decode_all()?;
     let mut metadata = decoder.metadata().clone();
@@ -681,6 +755,7 @@ pub fn decode_gif<S: Stop + Clone>(
 mod tests {
     use super::*;
     use enough::Unstoppable;
+    use std::io::Cursor;
 
     // A minimal valid GIF (1x1 red pixel)
     const MINIMAL_GIF: &[u8] = &[
@@ -707,7 +782,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::default();
 
-        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let cursor = Cursor::new(MINIMAL_GIF);
         let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
 
         assert_eq!(decoder.width(), 1);
@@ -728,7 +803,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::default().max_dimensions(0, 0); // No images allowed
 
-        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let cursor = Cursor::new(MINIMAL_GIF);
         let result = Decoder::new(cursor, limits, &stats, Unstoppable);
 
         assert!(result.is_err());
@@ -739,7 +814,7 @@ mod tests {
         let stats = Stats::new();
         let limits = Limits::default();
 
-        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let cursor = Cursor::new(MINIMAL_GIF);
         let decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
 
         let frames: Vec<_> = decoder.frames().collect();
@@ -766,7 +841,7 @@ mod tests {
         // larger than decompressed, which is impossible for real GIFs)
         let limits = Limits::default().max_decompression_ratio(0.01);
 
-        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let cursor = Cursor::new(MINIMAL_GIF);
         let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
 
         // Should fail due to decompression ratio exceeded
@@ -784,7 +859,7 @@ mod tests {
         // Normal ratio limit (1000x) should pass for typical GIFs
         let limits = Limits::default().max_decompression_ratio(1000.0);
 
-        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let cursor = Cursor::new(MINIMAL_GIF);
         let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
 
         // Should succeed

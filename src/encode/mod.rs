@@ -38,8 +38,9 @@ use alloc::{borrow::Cow, vec, vec::Vec};
 
 #[cfg(feature = "std")]
 use std::borrow::Cow;
-#[cfg(feature = "std")]
-use std::io::Write;
+
+// Use gif crate's Write trait for no_std compatibility
+use gif::io::Write;
 
 use enough::Stop;
 use whereat::at;
@@ -612,11 +613,11 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             if let Some(ref q) = config.quantizer {
                 q.create_backend()
             } else {
-                config.quantizer_backend.create_quantizer().ok_or_else(|| {
-                    at!(GifError::QuantizationFailed {
-                        message: "selected quantizer backend is not available"
-                    })
-                })?
+                // Try the configured backend first, fall back to auto-select if not available
+                config
+                    .quantizer_backend
+                    .create_quantizer()
+                    .unwrap_or_else(|| crate::quantize::Quantizer::auto().create_backend())
             };
 
         Ok(Self {
@@ -785,6 +786,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         }
 
         // Check frame count (including buffered frames)
+        // Count total frames including buffered ones
         #[cfg(any(
             feature = "imagequant",
             feature = "quantizr",
@@ -792,7 +794,12 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             feature = "color_quant"
         ))]
         let total_frames = self.frame_index + self.buffered_frames.len();
-        #[cfg(not(feature = "imagequant"))]
+        #[cfg(not(any(
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        )))]
         let total_frames = self.frame_index;
         self.limits.check_frame_count(total_frames)?;
 
@@ -1141,14 +1148,13 @@ pub fn encode_gif<S: Stop>(
         })
     })?;
 
-    let mut encoder = Encoder::new(&mut output, config, limits, stop)?;
+    let mut encoder = Encoder::new(output, config, limits, stop)?;
 
     for frame in frames {
         encoder.add_frame(frame)?;
     }
 
-    encoder.finish()?;
-    Ok(output)
+    encoder.finish()
 }
 
 /// Encode frames using a shared palette computed from all frames.
@@ -1173,13 +1179,29 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
     limits: Limits,
     stop: S,
 ) -> Result<Vec<u8>> {
-    encode_gif_with_quantizer(
-        frames,
-        config,
-        limits,
-        stop,
-        crate::quantize::ImagequantQuantizer::new(),
-    )
+    // Select quantizer based on available features (priority: imagequant > quantizr > color_quant > exoquant)
+    #[cfg(feature = "imagequant")]
+    let quantizer = crate::quantize::ImagequantQuantizer::new();
+
+    #[cfg(all(feature = "quantizr", not(feature = "imagequant")))]
+    let quantizer = crate::quantize::QuantizrQuantizer::new();
+
+    #[cfg(all(
+        feature = "color_quant",
+        not(feature = "imagequant"),
+        not(feature = "quantizr")
+    ))]
+    let quantizer = crate::quantize::ColorQuantQuantizer::new();
+
+    #[cfg(all(
+        feature = "exoquant-deprecated",
+        not(feature = "imagequant"),
+        not(feature = "quantizr"),
+        not(feature = "color_quant")
+    ))]
+    let quantizer = crate::quantize::ExoquantQuantizer::new();
+
+    encode_gif_with_quantizer(frames, config, limits, stop, quantizer)
 }
 
 /// Encode frames using a custom quantizer.
@@ -1240,7 +1262,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
 
     // Create encoder with global palette
     let mut gif_encoder =
-        gif::Encoder::new(&mut output, config.width, config.height, &palette_bytes)
+        gif::Encoder::new(output, config.width, config.height, &palette_bytes)
             .map_err(|e| at!(GifError::from(e)))?;
 
     // Write repeat extension
@@ -1296,8 +1318,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
         }
     }
 
-    drop(gif_encoder);
-    Ok(output)
+    gif_encoder.into_inner().map_err(|e| at!(GifError::from(e)))
 }
 
 #[cfg(test)]
