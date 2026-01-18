@@ -158,7 +158,7 @@ Choose one or more quantization backends for high-quality GIF encoding:
 
 | Feature | License | Quality | Speed | Notes |
 |---------|---------|---------|-------|-------|
-| `imagequant` | AGPL-3.0 | **Best** | Medium | **Recommended** - best quality, [commercial license available][imagequant-license] |
+| `imagequant` | AGPL-3.0 | **Best** | Medium | **Recommended** - best quality AND smallest files (LZW-aware dithering), [commercial license][imagequant-license] |
 | `quantizr` | MIT | Good | Fast | Best MIT-licensed option |
 | `color_quant` | MIT | Good | **Fastest** | High-throughput servers |
 | `exoquant-deprecated` | MIT | Good | Slow | **Deprecated** - use quantizr instead |

@@ -164,9 +164,10 @@ pub enum Quantizer {
         dithering: f32,
     },
 
-    /// Imagequant (libimagequant): Best quality, AGPL-3.0 licensed.
+    /// Imagequant (libimagequant): Best quality AND compression, AGPL-3.0 licensed.
     ///
-    /// **Recommended** - produces the best quality and smallest files.
+    /// **Recommended** - produces the best quality and smallest files thanks to
+    /// LZW-aware dithering that compresses exceptionally well.
     /// **Requires AGPL-3.0 compliance** (source disclosure).
     /// Commercial license available at <https://pngquant.org>.
     #[cfg(feature = "imagequant")]
