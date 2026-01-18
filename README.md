@@ -39,20 +39,20 @@ Existing GIF libraries leave gaps when building server-side image processing:
 ### Decoding
 
 ```rust
-use zengif::{GifDecoder, DecodeLimits, Stats};
+use zengif::{Decoder, Limits, Stats};
 use enough::Unstoppable;
 
-let limits = DecodeLimits::default()
+let limits = Limits::default()
     .max_dimensions(4096, 4096)
     .max_frame_count(1000);
 
 let stats = Stats::new();
+let cursor = std::io::Cursor::new(gif_data);
 
-let decoder = GifDecoder::new(reader, limits, &stats, Unstoppable)?;
+let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable)?;
 
-for frame in decoder.frames() {
-    let frame = frame?;
-    // frame.pixels: &[u8] - composited RGBA with disposal applied
+while let Some(frame) = decoder.next_frame()? {
+    // frame.pixels: Vec<Rgba> - composited RGBA with disposal applied
     // frame.delay: u16 - delay in centiseconds
     // frame.index: usize - frame number
 }
@@ -63,13 +63,14 @@ println!("Peak memory: {} bytes", stats.peak());
 ### Encoding
 
 ```rust
-use zengif::{GifEncoder, Stats};
+use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
 use enough::Unstoppable;
 
-let stats = Stats::new();
+let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+let limits = Limits::default();
 
-let mut encoder = GifEncoder::new(writer, width, height, &stats, Unstoppable)?
-    .with_repeat(Repeat::Infinite);
+let mut output = Vec::new();
+let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable)?;
 
 for frame in source_frames {
     encoder.add_frame(frame)?;
@@ -81,11 +82,19 @@ encoder.finish()?;
 ### Round-Trip with Metadata
 
 ```rust
-let metadata = decoder.metadata();
-let mut encoder = GifEncoder::from_metadata(writer, metadata, &stats, stop)?;
+use zengif::{Decoder, Encoder, Limits, Stats};
+use enough::Unstoppable;
 
-for frame in decoder.frames() {
-    encoder.add_composed_frame(frame?)?;
+let stats = Stats::new();
+let mut decoder = Decoder::new(reader, Limits::default(), &stats, Unstoppable)?;
+
+let metadata = decoder.metadata().clone();
+let mut encoder = Encoder::from_metadata(writer, &metadata, Limits::default(), Unstoppable)?;
+
+while let Some(frame) = decoder.next_frame()? {
+    // Re-encode the composed frame
+    let input = FrameInput::new(frame.width, frame.height, frame.delay, frame.pixels);
+    encoder.add_frame(input)?;
 }
 
 encoder.finish()?;
@@ -95,6 +104,7 @@ encoder.finish()?;
 
 ```rust
 use almost_enough::Stopper;
+use zengif::{Decoder, Limits, Stats};
 
 let stop = Stopper::new();
 let stop_clone = stop.clone();
@@ -103,7 +113,8 @@ let stop_clone = stop.clone();
 stop_clone.cancel();
 
 // Decoder will return GifError::Cancelled
-let decoder = GifDecoder::new(reader, limits, &stats, stop)?;
+let stats = Stats::new();
+let decoder = Decoder::new(reader, Limits::default(), &stats, stop)?;
 ```
 
 ## Memory Limits
@@ -111,12 +122,14 @@ let decoder = GifDecoder::new(reader, limits, &stats, stop)?;
 Protect against malicious inputs:
 
 ```rust
-let limits = DecodeLimits::default()
+use zengif::Limits;
+
+let limits = Limits::default()
     .max_dimensions(8192, 8192)           // Max canvas size
+    .max_total_pixels(67_108_864)         // Max 64M pixels per frame
     .max_frame_count(10_000)              // Max frames
     .max_file_size(500 * 1024 * 1024)     // 500 MB
-    .max_memory(1024 * 1024 * 1024)       // 1 GB peak memory
-    .max_decompression_ratio(100.0);      // Zip bomb protection
+    .max_memory(1024 * 1024 * 1024);      // 1 GB peak memory
 ```
 
 ## Error Handling
