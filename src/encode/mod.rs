@@ -643,6 +643,9 @@ pub fn encode_gif<S: Stop>(
 /// This produces better compression and eliminates palette flicker in animations
 /// by using a single global palette derived from all frames' colors.
 ///
+/// Uses imagequant's `set_background()` for frame-aware transparency optimization:
+/// pixels that match the previous frame after quantization are made transparent.
+///
 /// For round-trip encoding (decode -> encode), this combined with zero dithering
 /// significantly reduces output bloat.
 #[cfg(feature = "quantize")]
@@ -652,7 +655,30 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
     limits: Limits,
     stop: S,
 ) -> Result<Vec<u8>> {
-    use imagequant::{Attributes, Histogram};
+    encode_gif_with_quantizer(
+        frames,
+        config,
+        limits,
+        stop,
+        crate::quantize::ImagequantQuantizer::new(),
+    )
+}
+
+/// Encode frames using a custom quantizer.
+///
+/// This is the generic version that accepts any [`Quantizer`](crate::Quantizer)
+/// implementation, allowing for custom quantization algorithms.
+///
+/// See [`encode_gif_shared_palette`] for the default imagequant-based version.
+#[cfg(feature = "quantize")]
+pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::Quantizer>(
+    frames: Vec<FrameInput>,
+    config: EncoderConfig,
+    limits: Limits,
+    stop: S,
+    mut quantizer: Q,
+) -> Result<Vec<u8>> {
+    use crate::quantize::QuantizeConfig;
 
     if frames.is_empty() {
         return encode_gif(frames, config, limits, stop);
@@ -660,72 +686,23 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
 
     stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-    // Create histogram to collect colors from all frames
-    let mut attr = Attributes::new();
-    attr.set_quality(0, config.quality).map_err(|_| {
-        at!(GifError::QuantizationFailed {
-            message: "failed to set quality"
-        })
-    })?;
+    // Build quantize config from encoder config
+    let quant_config = QuantizeConfig {
+        quality: config.quality,
+        dithering: config.dithering,
+        use_background: config.use_transparency,
+    };
 
-    let mut histogram = Histogram::new(&attr);
+    // Collect frame references for shared palette building
+    let frame_refs: Vec<&[Rgba]> = frames.iter().map(|f| f.pixels.as_slice()).collect();
 
-    // Add colors from all frames to the histogram
-    for frame in &frames {
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
-
-        let rgba_slice: &[imagequant::RGBA] = unsafe {
-            std::slice::from_raw_parts(
-                frame.pixels.as_ptr() as *const imagequant::RGBA,
-                frame.pixels.len(),
-            )
-        };
-
-        let mut img = attr
-            .new_image(rgba_slice, frame.width as usize, frame.height as usize, 0.0)
-            .map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "failed to create image for histogram"
-                })
-            })?;
-
-        histogram.add_image(&attr, &mut img).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "failed to add image to histogram"
-            })
-        })?;
-    }
-
-    // Quantize the histogram to get a shared palette
-    let mut quant_result = histogram.quantize(&attr).map_err(|_| {
-        at!(GifError::QuantizationFailed {
-            message: "histogram quantization failed"
-        })
-    })?;
-
-    quant_result.set_dithering_level(config.dithering).map_err(|_| {
-        at!(GifError::QuantizationFailed {
-            message: "failed to set dithering"
-        })
-    })?;
-
-    // Get the shared palette
-    let palette = quant_result.palette();
-    let global_palette: Vec<Rgba> = palette
-        .iter()
-        .map(|c| Rgba::new(c.r, c.g, c.b, c.a))
-        .collect();
-
-    // Find transparent index in shared palette
-    let transparent_index = palette
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.a < 128)
-        .max_by_key(|(_, c)| 255 - c.a)
-        .map(|(i, _)| i as u8);
-
-    // Convert palette to bytes for gif crate
-    let palette_bytes: Vec<u8> = palette.iter().flat_map(|c| [c.r, c.g, c.b]).collect();
+    // Build shared palette from all frames
+    let palette_bytes = quantizer.build_shared_palette(
+        &frame_refs,
+        config.width,
+        config.height,
+        &quant_config,
+    )?;
 
     // Estimate output size
     let estimated_size = 1024 + frames.len() * 512;
@@ -737,107 +714,64 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
     })?;
 
     // Create encoder with global palette
-    let gif_encoder =
+    let mut gif_encoder =
         gif::Encoder::new(&mut output, config.width, config.height, &palette_bytes)
             .map_err(|e| at!(GifError::from(e)))?;
 
-    // Wrap in our encoder struct for frame handling
-    let mut encoder = Encoder {
-        encoder: gif_encoder,
-        config: EncoderConfig {
-            global_palette: Some(global_palette),
-            ..config
-        },
-        previous_frame: None,
-        frame_index: 0,
-        limits,
-        stats: Stats::new(),
-        stop: stop.clone(),
-        repeat_written: false,
-    };
-
     // Write repeat extension
-    encoder.ensure_repeat_written()?;
+    let repeat = match config.repeat {
+        Repeat::Once => None,
+        Repeat::Infinite => Some(gif::Repeat::Infinite),
+        Repeat::Count(n) => Some(gif::Repeat::Finite(n)),
+    };
+    if let Some(r) = repeat {
+        gif_encoder
+            .write_extension(gif::ExtensionData::Repetitions(r))
+            .map_err(|e| at!(GifError::from(e)))?;
+    }
 
-    // Encode each frame using the shared palette
+    // Encode each frame using the shared palette with set_background()
     let mut previous_frame: Option<Vec<Rgba>> = None;
 
-    for frame in frames {
+    for (frame_index, frame) in frames.into_iter().enumerate() {
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
-        encoder.limits.check_frame_count(encoder.frame_index)?;
+        limits.check_frame_count(frame_index)?;
 
-        // Apply frame differencing
-        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
-            if encoder.config.use_transparency {
-                if let Some(ref prev) = previous_frame {
-                    if let Some(diff) =
-                        compute_frame_diff(&frame.pixels, prev, frame.width, frame.height)
-                    {
-                        (diff.pixels, diff.left, diff.top, diff.width, diff.height)
-                    } else {
-                        (frame.pixels.clone(), 0, 0, frame.width, frame.height)
-                    }
-                } else {
-                    (frame.pixels.clone(), 0, 0, frame.width, frame.height)
-                }
-            } else {
-                (frame.pixels.clone(), 0, 0, frame.width, frame.height)
-            };
-
-        // Remap this frame's pixels to the shared palette
-        let rgba_slice: &[imagequant::RGBA] = unsafe {
-            std::slice::from_raw_parts(
-                frame_pixels.as_ptr() as *const imagequant::RGBA,
-                frame_pixels.len(),
-            )
-        };
-
-        let mut img = attr
-            .new_image(
-                rgba_slice,
-                frame_width as usize,
-                frame_height as usize,
-                0.0,
-            )
-            .map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "failed to create frame image"
-                })
-            })?;
-
-        let (_, indexed_pixels) = quant_result.remapped(&mut img).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "failed to remap frame"
-            })
-        })?;
+        // Quantize frame with previous frame as background
+        // imagequant's set_background() will make matching pixels transparent
+        let quantized = quantizer.quantize_frame_with_palette(
+            &frame.pixels,
+            frame.width,
+            frame.height,
+            previous_frame.as_deref(),
+            &quant_config,
+        )?;
 
         // Build gif frame (no local palette - uses global)
         let gif_frame = gif::Frame {
-            left: frame_left,
-            top: frame_top,
-            width: frame_width,
-            height: frame_height,
+            left: 0,
+            top: 0,
+            width: frame.width,
+            height: frame.height,
             delay: frame.delay,
             dispose: gif::DisposalMethod::Keep,
-            transparent: transparent_index,
+            transparent: quantized.transparent_index,
             palette: None, // Use global palette
-            buffer: std::borrow::Cow::Owned(indexed_pixels),
+            buffer: std::borrow::Cow::Owned(quantized.pixels),
             ..Default::default()
         };
 
-        encoder
-            .encoder
+        gif_encoder
             .write_frame(&gif_frame)
             .map_err(|e| at!(GifError::from(e)))?;
 
-        if encoder.config.use_transparency {
+        // Save for next frame's background
+        if config.use_transparency {
             previous_frame = Some(frame.pixels);
         }
-
-        encoder.frame_index += 1;
     }
 
-    encoder.finish()?;
+    drop(gif_encoder);
     Ok(output)
 }
 
