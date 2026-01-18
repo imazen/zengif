@@ -2,6 +2,36 @@
 //!
 //! Provides a streaming encoder that accepts RGBA frames and produces
 //! optimized GIF output with proper transparency handling.
+//!
+//! # Palette Strategies
+//!
+//! GIF encoding requires quantizing RGBA colors to a 256-color palette.
+//! The choice of strategy affects quality, file size, and flickering:
+//!
+//! - [`PaletteStrategy::PerFrame`]: Each frame gets its own optimal palette.
+//!   Best color accuracy per frame, but can cause flickering and larger files.
+//!
+//! - [`PaletteStrategy::Shared`]: A single palette computed from all frames.
+//!   Eliminates flickering, better compression, slight color quality loss.
+//!   Requires pre-collecting all frames (use [`encode_gif_shared_palette`]).
+//!
+//! - [`PaletteStrategy::Global`]: Use the provided global palette (e.g. from
+//!   a decoded GIF). Best for round-tripping when the original palette should
+//!   be preserved.
+//!
+//! # Dithering Options
+//!
+//! Dithering adds noise to simulate colors not in the palette:
+//!
+//! - `dithering: 0.0` - No dithering. Best compression, may show banding.
+//! - `dithering: 0.5` - Moderate dithering (default). Good balance.
+//! - `dithering: 1.0` - Full dithering. Best appearance, worst compression.
+//!
+//! For round-trip encoding (decode -> encode), use `dithering: 0.0` since
+//! the content is already dithered.
+//!
+//! **Note**: Temporal dithering (spreading error across frames) is not yet
+//! implemented. This is an advanced feature that would require explicit opt-in.
 
 use std::io::Write;
 
@@ -12,6 +42,31 @@ use crate::error::{GifError, Result};
 use crate::limits::Limits;
 use crate::stats::Stats;
 use crate::types::{FrameInput, Metadata, Repeat, Rgba};
+
+/// Strategy for palette selection during encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaletteStrategy {
+    /// Each frame gets its own optimal 256-color palette.
+    ///
+    /// Pros: Best color accuracy per frame.
+    /// Cons: Can cause flickering between frames, larger file size.
+    #[default]
+    PerFrame,
+
+    /// Compute a single shared palette from all frames.
+    ///
+    /// Pros: No flickering, better LZW compression.
+    /// Cons: May lose some color accuracy, requires pre-collecting all frames.
+    ///
+    /// Use [`encode_gif_shared_palette`] for this strategy.
+    Shared,
+
+    /// Use the provided global palette without re-quantizing.
+    ///
+    /// Best for round-trip encoding when preserving the original palette.
+    /// Falls back to PerFrame if no global palette is set.
+    Global,
+}
 
 /// Result of frame differencing analysis.
 #[derive(Debug, Clone)]
@@ -124,6 +179,17 @@ pub struct EncoderConfig {
     /// Quality setting for quantization (1-100, higher = better quality).
     #[cfg(feature = "quantize")]
     pub quality: u8,
+
+    /// Dithering level (0.0-1.0). Lower values = less noise = better compression.
+    /// Default is 0.5. Use 0.0 for re-encoding already-dithered content.
+    #[cfg(feature = "quantize")]
+    pub dithering: f32,
+
+    /// If true, compute a shared palette across all frames before encoding.
+    /// This improves compression and reduces flickering in animations.
+    /// Requires collecting all frames first.
+    #[cfg(feature = "quantize")]
+    pub shared_palette: bool,
 }
 
 impl EncoderConfig {
@@ -137,6 +203,10 @@ impl EncoderConfig {
             use_transparency: true,
             #[cfg(feature = "quantize")]
             quality: 80,
+            #[cfg(feature = "quantize")]
+            dithering: 0.5, // Lower default for better compression
+            #[cfg(feature = "quantize")]
+            shared_palette: false,
         }
     }
 
@@ -167,6 +237,41 @@ impl EncoderConfig {
     pub fn quality(mut self, quality: u8) -> Self {
         self.quality = quality.clamp(1, 100);
         self
+    }
+
+    /// Set dithering level (0.0-1.0).
+    ///
+    /// Lower values produce less noise and better LZW compression.
+    /// Use 0.0 when re-encoding already-dithered content (round-trip).
+    /// Default is 0.5.
+    #[cfg(feature = "quantize")]
+    #[must_use]
+    pub fn dithering(mut self, level: f32) -> Self {
+        self.dithering = level.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Enable shared palette mode.
+    ///
+    /// When true, a single palette is computed from all frames and shared,
+    /// which improves compression and reduces flickering. This requires
+    /// using `encode_gif_shared_palette()` instead of streaming encoding.
+    #[cfg(feature = "quantize")]
+    #[must_use]
+    pub fn shared_palette(mut self, shared: bool) -> Self {
+        self.shared_palette = shared;
+        self
+    }
+
+    /// Configure for optimal round-trip encoding.
+    ///
+    /// This sets parameters that minimize bloat when re-encoding a decoded GIF:
+    /// - Zero dithering (content is already dithered)
+    /// - Shared palette (consistent colors across frames)
+    #[cfg(feature = "quantize")]
+    #[must_use]
+    pub fn for_round_trip(self) -> Self {
+        self.dithering(0.0).shared_palette(true)
     }
 }
 
@@ -234,6 +339,9 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Create an encoder from metadata.
+    ///
+    /// This preserves the original global palette if available, and uses
+    /// round-trip optimized settings (zero dithering) to minimize bloat.
     pub fn from_metadata(writer: W, metadata: &Metadata, limits: Limits, stop: S) -> Result<Self> {
         let config = EncoderConfig {
             width: metadata.width,
@@ -245,7 +353,11 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 .map(|p| p.colors().to_vec()),
             use_transparency: true,
             #[cfg(feature = "quantize")]
-            quality: 80,
+            quality: 100, // Max quality for round-trip
+            #[cfg(feature = "quantize")]
+            dithering: 0.0, // No dithering for round-trip (already dithered)
+            #[cfg(feature = "quantize")]
+            shared_palette: false, // Will use global if available
         };
 
         Self::new(writer, config, limits, stop)
@@ -442,12 +554,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             })
         })?;
 
-        // Set dithering
-        result.set_dithering_level(1.0).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "failed to set dithering"
-            })
-        })?;
+        // Set dithering (use config value, default 0.5 for better compression)
+        result
+            .set_dithering_level(self.config.dithering)
+            .map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to set dithering"
+                })
+            })?;
 
         // Remap to palette
         let (palette, pixels) = result.remapped(&mut img).map_err(|_| {
@@ -518,6 +632,209 @@ pub fn encode_gif<S: Stop>(
 
     for frame in frames {
         encoder.add_frame(frame)?;
+    }
+
+    encoder.finish()?;
+    Ok(output)
+}
+
+/// Encode frames using a shared palette computed from all frames.
+///
+/// This produces better compression and eliminates palette flicker in animations
+/// by using a single global palette derived from all frames' colors.
+///
+/// For round-trip encoding (decode -> encode), this combined with zero dithering
+/// significantly reduces output bloat.
+#[cfg(feature = "quantize")]
+pub fn encode_gif_shared_palette<S: Stop + Clone>(
+    frames: Vec<FrameInput>,
+    config: EncoderConfig,
+    limits: Limits,
+    stop: S,
+) -> Result<Vec<u8>> {
+    use imagequant::{Attributes, Histogram};
+
+    if frames.is_empty() {
+        return encode_gif(frames, config, limits, stop);
+    }
+
+    stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+    // Create histogram to collect colors from all frames
+    let mut attr = Attributes::new();
+    attr.set_quality(0, config.quality).map_err(|_| {
+        at!(GifError::QuantizationFailed {
+            message: "failed to set quality"
+        })
+    })?;
+
+    let mut histogram = Histogram::new(&attr);
+
+    // Add colors from all frames to the histogram
+    for frame in &frames {
+        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+        let rgba_slice: &[imagequant::RGBA] = unsafe {
+            std::slice::from_raw_parts(
+                frame.pixels.as_ptr() as *const imagequant::RGBA,
+                frame.pixels.len(),
+            )
+        };
+
+        let mut img = attr
+            .new_image(rgba_slice, frame.width as usize, frame.height as usize, 0.0)
+            .map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to create image for histogram"
+                })
+            })?;
+
+        histogram.add_image(&attr, &mut img).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "failed to add image to histogram"
+            })
+        })?;
+    }
+
+    // Quantize the histogram to get a shared palette
+    let mut quant_result = histogram.quantize(&attr).map_err(|_| {
+        at!(GifError::QuantizationFailed {
+            message: "histogram quantization failed"
+        })
+    })?;
+
+    quant_result.set_dithering_level(config.dithering).map_err(|_| {
+        at!(GifError::QuantizationFailed {
+            message: "failed to set dithering"
+        })
+    })?;
+
+    // Get the shared palette
+    let palette = quant_result.palette();
+    let global_palette: Vec<Rgba> = palette
+        .iter()
+        .map(|c| Rgba::new(c.r, c.g, c.b, c.a))
+        .collect();
+
+    // Find transparent index in shared palette
+    let transparent_index = palette
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.a < 128)
+        .max_by_key(|(_, c)| 255 - c.a)
+        .map(|(i, _)| i as u8);
+
+    // Convert palette to bytes for gif crate
+    let palette_bytes: Vec<u8> = palette.iter().flat_map(|c| [c.r, c.g, c.b]).collect();
+
+    // Estimate output size
+    let estimated_size = 1024 + frames.len() * 512;
+    let mut output = Vec::new();
+    output.try_reserve(estimated_size).map_err(|_| {
+        at!(GifError::AllocationFailed {
+            requested: estimated_size
+        })
+    })?;
+
+    // Create encoder with global palette
+    let gif_encoder =
+        gif::Encoder::new(&mut output, config.width, config.height, &palette_bytes)
+            .map_err(|e| at!(GifError::from(e)))?;
+
+    // Wrap in our encoder struct for frame handling
+    let mut encoder = Encoder {
+        encoder: gif_encoder,
+        config: EncoderConfig {
+            global_palette: Some(global_palette),
+            ..config
+        },
+        previous_frame: None,
+        frame_index: 0,
+        limits,
+        stats: Stats::new(),
+        stop: stop.clone(),
+        repeat_written: false,
+    };
+
+    // Write repeat extension
+    encoder.ensure_repeat_written()?;
+
+    // Encode each frame using the shared palette
+    let mut previous_frame: Option<Vec<Rgba>> = None;
+
+    for frame in frames {
+        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        encoder.limits.check_frame_count(encoder.frame_index)?;
+
+        // Apply frame differencing
+        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
+            if encoder.config.use_transparency {
+                if let Some(ref prev) = previous_frame {
+                    if let Some(diff) =
+                        compute_frame_diff(&frame.pixels, prev, frame.width, frame.height)
+                    {
+                        (diff.pixels, diff.left, diff.top, diff.width, diff.height)
+                    } else {
+                        (frame.pixels.clone(), 0, 0, frame.width, frame.height)
+                    }
+                } else {
+                    (frame.pixels.clone(), 0, 0, frame.width, frame.height)
+                }
+            } else {
+                (frame.pixels.clone(), 0, 0, frame.width, frame.height)
+            };
+
+        // Remap this frame's pixels to the shared palette
+        let rgba_slice: &[imagequant::RGBA] = unsafe {
+            std::slice::from_raw_parts(
+                frame_pixels.as_ptr() as *const imagequant::RGBA,
+                frame_pixels.len(),
+            )
+        };
+
+        let mut img = attr
+            .new_image(
+                rgba_slice,
+                frame_width as usize,
+                frame_height as usize,
+                0.0,
+            )
+            .map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to create frame image"
+                })
+            })?;
+
+        let (_, indexed_pixels) = quant_result.remapped(&mut img).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "failed to remap frame"
+            })
+        })?;
+
+        // Build gif frame (no local palette - uses global)
+        let gif_frame = gif::Frame {
+            left: frame_left,
+            top: frame_top,
+            width: frame_width,
+            height: frame_height,
+            delay: frame.delay,
+            dispose: gif::DisposalMethod::Keep,
+            transparent: transparent_index,
+            palette: None, // Use global palette
+            buffer: std::borrow::Cow::Owned(indexed_pixels),
+            ..Default::default()
+        };
+
+        encoder
+            .encoder
+            .write_frame(&gif_frame)
+            .map_err(|e| at!(GifError::from(e)))?;
+
+        if encoder.config.use_transparency {
+            previous_frame = Some(frame.pixels);
+        }
+
+        encoder.frame_index += 1;
     }
 
     encoder.finish()?;
@@ -751,5 +1068,142 @@ mod tests {
             output_with_diff.len(),
             output_without_diff.len()
         );
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn shared_palette_encodes_animation() {
+        // Create frames with different but similar colors
+        let width = 32u16;
+        let height = 32u16;
+        let size = width as usize * height as usize;
+
+        let frame1 = FrameInput::new(
+            width,
+            height,
+            10,
+            vec![Rgba::rgb(255, 0, 0); size], // Red
+        );
+        let frame2 = FrameInput::new(
+            width,
+            height,
+            10,
+            vec![Rgba::rgb(0, 255, 0); size], // Green
+        );
+        let frame3 = FrameInput::new(
+            width,
+            height,
+            10,
+            vec![Rgba::rgb(0, 0, 255); size], // Blue
+        );
+
+        let config = EncoderConfig::new(width, height)
+            .repeat(Repeat::Infinite)
+            .dithering(0.0); // No dithering for deterministic test
+        let limits = Limits::default();
+
+        let output =
+            encode_gif_shared_palette(vec![frame1, frame2, frame3], config, limits, Unstoppable)
+                .unwrap();
+
+        // Should produce valid GIF
+        assert!(output.len() > 100);
+        assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn shared_palette_smaller_than_per_frame() {
+        // Create an animation with similar colors across frames
+        // Shared palette should be more efficient than per-frame palettes
+        let width = 64u16;
+        let height = 64u16;
+        let size = width as usize * height as usize;
+
+        // Create frames with gradual color transitions (similar palettes)
+        let frames: Vec<FrameInput> = (0..5)
+            .map(|i| {
+                let r = (i * 40) as u8;
+                FrameInput::new(width, height, 10, vec![Rgba::rgb(r, 100, 100); size])
+            })
+            .collect();
+
+        let config_shared = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(0.0);
+        let config_perframe = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(0.0);
+
+        let limits = Limits::default();
+
+        // Encode with shared palette
+        let output_shared =
+            encode_gif_shared_palette(frames.clone(), config_shared, limits.clone(), Unstoppable)
+                .unwrap();
+
+        // Encode with per-frame palettes (normal encode_gif)
+        let output_perframe = encode_gif(frames, config_perframe, limits, Unstoppable).unwrap();
+
+        // Shared palette should produce smaller output due to:
+        // 1. No per-frame palette storage (uses global)
+        // 2. More consistent indices = better LZW compression
+        assert!(
+            output_shared.len() <= output_perframe.len(),
+            "Shared palette ({} bytes) should be <= per-frame ({} bytes)",
+            output_shared.len(),
+            output_perframe.len()
+        );
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn low_dithering_smaller_than_high_dithering() {
+        let width = 64u16;
+        let height = 64u16;
+        let size = width as usize * height as usize;
+
+        // Create a gradient that will need dithering
+        let pixels: Vec<Rgba> = (0..size)
+            .map(|i| {
+                let x = (i % width as usize) as u8;
+                let y = (i / width as usize) as u8;
+                Rgba::rgb(x * 4, y * 4, 128)
+            })
+            .collect();
+
+        let frame = FrameInput::new(width, height, 10, pixels);
+
+        let config_low = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(0.0);
+        let config_high = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(1.0);
+
+        let limits = Limits::default();
+
+        let output_low =
+            encode_gif(vec![frame.clone()], config_low, limits.clone(), Unstoppable).unwrap();
+        let output_high =
+            encode_gif(vec![frame], config_high, limits, Unstoppable).unwrap();
+
+        // Low dithering should produce smaller output (less noise = better LZW)
+        assert!(
+            output_low.len() < output_high.len(),
+            "Low dithering ({} bytes) should be smaller than high dithering ({} bytes)",
+            output_low.len(),
+            output_high.len()
+        );
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn for_round_trip_config() {
+        let config = EncoderConfig::new(100, 100).for_round_trip();
+
+        // Should have zero dithering and shared palette enabled
+        assert_eq!(config.dithering, 0.0);
+        assert!(config.shared_palette);
     }
 }

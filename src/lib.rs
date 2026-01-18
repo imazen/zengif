@@ -96,7 +96,9 @@ mod types;
 
 // Public API
 pub use decode::{decode_gif, Decoder, FrameIterator};
-pub use encode::{encode_gif, Encoder, EncoderConfig};
+pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
+#[cfg(feature = "quantize")]
+pub use encode::encode_gif_shared_palette;
 pub use error::{GifError, Result};
 pub use limits::Limits;
 pub use screen::{Screen, ScreenBuilder};
