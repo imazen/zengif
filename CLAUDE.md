@@ -425,16 +425,30 @@ Round-trip bloat/degradation causes identified and fixed:
 2. Full dithering (1.0) → noise that compresses poorly
 3. No palette preservation → re-quantization artifacts
 
-**Solutions implemented in `src/encode/mod.rs`:**
-- `encode_gif_shared_palette()` - single palette from all frames via imagequant Histogram
-- Configurable `dithering` (0.0-1.0), default 0.5 (was 1.0)
-- `EncoderConfig::for_round_trip()` - zero dithering + shared palette mode
-- `Encoder::from_metadata()` uses quality=100, dithering=0.0 for round-trip
-- `PaletteStrategy` enum documents the three approaches: PerFrame, Shared, Global
+**Solutions implemented:**
+
+1. **Quantizer abstraction** (`src/quantize.rs`):
+   - `Quantizer` trait for pluggable quantization backends
+   - `ImagequantQuantizer` implementation using imagequant
+   - `encode_gif_with_quantizer()` accepts any Quantizer implementation
+   - Prepares for future custom quantizer
+
+2. **Frame-aware transparency** via `set_background()`:
+   - Uses imagequant's `Image::set_background()`
+   - Pixels matching previous frame after quantization → transparent
+   - Smarter than manual pixel comparison (considers quantization)
+   - Won't dither areas that will become transparent
+
+3. **Encoder config options** (`src/encode/mod.rs`):
+   - `encode_gif_shared_palette()` - shared palette via Histogram
+   - Configurable `dithering` (0.0-1.0), default 0.5 (was 1.0)
+   - `EncoderConfig::for_round_trip()` - zero dithering + shared palette
+   - `PaletteStrategy` enum: PerFrame, Shared, Global
 
 **Still future enhancements:**
-- Temporal dithering: spread error across frames, not just spatially (opt-in only)
+- Temporal dithering: spread error across frames (opt-in only)
 - Random vs deterministic dithering option
+- Custom quantizer implementation (API ready)
 
 ### Buffer Capacity Bug ✅ FIXED (2026-01-17)
 
