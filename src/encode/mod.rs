@@ -13,7 +13,7 @@
 //!
 //! - [`PaletteStrategy::Shared`]: A single palette computed from all frames.
 //!   Eliminates flickering, better compression, slight color quality loss.
-//!   Requires pre-collecting all frames (use [`encode_gif_shared_palette`]).
+//!   Requires pre-collecting all frames (use `encode_gif_shared_palette`).
 //!
 //! - [`PaletteStrategy::Global`]: Use the provided global palette (e.g. from
 //!   a decoded GIF). Best for round-tripping when the original palette should
@@ -59,7 +59,7 @@ pub enum PaletteStrategy {
     /// Pros: No flickering, better LZW compression.
     /// Cons: May lose some color accuracy, requires pre-collecting all frames.
     ///
-    /// Use [`encode_gif_shared_palette`] for this strategy.
+    /// Use `encode_gif_shared_palette` for this strategy.
     Shared,
 
     /// Use the provided global palette without re-quantizing.
