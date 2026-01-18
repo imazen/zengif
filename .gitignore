@@ -4,3 +4,7 @@ Cargo.lock
 *.swo
 *~
 .DS_Store
+# Profiling artifacts
+perf.data
+perf.data.old
+flamegraph.svg
