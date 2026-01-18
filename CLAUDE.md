@@ -303,9 +303,55 @@ MIT OR Apache-2.0 (dual license)
 
 (none yet - new project)
 
-## Critical TODOs
+## Current Implementation Status (for context reset)
 
-### 1. Fallible Allocations (BLOCKING for production)
+**DONE:**
+- ✅ Streaming decode/encode API (`Decoder`, `Encoder` in src/decode/mod.rs, src/encode/mod.rs)
+- ✅ All disposal methods (Keep, Background, Previous) in src/disposal.rs, src/screen.rs
+- ✅ Transparency handling during decode
+- ✅ Memory tracking via `Stats` (src/stats.rs)
+- ✅ Configurable `Limits` (src/limits.rs)
+- ✅ Cancellation via `enough` crate
+- ✅ Error tracing via `whereat` crate
+- ✅ Pre-validation of GIF headers before gif crate allocation
+- ✅ 65 passing tests (unit, cancellation, malformed, round-trip)
+- ✅ Basic example in examples/basic.rs
+
+**NOT DONE (blockers for production):**
+- ❌ Fallible allocations (28 infallible `vec![]` calls)
+- ❌ Pngquant/imagequant frame optimization
+- ❌ Frame differencing for small output
+- ❌ Decompression ratio check
+- ❌ Codec-corpus testing
+- ❌ RGB/imgref interop
+
+**Key files:**
+- `src/decode/mod.rs` - Streaming decoder with `pre_validate_header()` for zero-trust
+- `src/encode/mod.rs` - Encoder with `previous_frame` field (exists but unused)
+- `src/disposal.rs` - Disposal state machine
+- `src/screen.rs` - Canvas compositing
+- `src/stats.rs` - Memory tracking with `try_alloc()` helper
+
+## Critical TODOs (PRIORITIZED)
+
+### P0: Pngquant/Imagequant Integration (HIGH PRIORITY)
+**Status: BASIC ONLY - needs frame optimization**
+
+Current state:
+- `imagequant` is optional dependency (feature = "quantize")
+- `prepare_frame_quantized()` in src/encode/mod.rs uses imagequant
+- BUT: No frame differencing, no delta encoding, no size optimization
+
+Need to implement in src/encode/mod.rs:
+1. Compare current frame to `previous_frame` (field exists, line 95)
+2. Compute minimal bounding box of changed pixels
+3. Mark unchanged pixels as transparent
+4. Use optimal disposal method based on frame content
+5. Only encode the delta region
+
+Reference: gifski source for frame differencing algorithm
+
+### P1: Fallible Allocations (BLOCKING for production)
 **Status: NOT IMPLEMENTED**
 
 Currently using infallible `vec![]` and `Vec::new()` throughout (28 occurrences). Per global CLAUDE.md rules, all allocations must be fallible using `try_reserve()` or `Vec::try_with_capacity()`.
@@ -317,23 +363,9 @@ Files needing conversion:
 - `src/disposal.rs` - 3 infallible allocations
 - `src/types.rs` - 2 infallible allocations
 
-Only `src/stats.rs` has one `try_reserve` usage in a helper function.
+Use helper from `src/stats.rs`: `tracked_vec_with_capacity()` and `tracked_vec_filled()`.
 
-### 2. File Size Efficiency (NOT IMPLEMENTED)
-**Status: Basic encoding only - no optimizations**
-
-Current encoder does NOT:
-- Use frame differencing (only encode changed pixels)
-- Mark unchanged pixels as transparent between frames
-- Compute minimal bounding box for changed regions
-- Use optimal disposal method selection
-- Apply delta frame encoding
-
-The `previous_frame` field exists but is never used for optimization.
-
-Gifski achieves 30-50% smaller files through these techniques. Our output is likely 2-3x larger than optimal.
-
-### 3. Codec-Corpus Testing (NOT IMPLEMENTED)
+### P2: Codec-Corpus Testing
 **Status: No real-world GIF corpus testing**
 
 Should test against `codec-corpus` crate with:
@@ -342,7 +374,7 @@ Should test against `codec-corpus` crate with:
 - Malformed files from the wild
 - Performance regression tracking
 
-### 4. RGB/imgref Interop (NOT IMPLEMENTED)
+### P3: RGB/imgref Interop
 **Status: Custom Rgba type only, no ecosystem interop**
 
 Should add:
@@ -350,35 +382,61 @@ Should add:
 - `imgref::ImgVec` / `imgref::ImgRef` support
 - Feature-gated to avoid mandatory dependencies
 
-### 5. Decompression Ratio Check (NOT IMPLEMENTED)
+### P4: Decompression Ratio Check
 **Status: Limits field exists but never checked**
 
 `Limits::max_decompression_ratio` exists but the check is never performed during decode. This leaves zip-bomb protection incomplete.
 
-### 6. Color Space Documentation (INCOMPLETE)
+### P5: Color Space / Linear Alpha Blending
 **Status: sRGB assumed but undocumented**
 
 - GIF is inherently sRGB, we correctly assume sRGB input/output
 - RGBA32 (8 bits × 4 channels) is supported
 - BUT: Alpha blending in `disposal.rs` happens in sRGB space, should be linear
-- No color space conversion utilities provided
-- No documentation of color space assumptions
+- Consider using `linear-rgb` crate per global CLAUDE.md
 
 ## Investigation Notes
 
-### Gifski Performance Gap Analysis
+### Gifski Frame Optimization Algorithm
 
-Gifski achieves 30-50% smaller files through techniques we don't implement:
+To match gifski output sizes, implement in `src/encode/mod.rs`:
 
-1. **Frame differencing**: Compares consecutive frames, only encodes changed pixels
-2. **Minimal bounding box**: Shrinks frame to smallest changed region
-3. **Transparency for unchanged**: Marks unchanged pixels as transparent index
-4. **Optimal disposal selection**: Chooses Keep/Background/Previous based on frame content
-5. **Temporal dithering**: Spreads quantization error across frames
-6. **Lossy preprocessing**: Slight blur to improve compression
+```rust
+fn optimize_frame(&mut self, current: &[Rgba], previous: &[Rgba]) -> OptimizedFrame {
+    // 1. Find changed pixels
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0;
+    let mut max_y = 0;
 
-Our encoder stores `previous_frame` but never uses it. Full implementation would require:
-- Computing pixel difference mask
-- Finding bounding box of changes
-- Selecting optimal disposal method
-- Encoding only the delta region with transparency
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+            if current[idx] != previous[idx] {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    // 2. Extract delta region
+    // 3. Mark unchanged as transparent
+    // 4. Choose disposal: Keep if few changes, Background if reverting to bg
+}
+```
+
+### Pngquant Integration Points
+
+- `imagequant::Attributes` for quality settings (already used)
+- Frame-to-frame palette consistency for smoother animations
+- Temporal dithering: spread error across frames, not just spatially
+
+## Next Session Checklist
+
+1. Read this CLAUDE.md first
+2. Run `cargo test` to verify state
+3. Check `git log --oneline -5` for recent commits
+4. Priority order: P0 (pngquant optimization) → P1 (fallible allocs) → P2 (corpus testing)
+5. Key file for P0: `src/encode/mod.rs` lines 95, 229-232 (`previous_frame` handling)
