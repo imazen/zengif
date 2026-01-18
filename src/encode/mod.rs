@@ -352,8 +352,10 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 }
 
 /// Convenience function to encode frames to a byte vector.
+///
+/// Takes ownership of the frames to avoid cloning pixel buffers.
 pub fn encode_gif<S: Stop>(
-    frames: &[FrameInput],
+    frames: Vec<FrameInput>,
     config: EncoderConfig,
     limits: Limits,
     stop: S,
@@ -373,7 +375,7 @@ pub fn encode_gif<S: Stop>(
     let mut encoder = Encoder::new(&mut output, config, limits, stop)?;
 
     for frame in frames {
-        encoder.add_frame(frame.clone())?;
+        encoder.add_frame(frame)?;
     }
 
     encoder.finish()?;
@@ -448,7 +450,7 @@ mod tests {
 
         let frames = vec![make_red_frame(2, 2, 10), make_red_frame(2, 2, 10)];
 
-        let output = encode_gif(&frames, config, limits, Unstoppable).unwrap();
+        let output = encode_gif(frames, config, limits, Unstoppable).unwrap();
 
         assert!(output.len() > 10);
         assert_eq!(&output[0..6], b"GIF89a");

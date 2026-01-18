@@ -48,7 +48,7 @@ fn create_animation() -> Vec<u8> {
         .use_transparency(true); // Enable transparency optimization
 
     // Encode using convenience function
-    encode_gif(&frames, config, Limits::default(), Unstoppable).expect("Failed to encode GIF")
+    encode_gif(frames, config, Limits::default(), Unstoppable).expect("Failed to encode GIF")
 }
 
 /// Create a solid color frame.

@@ -108,16 +108,19 @@ impl Screen {
         self.background
     }
 
-    /// Process a raw frame and return the composited result.
+    /// Process a raw frame without returning composed pixels.
     ///
-    /// This applies the pending disposal from the previous frame,
-    /// blits the new frame, and sets up disposal for the next frame.
-    pub fn process_frame(
+    /// Use `pixels()` to access the composed canvas after calling this.
+    /// This avoids the memcpy overhead of `process_frame` for streaming
+    /// callers who don't need to keep frames in memory.
+    ///
+    /// Returns frame metadata (index, delay) on success.
+    pub fn process_frame_in_place(
         &mut self,
         frame: &RawFrame,
         stats: &Stats,
         limits: &Limits,
-    ) -> Result<ComposedFrame> {
+    ) -> Result<(usize, u16)> {
         // 1. Apply disposal from previous frame
         self.disposal
             .apply(&mut self.pixels, self.width, self.background, stats);
@@ -189,7 +192,27 @@ impl Screen {
             }
         }
 
-        // 6. Create the composed frame (copy of current canvas, fallible)
+        Ok((frame.index, frame.delay))
+    }
+
+    /// Process a raw frame and return the composited result.
+    ///
+    /// This applies the pending disposal from the previous frame,
+    /// blits the new frame, and sets up disposal for the next frame.
+    ///
+    /// Note: This copies the entire canvas. For streaming use cases
+    /// where frames don't need to be kept, use `process_frame_in_place`
+    /// followed by `pixels()` to avoid the copy.
+    pub fn process_frame(
+        &mut self,
+        frame: &RawFrame,
+        stats: &Stats,
+        limits: &Limits,
+    ) -> Result<ComposedFrame> {
+        // Process frame in place (does all the compositing work)
+        let (index, delay) = self.process_frame_in_place(frame, stats, limits)?;
+
+        // Create the composed frame (copy of current canvas, fallible)
         let composed_bytes = self.pixels.len() * core::mem::size_of::<Rgba>();
         stats.try_alloc(composed_bytes, limits)?;
 
@@ -204,13 +227,7 @@ impl Screen {
             })?;
         composed_pixels.extend_from_slice(&self.pixels);
 
-        let composed = ComposedFrame::new(
-            frame.index,
-            self.width,
-            self.height,
-            frame.delay,
-            composed_pixels,
-        );
+        let composed = ComposedFrame::new(index, self.width, self.height, delay, composed_pixels);
 
         Ok(composed)
     }

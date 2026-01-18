@@ -31,7 +31,7 @@ fn round_trip_single_frame() {
 
     // Encode
     let config = EncoderConfig::new(width, height).repeat(Repeat::Once);
-    let encoded = encode_gif(&[frame], config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
 
     // Decode
     let stats = Stats::new();
@@ -66,7 +66,7 @@ fn round_trip_multiple_frames() {
 
     // Encode
     let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-    let encoded = encode_gif(&frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
 
     // Decode
     let stats = Stats::new();
@@ -99,7 +99,7 @@ fn round_trip_with_transparency() {
 
     // Encode
     let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(&[frame], config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
 
     // Decode
     let stats = Stats::new();
@@ -130,7 +130,7 @@ fn round_trip_checkerboard() {
 
     // Encode
     let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(&[frame], config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
 
     // Decode
     let stats = Stats::new();
@@ -148,7 +148,7 @@ fn round_trip_preserves_metadata() {
 
     // Encode with Infinite repeat
     let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-    let encoded = encode_gif(&[frame], config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
 
     // Decode
     let stats = Stats::new();
@@ -171,7 +171,7 @@ fn memory_tracking_during_round_trip() {
 
     // Encode
     let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(&frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
 
     // Decode with stats tracking
     let stats = Stats::new();
@@ -195,7 +195,7 @@ fn streaming_decode_matches_batch() {
 
     // Encode
     let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(&frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
 
     // Batch decode
     let stats1 = Stats::new();

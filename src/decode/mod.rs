@@ -12,7 +12,7 @@ use crate::error::{GifError, Result};
 use crate::limits::Limits;
 use crate::screen::{Screen, ScreenBuilder};
 use crate::stats::Stats;
-use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat};
+use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat, Rgba};
 
 /// GIF header size: magic (6) + logical screen descriptor (7) = 13 bytes
 const GIF_HEADER_SIZE: usize = 13;
@@ -368,6 +368,95 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         self.frame_index += 1;
 
         Ok(Some(composed))
+    }
+
+    /// Process the next frame with a callback, without copying the canvas.
+    ///
+    /// This is more efficient than `next_frame()` for streaming use cases
+    /// where you don't need to keep frames in memory. The callback receives
+    /// the frame metadata and a reference to the composed pixels.
+    ///
+    /// Returns `Ok(None)` when all frames have been read.
+    ///
+    /// # Example
+    /// ```ignore
+    /// while decoder.with_next_frame(|index, delay, pixels| {
+    ///     // Process pixels without copying
+    ///     process_frame(pixels);
+    /// })?.is_some() {}
+    /// ```
+    pub fn with_next_frame<F, T>(&mut self, f: F) -> Result<Option<T>>
+    where
+        F: FnOnce(usize, u16, &[Rgba]) -> T,
+    {
+        if self.finished {
+            return Ok(None);
+        }
+
+        // Check for cancellation periodically
+        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+        // Check frame count limit
+        self.limits.check_frame_count(self.frame_index)?;
+
+        // Try to read the next frame info
+        let frame_info = match self.reader.next_frame_info() {
+            Ok(Some(info)) => info.clone(),
+            Ok(None) => {
+                self.finished = true;
+                return Ok(None);
+            }
+            Err(e) => {
+                return Err(at!(GifError::from(e)));
+            }
+        };
+
+        // Read frame pixels
+        let frame_size = frame_info.width as usize * frame_info.height as usize;
+        let buffer_slice = &mut self.pixel_buffer[..frame_size];
+        buffer_slice.fill(0);
+
+        self.reader
+            .read_into_buffer(buffer_slice)
+            .map_err(|e| at!(GifError::from(e)))?;
+
+        // Create RawFrame (fallible pixel copy - unavoidable here)
+        let mut pixels = Vec::new();
+        pixels.try_reserve(buffer_slice.len()).map_err(|_| {
+            at!(GifError::AllocationFailed {
+                requested: buffer_slice.len()
+            })
+        })?;
+        pixels.extend_from_slice(buffer_slice);
+
+        let raw_frame = RawFrame {
+            index: self.frame_index,
+            left: frame_info.left,
+            top: frame_info.top,
+            width: frame_info.width,
+            height: frame_info.height,
+            delay: frame_info.delay,
+            disposal: DisposalMethod::from(frame_info.dispose),
+            transparent: frame_info.transparent,
+            needs_user_input: frame_info.needs_user_input,
+            interlaced: frame_info.interlaced,
+            palette: frame_info
+                .palette
+                .as_ref()
+                .map(|p| Palette::from_rgb_bytes(p)),
+            pixels,
+        };
+
+        // Compose the frame in place (no canvas copy)
+        let stats = self.stats_ref.get();
+        let (index, delay) = self
+            .screen
+            .process_frame_in_place(&raw_frame, stats, &self.limits)?;
+
+        self.frame_index += 1;
+
+        // Call user callback with reference to composed pixels
+        Ok(Some(f(index, delay, self.screen.pixels())))
     }
 
     /// Create an iterator over all frames.

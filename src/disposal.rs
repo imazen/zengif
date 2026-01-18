@@ -75,11 +75,19 @@ impl Disposal {
             })?;
 
             // Extract the region from the canvas
-            for y in 0..height as usize {
-                let canvas_y = top as usize + y;
-                let row_start = canvas_y * canvas_width as usize + left as usize;
-                let row_end = row_start + width as usize;
-                saved.extend_from_slice(&canvas[row_start..row_end]);
+            // Optimize: single memcpy if region spans full canvas width
+            if left == 0 && width == canvas_width {
+                let start = top as usize * canvas_width as usize;
+                let end = start + region_size;
+                saved.extend_from_slice(&canvas[start..end]);
+            } else {
+                // Row-by-row copy for partial-width regions
+                for y in 0..height as usize {
+                    let canvas_y = top as usize + y;
+                    let row_start = canvas_y * canvas_width as usize + left as usize;
+                    let row_end = row_start + width as usize;
+                    saved.extend_from_slice(&canvas[row_start..row_end]);
+                }
             }
 
             Some(saved)
@@ -131,14 +139,22 @@ impl Disposal {
                 if let Some(saved) = self.saved_pixels.take() {
                     let byte_size = saved.len() * core::mem::size_of::<Rgba>();
 
-                    let mut src_idx = 0;
-                    for y in 0..self.height as usize {
-                        let canvas_y = self.top as usize + y;
-                        let row_start = canvas_y * canvas_width as usize + self.left as usize;
-                        let row_end = row_start + self.width as usize;
-                        canvas[row_start..row_end]
-                            .copy_from_slice(&saved[src_idx..src_idx + self.width as usize]);
-                        src_idx += self.width as usize;
+                    // Optimize: single memcpy if region spans full canvas width
+                    if self.left == 0 && self.width == canvas_width {
+                        let start = self.top as usize * canvas_width as usize;
+                        let end = start + saved.len();
+                        canvas[start..end].copy_from_slice(&saved);
+                    } else {
+                        // Row-by-row copy for partial-width regions
+                        let mut src_idx = 0;
+                        for y in 0..self.height as usize {
+                            let canvas_y = self.top as usize + y;
+                            let row_start = canvas_y * canvas_width as usize + self.left as usize;
+                            let row_end = row_start + self.width as usize;
+                            canvas[row_start..row_end]
+                                .copy_from_slice(&saved[src_idx..src_idx + self.width as usize]);
+                            src_idx += self.width as usize;
+                        }
                     }
 
                     // Track deallocation when saved pixels are dropped
