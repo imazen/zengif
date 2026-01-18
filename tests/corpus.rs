@@ -8,25 +8,45 @@ use std::fs;
 use std::path::Path;
 use zengif::{decode_gif, encode_gif, EncoderConfig, FrameInput, Limits, Stats};
 
-/// Path to the codec-corpus GIF test files
-const CORPUS_BASE: &str = "/home/lilith/work/codec-corpus";
+/// Path to external codec-corpus (optional, for extended testing)
+const EXTERNAL_CORPUS: &str = "/home/lilith/work/codec-corpus";
 
-/// Get all GIF test files from the corpus
-fn corpus_gif_files() -> Vec<std::path::PathBuf> {
+/// Path to local corpus files (committed to repo)
+const LOCAL_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/codec-corpus");
+
+/// Get all GIF test files from the local corpus (always available)
+fn local_corpus_files() -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let local_path = Path::new(LOCAL_CORPUS);
+    if local_path.exists() {
+        collect_gifs(local_path, &mut files);
+    }
+    files
+}
+
+/// Get all GIF test files from the external corpus (if available)
+fn external_corpus_files() -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
 
     // image-rs test images
-    let image_rs_base = Path::new(CORPUS_BASE).join("image-rs/test-images/gif");
+    let image_rs_base = Path::new(EXTERNAL_CORPUS).join("image-rs/test-images/gif");
     if image_rs_base.exists() {
         collect_gifs(&image_rs_base, &mut files);
     }
 
     // imageflow test inputs
-    let imageflow_base = Path::new(CORPUS_BASE).join("imageflow/test_inputs");
+    let imageflow_base = Path::new(EXTERNAL_CORPUS).join("imageflow/test_inputs");
     if imageflow_base.exists() {
         collect_gifs(&imageflow_base, &mut files);
     }
 
+    files
+}
+
+/// Get all GIF test files (local + external if available)
+fn corpus_gif_files() -> Vec<std::path::PathBuf> {
+    let mut files = local_corpus_files();
+    files.extend(external_corpus_files());
     files
 }
 
@@ -43,23 +63,13 @@ fn collect_gifs(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-/// Helper to check if corpus is available
-fn corpus_available() -> bool {
-    Path::new(CORPUS_BASE).exists()
-}
-
 #[test]
 fn corpus_decode_all_gifs() {
-    if !corpus_available() {
-        eprintln!(
-            "Skipping corpus test: codec-corpus not found at {}",
-            CORPUS_BASE
-        );
-        return;
-    }
-
     let files = corpus_gif_files();
-    assert!(!files.is_empty(), "No GIF files found in corpus");
+    assert!(
+        !files.is_empty(),
+        "No GIF files found - local corpus should always be available"
+    );
 
     let mut success_count = 0;
     let mut expected_failure_count = 0;
@@ -128,20 +138,8 @@ fn corpus_decode_all_gifs() {
 
 #[test]
 fn corpus_round_trip_animation_gifs() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
-
-    // Specifically test animated GIFs
-    let anim_dir = Path::new(CORPUS_BASE).join("image-rs/test-images/gif/anim");
-    if !anim_dir.exists() {
-        eprintln!("Skipping: animation directory not found");
-        return;
-    }
-
-    let mut files = Vec::new();
-    collect_gifs(&anim_dir, &mut files);
+    // Use local corpus (always available)
+    let files = local_corpus_files();
 
     for path in &files {
         let filename = path.file_name().unwrap().to_string_lossy();
@@ -229,23 +227,12 @@ fn corpus_round_trip_animation_gifs() {
 
 #[test]
 fn corpus_disposal_methods() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
+    // Test files specifically for disposal methods (now in local corpus)
+    let test_files = ["any-disposal.gif", "mixed-disposal.gif"];
 
-    // Test files specifically for disposal methods
-    let test_files = [
-        "image-rs/test-images/gif/anim/any-disposal.gif",
-        "image-rs/test-images/gif/anim/mixed-disposal.gif",
-    ];
-
-    for relative_path in test_files {
-        let path = Path::new(CORPUS_BASE).join(relative_path);
-        if !path.exists() {
-            eprintln!("Skipping disposal test: {} not found", relative_path);
-            continue;
-        }
+    for filename in test_files {
+        let path = Path::new(LOCAL_CORPUS).join(filename);
+        assert!(path.exists(), "Local corpus file {} should exist", filename);
 
         let data = fs::read(&path).expect("Failed to read file");
         let stats = Stats::new();
@@ -257,7 +244,7 @@ fn corpus_disposal_methods() {
         assert!(
             frames.len() > 1,
             "{}: Expected multiple frames for disposal test",
-            relative_path
+            filename
         );
 
         // Verify each frame has correct dimensions
@@ -265,25 +252,25 @@ fn corpus_disposal_methods() {
             assert_eq!(
                 frame.width, metadata.width,
                 "{}: frame {} width should match canvas",
-                relative_path, i
+                filename, i
             );
             assert_eq!(
                 frame.height, metadata.height,
                 "{}: frame {} height should match canvas",
-                relative_path, i
+                filename, i
             );
             assert_eq!(
                 frame.pixels.len(),
                 frame.width as usize * frame.height as usize,
                 "{}: frame {} pixel count should match dimensions",
-                relative_path,
+                filename,
                 i
             );
         }
 
         eprintln!(
             "Disposal test OK: {} ({} frames)",
-            relative_path,
+            filename,
             frames.len()
         );
     }
@@ -291,16 +278,8 @@ fn corpus_disposal_methods() {
 
 #[test]
 fn corpus_interlaced_gif() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
-
-    let path = Path::new(CORPUS_BASE).join("image-rs/test-images/gif/anim/interlaced.gif");
-    if !path.exists() {
-        eprintln!("Skipping interlaced test: file not found");
-        return;
-    }
+    let path = Path::new(LOCAL_CORPUS).join("interlaced.gif");
+    assert!(path.exists(), "interlaced.gif should exist in local corpus");
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -332,16 +311,9 @@ fn corpus_interlaced_gif() {
 
 #[test]
 fn corpus_large_animation() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
-
-    let path = Path::new(CORPUS_BASE).join("imageflow/test_inputs/mountain_800.gif");
-    if !path.exists() {
-        eprintln!("Skipping large animation test: file not found");
-        return;
-    }
+    // Use the largest animation in local corpus
+    let path = Path::new(LOCAL_CORPUS).join("large-gif-anim-full-frame-replace.gif");
+    assert!(path.exists(), "large-gif-anim-full-frame-replace.gif should exist in local corpus");
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -368,63 +340,39 @@ fn corpus_large_animation() {
 
 #[test]
 fn corpus_simple_gifs() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
+    // Test simple GIFs from local corpus
+    let simple_files = ["sample_1.gif", "alpha_gif_a.gif"];
 
-    let simple_dir = Path::new(CORPUS_BASE).join("image-rs/test-images/gif/simple");
-    if !simple_dir.exists() {
-        eprintln!("Skipping: simple directory not found");
-        return;
-    }
+    for filename in simple_files {
+        let path = Path::new(LOCAL_CORPUS).join(filename);
+        assert!(path.exists(), "{} should exist in local corpus", filename);
 
-    let mut files = Vec::new();
-    collect_gifs(&simple_dir, &mut files);
-
-    for path in &files {
-        let filename = path.file_name().unwrap().to_string_lossy();
-
-        // Skip known problematic files
-        if filename.contains("oversized") {
-            continue;
-        }
-
-        let data = fs::read(path).expect("Failed to read file");
+        let data = fs::read(&path).expect("Failed to read file");
         let stats = Stats::new();
         let limits = Limits::default();
 
-        match decode_gif(&data, limits, &stats, Unstoppable) {
-            Ok((metadata, frames)) => {
-                assert!(metadata.width > 0);
-                assert!(metadata.height > 0);
-                eprintln!(
-                    "Simple GIF OK: {} ({}x{}, {} frames)",
-                    filename,
-                    metadata.width,
-                    metadata.height,
-                    frames.len()
-                );
-            }
-            Err(e) => {
-                eprintln!("Simple GIF failed: {}: {:?}", filename, e);
-            }
-        }
+        let (metadata, frames) = decode_gif(&data, limits, &stats, Unstoppable)
+            .unwrap_or_else(|e| panic!("Should decode {}: {:?}", filename, e));
+
+        assert!(metadata.width > 0);
+        assert!(metadata.height > 0);
+        eprintln!(
+            "Simple GIF OK: {} ({}x{}, {} frames)",
+            filename,
+            metadata.width,
+            metadata.height,
+            frames.len()
+        );
     }
 }
 
 #[test]
 fn corpus_transparency_handling() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
-
-    let path = Path::new(CORPUS_BASE).join("image-rs/test-images/gif/simple/alpha_gif_a.gif");
-    if !path.exists() {
-        eprintln!("Skipping transparency test: file not found");
-        return;
-    }
+    let path = Path::new(LOCAL_CORPUS).join("alpha_gif_a.gif");
+    assert!(
+        path.exists(),
+        "alpha_gif_a.gif should exist in local corpus"
+    );
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -462,23 +410,18 @@ fn corpus_transparency_handling() {
 
 #[test]
 fn corpus_memory_limits_respected() {
-    if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found");
-        return;
-    }
-
-    // Use the largest test file with restrictive limits
-    let path = Path::new(CORPUS_BASE).join("imageflow/test_inputs/mountain_800.gif");
-    if !path.exists() {
-        eprintln!("Skipping memory limits test: file not found");
-        return;
-    }
+    // Use an animation file with restrictive limits
+    let path = Path::new(LOCAL_CORPUS).join("large-gif-anim-full-frame-replace.gif");
+    assert!(
+        path.exists(),
+        "large-gif-anim-full-frame-replace.gif should exist in local corpus"
+    );
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
 
-    // Set very restrictive memory limit (100 KB)
-    let limits = Limits::default().max_memory(100 * 1024);
+    // Set very restrictive memory limit (1 KB) - too small for any meaningful GIF
+    let limits = Limits::default().max_memory(1024);
 
     let result = decode_gif(&data, limits, &stats, Unstoppable);
 
@@ -495,17 +438,14 @@ fn corpus_memory_limits_respected() {
 // GIF Bomb Tests - verify our limits protect against malicious inputs
 // ============================================================================
 
-/// Path to local test corpus (checked into repo)
-const LOCAL_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus");
+/// Path to bomb test files
+const BOMBS_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/bombs");
 
 /// Test that dimension bombs are rejected before allocation
 #[test]
 fn bomb_dimension_65535x65535() {
-    let path = std::path::Path::new(LOCAL_CORPUS).join("bombs/dimension_bomb.gif");
-    if !path.exists() {
-        eprintln!("Skipping: dimension_bomb.gif not found");
-        return;
-    }
+    let path = Path::new(BOMBS_CORPUS).join("dimension_bomb.gif");
+    assert!(path.exists(), "dimension_bomb.gif should exist in bombs corpus");
 
     let data = fs::read(&path).expect("Failed to read bomb file");
     let stats = Stats::new();
@@ -541,11 +481,11 @@ fn bomb_dimension_65535x65535() {
 /// Test that slightly-over-limit dimensions are rejected
 #[test]
 fn bomb_large_dimensions() {
-    let path = std::path::Path::new(LOCAL_CORPUS).join("bombs/large_dimensions.gif");
-    if !path.exists() {
-        eprintln!("Skipping: large_dimensions.gif not found");
-        return;
-    }
+    let path = Path::new(BOMBS_CORPUS).join("large_dimensions.gif");
+    assert!(
+        path.exists(),
+        "large_dimensions.gif should exist in bombs corpus"
+    );
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -568,11 +508,8 @@ fn bomb_large_dimensions() {
 /// Test that we can decode tiny valid GIF (sanity check)
 #[test]
 fn bomb_tiny_valid_sanity() {
-    let path = std::path::Path::new(LOCAL_CORPUS).join("bombs/tiny_valid.gif");
-    if !path.exists() {
-        eprintln!("Skipping: tiny_valid.gif not found");
-        return;
-    }
+    let path = Path::new(BOMBS_CORPUS).join("tiny_valid.gif");
+    assert!(path.exists(), "tiny_valid.gif should exist in bombs corpus");
 
     let data = fs::read(&path).expect("Failed to read file");
     let stats = Stats::new();
@@ -637,11 +574,8 @@ fn bomb_decompression_ratio() {
     let limits = Limits::default().max_decompression_ratio(1.5); // Very restrictive
 
     // Use a normal corpus file which should have reasonable compression
-    let path = std::path::Path::new(LOCAL_CORPUS).join("image-rs/simple/sample_1.gif");
-    if !path.exists() {
-        eprintln!("Skipping decompression ratio test: sample_1.gif not found");
-        return;
-    }
+    let path = Path::new(LOCAL_CORPUS).join("sample_1.gif");
+    assert!(path.exists(), "sample_1.gif should exist in local corpus");
 
     let data = fs::read(&path).expect("Failed to read file");
     let result = decode_gif(&data, limits, &stats, Unstoppable);
@@ -662,36 +596,31 @@ fn bomb_decompression_ratio() {
     }
 }
 
-/// Test local corpus files from tests/corpus/image-rs
+/// Test animated GIF files from local corpus
 #[test]
-fn local_corpus_image_rs_anim() {
-    let anim_dir = std::path::Path::new(LOCAL_CORPUS).join("image-rs/anim");
-    if !anim_dir.exists() {
-        eprintln!("Skipping: local corpus anim directory not found");
-        return;
-    }
+fn local_corpus_animated() {
+    // Animated GIFs in local corpus
+    let anim_files = [
+        "any-disposal.gif",
+        "mixed-disposal.gif",
+        "interlaced.gif",
+        "large-gif-anim-combine.gif",
+        "large-gif-anim-full-frame-replace.gif",
+        "border_touching_layers.gif",
+    ];
 
-    let mut files = Vec::new();
-    collect_gifs(&anim_dir, &mut files);
-
-    let mut success = 0;
-    let mut failed = 0;
-
-    for path in &files {
-        let filename = path.file_name().unwrap().to_string_lossy();
-
-        // Skip known malformed files
-        if filename.contains("oob") || filename.contains("undersized") {
+    for filename in anim_files {
+        let path = Path::new(LOCAL_CORPUS).join(filename);
+        if !path.exists() {
             continue;
         }
 
-        let data = fs::read(path).expect("Failed to read file");
+        let data = fs::read(&path).expect("Failed to read file");
         let stats = Stats::new();
         let limits = Limits::default();
 
         match decode_gif(&data, limits, &stats, Unstoppable) {
             Ok((metadata, frames)) => {
-                success += 1;
                 eprintln!(
                     "  OK: {} ({}x{}, {} frames)",
                     filename,
@@ -701,51 +630,30 @@ fn local_corpus_image_rs_anim() {
                 );
             }
             Err(e) => {
-                failed += 1;
-                eprintln!("  FAIL: {}: {:?}", filename, e);
+                panic!("Failed to decode {}: {:?}", filename, e);
             }
         }
     }
-
-    eprintln!(
-        "Local corpus anim: {} success, {} failed of {} total",
-        success,
-        failed,
-        files.len()
-    );
-    assert!(success > 0 || files.is_empty(), "Should decode some files");
 }
 
-/// Test local corpus files from tests/corpus/image-rs/simple
+/// Test static/simple GIF files from local corpus
 #[test]
-fn local_corpus_image_rs_simple() {
-    let simple_dir = std::path::Path::new(LOCAL_CORPUS).join("image-rs/simple");
-    if !simple_dir.exists() {
-        eprintln!("Skipping: local corpus simple directory not found");
-        return;
-    }
+fn local_corpus_static() {
+    // Static GIFs in local corpus
+    let static_files = ["sample_1.gif", "alpha_gif_a.gif"];
 
-    let mut files = Vec::new();
-    collect_gifs(&simple_dir, &mut files);
-
-    let mut success = 0;
-    let mut failed = 0;
-
-    for path in &files {
-        let filename = path.file_name().unwrap().to_string_lossy();
-
-        // Skip known malformed files
-        if filename.contains("oversized") {
+    for filename in static_files {
+        let path = Path::new(LOCAL_CORPUS).join(filename);
+        if !path.exists() {
             continue;
         }
 
-        let data = fs::read(path).expect("Failed to read file");
+        let data = fs::read(&path).expect("Failed to read file");
         let stats = Stats::new();
         let limits = Limits::default();
 
         match decode_gif(&data, limits, &stats, Unstoppable) {
             Ok((metadata, frames)) => {
-                success += 1;
                 eprintln!(
                     "  OK: {} ({}x{}, {} frames)",
                     filename,
@@ -755,17 +663,8 @@ fn local_corpus_image_rs_simple() {
                 );
             }
             Err(e) => {
-                failed += 1;
-                eprintln!("  FAIL: {}: {:?}", filename, e);
+                panic!("Failed to decode {}: {:?}", filename, e);
             }
         }
     }
-
-    eprintln!(
-        "Local corpus simple: {} success, {} failed of {} total",
-        success,
-        failed,
-        files.len()
-    );
-    assert!(success > 0 || files.is_empty(), "Should decode some files");
 }

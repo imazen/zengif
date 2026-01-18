@@ -3,7 +3,7 @@
 //! Provides a streaming decoder that produces composited RGBA frames
 //! with proper disposal method handling.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{Cursor, Read};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -74,21 +74,16 @@ const GIF_HEADER_SIZE: usize = 13;
 /// Pre-validate the GIF header before passing to the gif crate.
 ///
 /// This allows us to check dimensions before the gif crate allocates memory.
-/// Returns (width, height) on success.
-fn pre_validate_header<R: BufRead>(reader: &mut R, limits: &Limits) -> Result<(u16, u16)> {
-    // Peek at the header (don't consume it)
-    let buf = reader.fill_buf().map_err(|e| {
+/// Returns (header_bytes, width, height) on success. The header bytes must be
+/// chained back to the reader before passing to gif crate.
+fn pre_validate_header<R: Read>(reader: &mut R, limits: &Limits) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
+    let mut buf = [0u8; GIF_HEADER_SIZE];
+    reader.read_exact(&mut buf).map_err(|e| {
         at!(GifError::Io {
             kind: e.kind(),
             context: Some("reading GIF header")
         })
     })?;
-
-    if buf.len() < GIF_HEADER_SIZE {
-        return Err(at!(GifError::GifCrate {
-            message: "truncated header".to_string()
-        }));
-    }
 
     // Validate magic (GIF87a or GIF89a)
     if &buf[0..3] != b"GIF" {
@@ -109,17 +104,20 @@ fn pre_validate_header<R: BufRead>(reader: &mut R, limits: &Limits) -> Result<(u
     // Pre-check dimensions BEFORE the gif crate can allocate
     limits.check_dimensions(width, height)?;
 
-    Ok((width, height))
+    Ok((buf, width, height))
 }
+
+/// Reader type that chains the pre-read header bytes with the rest of the stream.
+type ChainedReader<R, S> = std::io::Chain<Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
 
 /// Streaming GIF decoder.
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
 pub struct Decoder<R: Read, S: Stop + Clone> {
-    /// Underlying gif crate reader (wrapped in StopCheckingRead + BufReader for pre-validation).
-    /// The reader checks Stop on every 64KB read, enabling cancellation during LZW decompression.
-    reader: gif::Decoder<BufReader<StopCheckingRead<R, S>>>,
+    /// Underlying gif crate reader. Header bytes are chained back after pre-validation,
+    /// and Stop is checked on every read for cancellation during LZW decompression.
+    reader: gif::Decoder<ChainedReader<R, S>>,
 
     /// Compositing screen.
     screen: Screen,
@@ -184,17 +182,19 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     /// * `reader` - The GIF data source
     /// * `limits` - Size and memory limits
     /// * `stats` - Memory tracking statistics
-    /// * `stop` - Cancellation checker (must be Clone; checked every 64KB during LZW decode)
+    /// * `stop` - Cancellation checker (must be Clone; checked on every read)
     pub fn new(reader: R, limits: Limits, stats: &Stats, stop: S) -> Result<Self> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in StopCheckingRead to track bytes and enable cancellation during LZW decompression
-        let (stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
-        let mut buf_reader = BufReader::new(stop_reader);
+        // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
+        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
-        let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
+        let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
+
+        // Chain header bytes back with the rest of the stream
+        let chained = Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
@@ -212,7 +212,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 
         // Parse the GIF (header already validated, dimensions already checked)
         let gif_reader = options
-            .read_info(buf_reader)
+            .read_info(chained)
             .map_err(|e| at!(GifError::from(e)))?;
 
         // Extract metadata
@@ -268,12 +268,14 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in StopCheckingRead to track bytes and enable cancellation during LZW decompression
-        let (stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
-        let mut buf_reader = BufReader::new(stop_reader);
+        // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
+        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
-        let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
+        let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
+
+        // Chain header bytes back with the rest of the stream
+        let chained = Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
@@ -290,7 +292,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 
         // Parse the GIF (header already validated, dimensions already checked)
         let gif_reader = options
-            .read_info(buf_reader)
+            .read_info(chained)
             .map_err(|e| at!(GifError::from(e)))?;
 
         // Extract metadata
