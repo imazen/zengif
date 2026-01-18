@@ -95,8 +95,16 @@ fn pre_validate_header<R: Read>(
 ) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
     let mut buf = [0u8; GIF_HEADER_SIZE];
     reader.read_exact(&mut buf).map_err(|e| {
+        use std::io::ErrorKind as StdKind;
+        let kind = match e.kind() {
+            StdKind::InvalidData => embedded_io::ErrorKind::InvalidData,
+            StdKind::InvalidInput => embedded_io::ErrorKind::InvalidInput,
+            StdKind::WriteZero => embedded_io::ErrorKind::WriteZero,
+            StdKind::OutOfMemory => embedded_io::ErrorKind::OutOfMemory,
+            _ => embedded_io::ErrorKind::Other,
+        };
         at!(GifError::Io {
-            kind: e.kind(),
+            kind,
             context: Some("reading GIF header")
         })
     })?;

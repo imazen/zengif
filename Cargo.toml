@@ -35,9 +35,9 @@ rgb-interop = ["rgb"]
 imgref-interop = ["imgref", "rgb-interop"]
 
 [dependencies]
-# Core GIF codec (TODO: vendor fork with no_std support)
+# Core GIF codec (no_std fork with embedded-io)
 # We enable std and raii_no_panic but not color_quant (we use our own quantizers)
-gif = { version = "0.14", default-features = false, features = ["std", "raii_no_panic"] }
+gif = { git = "https://github.com/lilith/image-gif", default-features = false, features = ["std", "raii_no_panic"] }
 
 # no_std I/O traits
 embedded-io = { version = "0.7", default-features = false }
@@ -51,7 +51,7 @@ enough = "0.3"
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
-quantizr = { version = "1.4", optional = true }
+quantizr = { git = "https://github.com/lilith/quantizr", optional = true }
 exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
 

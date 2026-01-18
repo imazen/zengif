@@ -162,10 +162,6 @@ pub enum GifError {
     /// I/O error during read or write.
     Io {
         /// The underlying I/O error kind.
-        #[cfg(feature = "std")]
-        kind: std::io::ErrorKind,
-        /// The I/O error kind (no_std).
-        #[cfg(not(feature = "std"))]
         kind: embedded_io::ErrorKind,
         /// Optional context message.
         context: Option<&'static str>,
@@ -301,8 +297,16 @@ impl std::error::Error for GifError {}
 #[cfg(feature = "std")]
 impl From<std::io::Error> for GifError {
     fn from(err: std::io::Error) -> Self {
+        use std::io::ErrorKind as StdKind;
+        let kind = match err.kind() {
+            StdKind::InvalidData => embedded_io::ErrorKind::InvalidData,
+            StdKind::InvalidInput => embedded_io::ErrorKind::InvalidInput,
+            StdKind::WriteZero => embedded_io::ErrorKind::WriteZero,
+            StdKind::OutOfMemory => embedded_io::ErrorKind::OutOfMemory,
+            _ => embedded_io::ErrorKind::Other,
+        };
         GifError::Io {
-            kind: err.kind(),
+            kind,
             context: None,
         }
     }
