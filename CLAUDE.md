@@ -355,6 +355,30 @@ Should add:
 
 `Limits::max_decompression_ratio` exists but the check is never performed during decode. This leaves zip-bomb protection incomplete.
 
+### 6. Color Space Documentation (INCOMPLETE)
+**Status: sRGB assumed but undocumented**
+
+- GIF is inherently sRGB, we correctly assume sRGB input/output
+- RGBA32 (8 bits × 4 channels) is supported
+- BUT: Alpha blending in `disposal.rs` happens in sRGB space, should be linear
+- No color space conversion utilities provided
+- No documentation of color space assumptions
+
 ## Investigation Notes
 
-(none yet - new project)
+### Gifski Performance Gap Analysis
+
+Gifski achieves 30-50% smaller files through techniques we don't implement:
+
+1. **Frame differencing**: Compares consecutive frames, only encodes changed pixels
+2. **Minimal bounding box**: Shrinks frame to smallest changed region
+3. **Transparency for unchanged**: Marks unchanged pixels as transparent index
+4. **Optimal disposal selection**: Chooses Keep/Background/Previous based on frame content
+5. **Temporal dithering**: Spreads quantization error across frames
+6. **Lossy preprocessing**: Slight blur to improve compression
+
+Our encoder stores `previous_frame` but never uses it. Full implementation would require:
+- Computing pixel difference mask
+- Finding bounding box of changes
+- Selecting optimal disposal method
+- Encoding only the delta region with transparency
