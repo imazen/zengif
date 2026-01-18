@@ -54,7 +54,7 @@ impl Quantizer for QuantizrQuantizer {
         width: u16,
         height: u16,
         _background: Option<&[Rgba]>,
-        _config: &QuantizeConfig,
+        config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
         use quantizr::{Image, Options, QuantizeResult};
 
@@ -73,7 +73,15 @@ impl Quantizer for QuantizrQuantizer {
             })
         })?;
 
-        let result = QuantizeResult::quantize(&image, &options);
+        let mut result = QuantizeResult::quantize(&image, &options);
+
+        // Apply dithering level from config (0.0 = none, 1.0 = full)
+        // Lower dithering = smaller files but potentially more banding
+        result.set_dithering_level(config.dithering).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "invalid dithering level"
+            })
+        })?;
 
         let mut indexed = vec![0u8; width as usize * height as usize];
         result.remap_image(&image, &mut indexed).map_err(|_| {
@@ -147,7 +155,7 @@ impl Quantizer for QuantizrQuantizer {
         width: u16,
         height: u16,
         _background: Option<&[Rgba]>,
-        _config: &QuantizeConfig,
+        config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
         use quantizr::{Image, Options, QuantizeResult};
 
@@ -173,7 +181,14 @@ impl Quantizer for QuantizrQuantizer {
         })?;
 
         // Re-quantize but the palette should be similar due to histogram
-        let result = QuantizeResult::quantize(&image, &options);
+        let mut result = QuantizeResult::quantize(&image, &options);
+
+        // Apply dithering level from config
+        result.set_dithering_level(config.dithering).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "invalid dithering level"
+            })
+        })?;
 
         let mut indexed = vec![0u8; width as usize * height as usize];
         result.remap_image(&image, &mut indexed).map_err(|_| {

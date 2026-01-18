@@ -659,4 +659,85 @@ mod quality_tests {
             );
         }
     }
+
+    /// Test how dithering level affects file size for quantizr
+    #[test]
+    #[cfg(feature = "quantizr")]
+    fn quantizr_dithering_comparison() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
+
+        let path = corpus.join("kodak/1.png");
+        if !path.exists() {
+            println!("Skipping: {} not found", path.display());
+            return;
+        }
+
+        let (pixels, width, height) = match decode_png(&path) {
+            Some(data) => data,
+            None => {
+                println!("Skipping: failed to decode PNG");
+                return;
+            }
+        };
+
+        println!("\n=== Quantizr Dithering Level Comparison ===\n");
+        println!("{:<15} {:>12} {:>12} {:>12}", "Dithering", "SSIM2", "File Size", "Reduction");
+        println!("{}", "-".repeat(55));
+
+        let dither_levels = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let mut baseline_size = 0usize;
+
+        for dither in dither_levels {
+            let limits = Limits::default();
+
+            // Create encoder with specific dithering
+            let config = zengif::EncoderConfig::new(width as u16, height as u16)
+                .quantizer_backend(QuantizerBackend::Quantizr)
+                .dithering(dither);
+
+            let mut output = Vec::new();
+            let mut encoder = zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable)
+                .expect("encoder creation failed");
+
+            let input = zengif::FrameInput::new(width as u16, height as u16, 100, pixels.clone());
+            encoder.add_frame(input).expect("add_frame failed");
+            encoder.finish().expect("finish failed");
+
+            let output_size = output.len();
+            if dither == 1.0 {
+                baseline_size = output_size;
+            }
+
+            // Decode and measure quality
+            let stats = Stats::new();
+            let (_, decoded_frames) = zengif::decode_gif(&output, limits, &stats, Unstoppable)
+                .expect("decode failed");
+
+            let ssim2 = if !decoded_frames.is_empty() {
+                calculate_ssim2(&pixels, &decoded_frames[0].pixels, width as usize, height as usize)
+            } else {
+                0.0
+            };
+
+            let reduction = if baseline_size > 0 {
+                format!("{:+.1}%", (output_size as f64 / baseline_size as f64 - 1.0) * 100.0)
+            } else {
+                "baseline".to_string()
+            };
+
+            println!(
+                "{:<15} {:>12.2} {:>10.1}KB {:>12}",
+                format!("{:.2}", dither),
+                ssim2,
+                output_size as f64 / 1024.0,
+                reduction
+            );
+        }
+
+        println!("\nNote: Lower dithering = smaller files, but may show banding.");
+        println!("      Higher dithering = larger files, smoother gradients.");
+    }
 }
