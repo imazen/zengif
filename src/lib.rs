@@ -133,55 +133,43 @@ whereat::define_at_crate_info!();
 pub mod io;
 
 // Internal modules
-#[cfg(feature = "gif")]
 mod decode;
 mod disposal;
-#[cfg(feature = "gif")]
 mod encode;
 mod error;
 mod limits;
-#[cfg(feature = "gif")]
 mod quantize;
 mod screen;
 mod stats;
 mod types;
 
 // Public API
-#[cfg(feature = "gif")]
-pub use decode::{decode_gif, Decoder, FrameIterator};
-#[cfg(feature = "gif")]
+pub use decode::{decode_gif, Decoder, DecoderRead, FrameIterator};
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
-#[cfg(all(
-    feature = "gif",
-    any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    )
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
 ))]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
 pub use error::{GifError, Result};
 pub use limits::Limits;
-#[cfg(all(feature = "gif", feature = "color_quant"))]
+#[cfg(feature = "color_quant")]
 pub use quantize::ColorQuantQuantizer;
-#[cfg(all(feature = "gif", feature = "exoquant-deprecated"))]
+#[cfg(feature = "exoquant-deprecated")]
 pub use quantize::ExoquantQuantizer;
-#[cfg(all(feature = "gif", feature = "imagequant"))]
+#[cfg(feature = "imagequant")]
 pub use quantize::ImagequantQuantizer;
-#[cfg(all(
-    feature = "gif",
-    any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    )
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
 ))]
 pub use quantize::Quantizer;
-#[cfg(all(feature = "gif", feature = "quantizr"))]
+#[cfg(feature = "quantizr")]
 pub use quantize::QuantizrQuantizer;
-#[cfg(feature = "gif")]
 pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{

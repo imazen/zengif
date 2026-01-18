@@ -179,7 +179,7 @@ impl DisposalMethod {
     }
 }
 
-#[cfg(feature = "gif")]
+
 impl From<gif::DisposalMethod> for DisposalMethod {
     fn from(d: gif::DisposalMethod) -> Self {
         match d {
@@ -209,7 +209,7 @@ pub enum Repeat {
     Count(u16),
 }
 
-#[cfg(feature = "gif")]
+
 impl From<gif::Repeat> for Repeat {
     fn from(r: gif::Repeat) -> Self {
         match r {

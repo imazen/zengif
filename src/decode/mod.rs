@@ -20,14 +20,19 @@ use gif::io::{ErrorKind, IoError, Read};
 #[cfg(not(feature = "std"))]
 use crate::io::{Chain, Cursor, ReadExt};
 
-// Define a trait alias for reader bounds that works in both std and no_std
-// In std mode, gif crate requires std::io::Read via its blanket impl
-// In no_std mode, gif crate requires gif::io::Read
+/// Trait alias for reader types compatible with the decoder.
+///
+/// In `std` mode, this requires [`std::io::Read`].
+/// In `no_std` mode, this requires [`gif::io::Read`] (which is `embedded_io::Read`).
 #[cfg(feature = "std")]
 pub trait DecoderRead: std::io::Read {}
 #[cfg(feature = "std")]
 impl<T: std::io::Read> DecoderRead for T {}
 
+/// Trait alias for reader types compatible with the decoder.
+///
+/// In `std` mode, this requires [`std::io::Read`].
+/// In `no_std` mode, this requires [`gif::io::Read`] (which is `embedded_io::Read`).
 #[cfg(not(feature = "std"))]
 pub trait DecoderRead: gif::io::Read {}
 #[cfg(not(feature = "std"))]

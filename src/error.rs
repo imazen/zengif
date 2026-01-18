@@ -324,7 +324,7 @@ impl From<crate::io::Error> for GifError {
 }
 
 // Conversion from gif crate errors
-#[cfg(feature = "gif")]
+
 impl From<gif::DecodingError> for GifError {
     fn from(err: gif::DecodingError) -> Self {
         use gif::DecodingError;
@@ -345,7 +345,7 @@ impl From<gif::DecodingError> for GifError {
     }
 }
 
-#[cfg(feature = "gif")]
+
 impl From<gif::EncodingError> for GifError {
     fn from(err: gif::EncodingError) -> Self {
         use gif::EncodingError;

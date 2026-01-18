@@ -353,7 +353,7 @@ pub mod std_io {
 // In std mode, gif crate has blanket impl: impl<T: std::io::Read> gif::io::Read for T
 // ============================================================================
 
-#[cfg(all(feature = "gif", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 mod gif_io {
     use super::*;
 

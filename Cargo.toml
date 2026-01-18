@@ -13,9 +13,8 @@ readme = "README.md"
 
 [features]
 default = ["std"]
-std = ["alloc", "enough/std", "whereat/std", "embedded-io-adapters/std", "gif", "gif/std"]
-alloc = ["embedded-io/alloc", "gif"]
-gif = ["dep:gif"]
+std = ["alloc", "enough/std", "whereat/std", "embedded-io-adapters/std", "gif/std"]
+alloc = ["embedded-io/alloc"]
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
 
@@ -38,7 +37,7 @@ imgref-interop = ["imgref", "rgb-interop"]
 [dependencies]
 # Core GIF codec (no_std fork with embedded-io)
 # We use raii_no_panic but not color_quant (we use our own quantizers)
-gif = { git = "https://github.com/lilith/image-gif", default-features = false, features = ["raii_no_panic"], optional = true }
+gif = { git = "https://github.com/lilith/image-gif", default-features = false, features = ["raii_no_panic"] }
 
 # no_std I/O traits
 embedded-io = { version = "0.7", default-features = false }
