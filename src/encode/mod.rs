@@ -667,8 +667,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             .flat_map(|p| [p.r, p.g, p.b, p.a])
             .collect();
 
-        let mut frame =
-            gif::Frame::from_rgba_speed(frame_width, frame_height, &mut rgba_bytes, 10);
+        let mut frame = gif::Frame::from_rgba_speed(frame_width, frame_height, &mut rgba_bytes, 10);
 
         frame.left = frame_left;
         frame.top = frame_top;
@@ -743,7 +742,11 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 background,
                 &quant_config,
             )?;
-            (quantized.palette, quantized.pixels, quantized.transparent_index)
+            (
+                quantized.palette,
+                quantized.pixels,
+                quantized.transparent_index,
+            )
         } else {
             // Per-frame quantization
             let background = self.previous_frame.as_deref();
@@ -754,7 +757,11 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 background,
                 &quant_config,
             )?;
-            (quantized.palette, quantized.pixels, quantized.transparent_index)
+            (
+                quantized.palette,
+                quantized.pixels,
+                quantized.transparent_index,
+            )
         };
 
         let frame = gif::Frame {
@@ -1161,7 +1168,8 @@ mod tests {
 
         let output_with_diff = {
             let mut output = Vec::new();
-            let mut encoder = Encoder::new(&mut output, config.clone(), limits.clone(), Unstoppable).unwrap();
+            let mut encoder =
+                Encoder::new(&mut output, config.clone(), limits.clone(), Unstoppable).unwrap();
             encoder.add_frame(frame1.clone()).unwrap();
             encoder.add_frame(frame2.clone()).unwrap();
             encoder.finish().unwrap();
@@ -1172,7 +1180,8 @@ mod tests {
         let config_no_opt = config.use_transparency(false);
         let output_without_diff = {
             let mut output = Vec::new();
-            let mut encoder = Encoder::new(&mut output, config_no_opt, limits, Unstoppable).unwrap();
+            let mut encoder =
+                Encoder::new(&mut output, config_no_opt, limits, Unstoppable).unwrap();
             encoder.add_frame(frame1).unwrap();
             encoder.add_frame(frame2).unwrap();
             encoder.finish().unwrap();
@@ -1304,8 +1313,7 @@ mod tests {
 
         let output_low =
             encode_gif(vec![frame.clone()], config_low, limits.clone(), Unstoppable).unwrap();
-        let output_high =
-            encode_gif(vec![frame], config_high, limits, Unstoppable).unwrap();
+        let output_high = encode_gif(vec![frame], config_high, limits, Unstoppable).unwrap();
 
         // Low dithering should produce smaller output (less noise = better LZW)
         assert!(
@@ -1391,7 +1399,7 @@ mod tests {
             .repeat(Repeat::Once)
             .shared_palette(true)
             .max_buffer_frames(1000) // High frame limit
-            .max_buffer_bytes(100);  // Low memory limit (~1 frame = 64 bytes RGBA)
+            .max_buffer_bytes(100); // Low memory limit (~1 frame = 64 bytes RGBA)
 
         let limits = Limits::default();
 
@@ -1417,17 +1425,17 @@ mod tests {
 
         // Create a simple 4-color palette
         let palette = Palette::from_rgba(vec![
-            Rgba::rgb(255, 0, 0),   // 0: red
-            Rgba::rgb(0, 255, 0),   // 1: green
-            Rgba::rgb(0, 0, 255),   // 2: blue
+            Rgba::rgb(255, 0, 0),  // 0: red
+            Rgba::rgb(0, 255, 0),  // 1: green
+            Rgba::rgb(0, 0, 255),  // 2: blue
             Rgba::new(0, 0, 0, 0), // 3: transparent
         ]);
 
         // Create pixels using palette colors
         let pixels = vec![
-            Rgba::rgb(255, 0, 0), // red
-            Rgba::rgb(0, 255, 0), // green
-            Rgba::rgb(0, 0, 255), // blue
+            Rgba::rgb(255, 0, 0),  // red
+            Rgba::rgb(0, 255, 0),  // green
+            Rgba::rgb(0, 0, 255),  // blue
             Rgba::new(0, 0, 0, 0), // transparent
         ];
 
@@ -1453,10 +1461,10 @@ mod tests {
 
         // Create a simple palette
         let palette = Palette::from_rgba(vec![
-            Rgba::rgb(255, 0, 0),     // 0: red
-            Rgba::rgb(0, 255, 0),     // 1: green
-            Rgba::rgb(0, 0, 255),     // 2: blue
-            Rgba::new(0, 0, 0, 0),   // 3: transparent
+            Rgba::rgb(255, 0, 0),  // 0: red
+            Rgba::rgb(0, 255, 0),  // 1: green
+            Rgba::rgb(0, 0, 255),  // 2: blue
+            Rgba::new(0, 0, 0, 0), // 3: transparent
         ]);
 
         // Test exact matches

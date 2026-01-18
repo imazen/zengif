@@ -128,7 +128,11 @@ impl From<Rgba> for rgb::RGB8 {
     /// Note: Alpha channel is discarded.
     #[inline]
     fn from(c: Rgba) -> Self {
-        rgb::RGB8 { r: c.r, g: c.g, b: c.b }
+        rgb::RGB8 {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+        }
     }
 }
 

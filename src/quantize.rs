@@ -564,9 +564,7 @@ mod tests {
         };
 
         // Create frames with partially identical content
-        let frame1: Vec<Rgba> = (0..64)
-            .map(|i| Rgba::rgb(i as u8 * 4, 0, 0))
-            .collect();
+        let frame1: Vec<Rgba> = (0..64).map(|i| Rgba::rgb(i as u8 * 4, 0, 0)).collect();
         let mut frame2 = frame1.clone();
         // Change only a few pixels
         frame2[0] = Rgba::rgb(0, 255, 0);
@@ -605,7 +603,10 @@ mod tests {
     #[test]
     fn compute_sample_indices_all_frames() {
         // None means use all frames
-        assert_eq!(compute_sample_indices(10, None), (0..10).collect::<Vec<_>>());
+        assert_eq!(
+            compute_sample_indices(10, None),
+            (0..10).collect::<Vec<_>>()
+        );
         assert_eq!(compute_sample_indices(3, None), vec![0, 1, 2]);
     }
 

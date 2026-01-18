@@ -100,11 +100,11 @@ pub use decode::{decode_gif, Decoder, FrameIterator};
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
 #[cfg(feature = "quantize")]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
-pub use quantize::{QuantizeConfig, QuantizedFrame, Quantizer};
-#[cfg(feature = "quantize")]
-pub use quantize::ImagequantQuantizer;
 pub use error::{GifError, Result};
 pub use limits::Limits;
+#[cfg(feature = "quantize")]
+pub use quantize::ImagequantQuantizer;
+pub use quantize::{QuantizeConfig, QuantizedFrame, Quantizer};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{
     tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc,

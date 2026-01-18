@@ -51,7 +51,10 @@ fn corpus_available() -> bool {
 #[test]
 fn corpus_decode_all_gifs() {
     if !corpus_available() {
-        eprintln!("Skipping corpus test: codec-corpus not found at {}", CORPUS_BASE);
+        eprintln!(
+            "Skipping corpus test: codec-corpus not found at {}",
+            CORPUS_BASE
+        );
         return;
     }
 
@@ -273,7 +276,8 @@ fn corpus_disposal_methods() {
                 frame.pixels.len(),
                 frame.width as usize * frame.height as usize,
                 "{}: frame {} pixel count should match dimensions",
-                relative_path, i
+                relative_path,
+                i
             );
         }
 
@@ -608,7 +612,10 @@ fn bomb_total_pixels_limit() {
 
     let result = decode_gif(&data, limits, &stats, Unstoppable);
 
-    assert!(result.is_err(), "100 megapixel image should exceed 50MP limit");
+    assert!(
+        result.is_err(),
+        "100 megapixel image should exceed 50MP limit"
+    );
 
     let err = result.unwrap_err();
     let err_str = format!("{:?}", err);

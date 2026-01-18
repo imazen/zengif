@@ -262,13 +262,18 @@ fn round_trip_vflip_with_palette_passthrough() {
 
     // Step 1: Encode original
     let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-    let encoded1 = encode_gif(original_frames, config.clone(), Limits::default(), Unstoppable)
-        .expect("Initial encode failed");
+    let encoded1 = encode_gif(
+        original_frames,
+        config.clone(),
+        Limits::default(),
+        Unstoppable,
+    )
+    .expect("Initial encode failed");
 
     // Step 2: Decode
     let stats1 = Stats::new();
-    let (metadata1, frames1) =
-        decode_gif(&encoded1, Limits::default(), &stats1, Unstoppable).expect("First decode failed");
+    let (metadata1, frames1) = decode_gif(&encoded1, Limits::default(), &stats1, Unstoppable)
+        .expect("First decode failed");
 
     assert_eq!(frames1.len(), 3);
 
@@ -290,7 +295,13 @@ fn round_trip_vflip_with_palette_passthrough() {
 
             // Use palette pass-through
             if let Some(ref palette) = frame.palette {
-                FrameInput::with_palette(frame.width, frame.height, frame.delay, pixels, palette.clone())
+                FrameInput::with_palette(
+                    frame.width,
+                    frame.height,
+                    frame.delay,
+                    pixels,
+                    palette.clone(),
+                )
             } else {
                 FrameInput::new(frame.width, frame.height, frame.delay, pixels)
             }
@@ -298,13 +309,18 @@ fn round_trip_vflip_with_palette_passthrough() {
         .collect();
 
     let config2 = EncoderConfig::new(metadata1.width, metadata1.height).repeat(metadata1.repeat);
-    let encoded2 = encode_gif(flipped_frames, config2.clone(), Limits::default(), Unstoppable)
-        .expect("Flipped encode failed");
+    let encoded2 = encode_gif(
+        flipped_frames,
+        config2.clone(),
+        Limits::default(),
+        Unstoppable,
+    )
+    .expect("Flipped encode failed");
 
     // Step 4: Decode flipped
     let stats2 = Stats::new();
-    let (_, frames2) =
-        decode_gif(&encoded2, Limits::default(), &stats2, Unstoppable).expect("Second decode failed");
+    let (_, frames2) = decode_gif(&encoded2, Limits::default(), &stats2, Unstoppable)
+        .expect("Second decode failed");
 
     assert_eq!(frames2.len(), 3);
 
@@ -316,7 +332,13 @@ fn round_trip_vflip_with_palette_passthrough() {
             vflip(&mut pixels, frame.width as usize, frame.height as usize);
 
             if let Some(ref palette) = frame.palette {
-                FrameInput::with_palette(frame.width, frame.height, frame.delay, pixels, palette.clone())
+                FrameInput::with_palette(
+                    frame.width,
+                    frame.height,
+                    frame.delay,
+                    pixels,
+                    palette.clone(),
+                )
             } else {
                 FrameInput::new(frame.width, frame.height, frame.delay, pixels)
             }
@@ -328,8 +350,8 @@ fn round_trip_vflip_with_palette_passthrough() {
 
     // Step 6: Decode final
     let stats3 = Stats::new();
-    let (_, frames3) =
-        decode_gif(&encoded3, Limits::default(), &stats3, Unstoppable).expect("Final decode failed");
+    let (_, frames3) = decode_gif(&encoded3, Limits::default(), &stats3, Unstoppable)
+        .expect("Final decode failed");
 
     assert_eq!(frames3.len(), 3);
 

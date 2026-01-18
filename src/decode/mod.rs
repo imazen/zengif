@@ -21,13 +21,20 @@ use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, R
 /// Used to:
 /// 1. Track compressed input size for decompression ratio checks
 /// 2. Check Stop on every read, enabling cancellation during LZW decompression
+///
+/// # Cancellation Latency
+///
+/// The gif crate internally uses a BufReader (8KB default). Once data is buffered,
+/// LZW decompression proceeds without further reads. This means:
+/// - We check Stop every time BufReader refills (~8KB of compressed data)
+/// - During LZW decompression of that 8KB, we cannot cancel
+/// - For adversarial input (high compression ratio), latency could be significant
+///
+/// For truly responsive cancellation, the gif crate would need native Stop support.
 struct StopCheckingRead<R, S: Stop> {
     inner: R,
     bytes_read: Arc<AtomicU64>,
     stop: S,
-    /// Only check stop every N bytes to reduce overhead
-    check_interval: u64,
-    bytes_since_check: u64,
 }
 
 impl<R, S: Stop> StopCheckingRead<R, S> {
@@ -38,8 +45,6 @@ impl<R, S: Stop> StopCheckingRead<R, S> {
                 inner,
                 bytes_read: Arc::clone(&bytes_read),
                 stop,
-                check_interval: 64 * 1024, // Check every 64KB
-                bytes_since_check: 0,
             },
             bytes_read,
         )
@@ -48,16 +53,13 @@ impl<R, S: Stop> StopCheckingRead<R, S> {
 
 impl<R: Read, S: Stop> Read for StopCheckingRead<R, S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // Check for cancellation periodically (not on every read for performance)
-        self.bytes_since_check += buf.len() as u64;
-        if self.bytes_since_check >= self.check_interval {
-            self.bytes_since_check = 0;
-            if self.stop.check().is_err() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "operation cancelled",
-                ));
-            }
+        // Check for cancellation on every read. This aligns with BufReader's 8KB refill cycle.
+        // See struct doc comment for latency considerations.
+        if self.stop.check().is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "operation cancelled",
+            ));
         }
 
         let n = self.inner.read(buf)?;
