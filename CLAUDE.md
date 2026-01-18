@@ -366,14 +366,20 @@ Pattern used: `stats.try_alloc()` check + `vec.try_reserve()` + `AllocationFaile
 
 Note: `src/types.rs` Palette allocations remain infallible as palettes are bounded to 256 colors (~1KB max).
 
-### P2: Codec-Corpus Testing
-**Status: No real-world GIF corpus testing**
+### P2: Codec-Corpus Testing ✅ DONE
+**Status: IMPLEMENTED (2026-01-17)**
 
-Should test against `codec-corpus` crate with:
-- Real-world GIF samples
-- Edge case files
-- Malformed files from the wild
-- Performance regression tracking
+Tests in `tests/corpus.rs` validate against real-world GIF files from `/home/lilith/work/codec-corpus`:
+- 12 GIF files tested (image-rs test-images + imageflow inputs)
+- Decode all: verifies all files decode without panicking
+- Round-trip: animated GIFs preserve frame count, dimensions, delays
+- Disposal methods: any-disposal.gif, mixed-disposal.gif
+- Interlaced: interlaced.gif handling
+- Large animation: mountain_800.gif with memory tracking
+- Memory limits: enforced correctly
+- Transparency: alpha_gif_a.gif handling
+
+Also fixed buffer capacity bug discovered during testing: frames can have different dimensions than canvas, so buffer is now resized dynamically via `ensure_buffer_capacity()`.
 
 ### P3: RGB/imgref Interop ✅ DONE
 **Status: IMPLEMENTED (2026-01-17)**
@@ -416,10 +422,25 @@ See P0 section above for details.
 - Frame-to-frame palette consistency for smoother animations (future enhancement)
 - Temporal dithering: spread error across frames, not just spatially (future enhancement)
 
+### Buffer Capacity Bug ✅ FIXED (2026-01-17)
+
+Discovered during corpus testing: GIF frames can have different dimensions than the canvas.
+The pixel buffer was initially sized to canvas dimensions, but frames could be larger,
+causing a panic when accessing beyond buffer bounds.
+
+Fix: Added `ensure_buffer_capacity()` in `src/decode/mod.rs` that:
+1. Checks if current buffer is large enough for the frame
+2. If not, tracks the additional allocation via stats
+3. Uses `try_reserve()` for fallible allocation
+4. Resizes the buffer to accommodate the frame
+
+This maintains the memory tracking invariants while handling variable-size frames.
+
 ## Next Session Checklist
 
 1. Read this CLAUDE.md first
-2. Run `cargo test` to verify state
+2. Run `cargo test` to verify state (80+ tests should pass)
 3. Check `git log --oneline -5` for recent commits
-4. Priority order: P2 (corpus testing) → P5 (linear alpha blending)
-5. Comment extraction blocked by gif crate limitation
+4. All prioritized TODOs (P0-P5) are now complete
+5. Future enhancements: temporal dithering, frame-to-frame palette consistency
+6. Comment extraction blocked by gif crate limitation (won't fix)
