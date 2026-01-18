@@ -13,6 +13,96 @@ use crate::limits::Limits;
 use crate::stats::Stats;
 use crate::types::{FrameInput, Metadata, Repeat, Rgba};
 
+/// Result of frame differencing analysis.
+#[derive(Debug, Clone)]
+struct DiffResult {
+    /// Left offset of the changed region.
+    left: u16,
+    /// Top offset of the changed region.
+    top: u16,
+    /// Width of the changed region.
+    width: u16,
+    /// Height of the changed region.
+    height: u16,
+    /// Pixels for the changed region with unchanged pixels marked transparent.
+    pixels: Vec<Rgba>,
+}
+
+/// Compare current frame to previous and find the minimal changed region.
+///
+/// Returns None if the entire frame has changed (no optimization possible).
+fn compute_frame_diff(
+    current: &[Rgba],
+    previous: &[Rgba],
+    width: u16,
+    height: u16,
+) -> Option<DiffResult> {
+    let w = width as usize;
+    let h = height as usize;
+
+    // Find bounding box of changed pixels
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0;
+    let mut max_y = 0;
+
+    for y in 0..h {
+        for x in 0..w {
+            let idx = y * w + x;
+            if current[idx] != previous[idx] {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    // No changes at all - shouldn't happen in practice but handle gracefully
+    if min_x > max_x || min_y > max_y {
+        // Emit a 1x1 transparent frame at origin
+        return Some(DiffResult {
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            pixels: vec![Rgba::TRANSPARENT],
+        });
+    }
+
+    let diff_width = (max_x - min_x + 1) as u16;
+    let diff_height = (max_y - min_y + 1) as u16;
+
+    // If the changed region is the entire frame, no optimization benefit
+    if diff_width == width && diff_height == height {
+        return None;
+    }
+
+    // Extract the changed region, marking unchanged pixels as transparent
+    let mut pixels = Vec::with_capacity(diff_width as usize * diff_height as usize);
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let idx = y * w + x;
+            if current[idx] == previous[idx] {
+                // Unchanged pixel - mark transparent
+                pixels.push(Rgba::TRANSPARENT);
+            } else {
+                // Changed pixel - keep as is
+                pixels.push(current[idx]);
+            }
+        }
+    }
+
+    Some(DiffResult {
+        left: min_x as u16,
+        top: min_y as u16,
+        width: diff_width,
+        height: diff_height,
+        pixels,
+    })
+}
+
 /// Encoder configuration.
 #[derive(Debug, Clone)]
 pub struct EncoderConfig {
@@ -251,15 +341,39 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     /// Simple frame preparation without quantization.
     #[cfg(not(feature = "quantize"))]
     fn prepare_frame_simple(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+        // Check if we can optimize using frame differencing
+        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
+            if self.config.use_transparency {
+                if let Some(ref prev) = self.previous_frame {
+                    if let Some(diff) =
+                        compute_frame_diff(&input.pixels, prev, input.width, input.height)
+                    {
+                        // Use the optimized diff region
+                        (diff.pixels, diff.left, diff.top, diff.width, diff.height)
+                    } else {
+                        // No optimization possible, use full frame
+                        (input.pixels.clone(), 0, 0, input.width, input.height)
+                    }
+                } else {
+                    // First frame, no diff possible
+                    (input.pixels.clone(), 0, 0, input.width, input.height)
+                }
+            } else {
+                // Transparency optimization disabled
+                (input.pixels.clone(), 0, 0, input.width, input.height)
+            };
+
         // Convert RGBA to the gif crate's expected format
-        let mut rgba_bytes: Vec<u8> = input
-            .pixels
+        let mut rgba_bytes: Vec<u8> = frame_pixels
             .iter()
             .flat_map(|p| [p.r, p.g, p.b, p.a])
             .collect();
 
-        let mut frame = gif::Frame::from_rgba_speed(input.width, input.height, &mut rgba_bytes, 10);
+        let mut frame =
+            gif::Frame::from_rgba_speed(frame_width, frame_height, &mut rgba_bytes, 10);
 
+        frame.left = frame_left;
+        frame.top = frame_top;
         frame.delay = input.delay;
 
         Ok(frame)
@@ -269,6 +383,28 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     #[cfg(feature = "quantize")]
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
         use imagequant::Attributes;
+
+        // Check if we can optimize using frame differencing
+        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
+            if self.config.use_transparency {
+                if let Some(ref prev) = self.previous_frame {
+                    if let Some(diff) =
+                        compute_frame_diff(&input.pixels, prev, input.width, input.height)
+                    {
+                        // Use the optimized diff region
+                        (diff.pixels, diff.left, diff.top, diff.width, diff.height)
+                    } else {
+                        // No optimization possible, use full frame
+                        (input.pixels.clone(), 0, 0, input.width, input.height)
+                    }
+                } else {
+                    // First frame, no diff possible
+                    (input.pixels.clone(), 0, 0, input.width, input.height)
+                }
+            } else {
+                // Transparency optimization disabled
+                (input.pixels.clone(), 0, 0, input.width, input.height)
+            };
 
         // Set up quantizer
         let mut attr = Attributes::new();
@@ -281,13 +417,18 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         // Prepare image data
         let rgba_slice: &[imagequant::RGBA] = unsafe {
             std::slice::from_raw_parts(
-                input.pixels.as_ptr() as *const imagequant::RGBA,
-                input.pixels.len(),
+                frame_pixels.as_ptr() as *const imagequant::RGBA,
+                frame_pixels.len(),
             )
         };
 
         let mut img = attr
-            .new_image(rgba_slice, input.width as usize, input.height as usize, 0.0)
+            .new_image(
+                rgba_slice,
+                frame_width as usize,
+                frame_height as usize,
+                0.0,
+            )
             .map_err(|_| {
                 at!(GifError::QuantizationFailed {
                     message: "failed to create image"
@@ -323,13 +464,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             .max_by_key(|(_, c)| 255 - c.a)
             .map(|(i, _)| i as u8);
 
-        // Build gif frame
-        // Set palette
+        // Build gif frame with position offset for cropped region
         let palette_bytes: Vec<u8> = palette.iter().flat_map(|c| [c.r, c.g, c.b]).collect();
 
         let frame = gif::Frame {
-            width: input.width,
-            height: input.height,
+            left: frame_left,
+            top: frame_top,
+            width: frame_width,
+            height: frame_height,
             delay: input.delay,
             dispose: gif::DisposalMethod::Keep,
             transparent: transparent_index,
@@ -470,5 +612,144 @@ mod tests {
         // Second frame should fail
         let result = encoder.add_frame(make_red_frame(2, 2, 10));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn frame_diff_finds_changed_region() {
+        let width = 10u16;
+        let height = 10u16;
+
+        // Create two frames with only a small region changed
+        let prev = vec![Rgba::rgb(0, 0, 0); 100];
+        let mut curr = prev.clone();
+
+        // Change only a 2x2 region at position (3, 4)
+        curr[4 * 10 + 3] = Rgba::rgb(255, 0, 0);
+        curr[4 * 10 + 4] = Rgba::rgb(255, 0, 0);
+        curr[5 * 10 + 3] = Rgba::rgb(255, 0, 0);
+        curr[5 * 10 + 4] = Rgba::rgb(255, 0, 0);
+
+        let diff = compute_frame_diff(&curr, &prev, width, height).unwrap();
+
+        // Should find a 2x2 region at (3, 4)
+        assert_eq!(diff.left, 3);
+        assert_eq!(diff.top, 4);
+        assert_eq!(diff.width, 2);
+        assert_eq!(diff.height, 2);
+        assert_eq!(diff.pixels.len(), 4);
+
+        // All pixels in the diff region should be the changed color
+        for pixel in &diff.pixels {
+            assert_eq!(*pixel, Rgba::rgb(255, 0, 0));
+        }
+    }
+
+    #[test]
+    fn frame_diff_marks_unchanged_as_transparent() {
+        let width = 10u16;
+        let height = 10u16;
+
+        // Create frames where only some pixels in the changed region differ
+        let prev = vec![Rgba::rgb(0, 0, 0); 100];
+        let mut curr = prev.clone();
+
+        // Change a 3x3 region but only corners actually differ
+        // This creates a region where interior pixels should be marked transparent
+        curr[0] = Rgba::rgb(255, 0, 0); // (0,0) top-left
+        curr[2] = Rgba::rgb(255, 0, 0); // (2,0) top-right
+        curr[20] = Rgba::rgb(255, 0, 0); // (0,2) bottom-left
+        curr[22] = Rgba::rgb(255, 0, 0); // (2,2) bottom-right
+
+        let diff = compute_frame_diff(&curr, &prev, width, height).unwrap();
+
+        // Should find a 3x3 region at (0, 0)
+        assert_eq!(diff.left, 0);
+        assert_eq!(diff.top, 0);
+        assert_eq!(diff.width, 3);
+        assert_eq!(diff.height, 3);
+        assert_eq!(diff.pixels.len(), 9);
+
+        // Check that unchanged pixels are transparent
+        // Row 0: changed, unchanged, changed
+        assert_eq!(diff.pixels[0], Rgba::rgb(255, 0, 0));
+        assert_eq!(diff.pixels[1], Rgba::TRANSPARENT);
+        assert_eq!(diff.pixels[2], Rgba::rgb(255, 0, 0));
+        // Row 1: unchanged, unchanged, unchanged
+        assert_eq!(diff.pixels[3], Rgba::TRANSPARENT);
+        assert_eq!(diff.pixels[4], Rgba::TRANSPARENT);
+        assert_eq!(diff.pixels[5], Rgba::TRANSPARENT);
+        // Row 2: changed, unchanged, changed
+        assert_eq!(diff.pixels[6], Rgba::rgb(255, 0, 0));
+        assert_eq!(diff.pixels[7], Rgba::TRANSPARENT);
+        assert_eq!(diff.pixels[8], Rgba::rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn frame_diff_no_changes() {
+        let width = 10u16;
+        let height = 10u16;
+        let frame = vec![Rgba::rgb(128, 128, 128); 100];
+
+        // Identical frames should produce a minimal 1x1 transparent diff
+        let diff = compute_frame_diff(&frame, &frame, width, height).unwrap();
+
+        assert_eq!(diff.width, 1);
+        assert_eq!(diff.height, 1);
+        assert_eq!(diff.pixels[0], Rgba::TRANSPARENT);
+    }
+
+    #[test]
+    fn frame_diff_full_change() {
+        let width = 10u16;
+        let height = 10u16;
+        let prev = vec![Rgba::rgb(0, 0, 0); 100];
+        let curr = vec![Rgba::rgb(255, 255, 255); 100];
+
+        // Completely different frames should return None (no optimization)
+        let diff = compute_frame_diff(&curr, &prev, width, height);
+
+        assert!(diff.is_none());
+    }
+
+    #[test]
+    fn frame_diff_produces_smaller_output() {
+        // Encode two identical red frames - second should be tiny due to diff
+        let config = EncoderConfig::new(100, 100)
+            .repeat(Repeat::Once)
+            .use_transparency(true);
+        let limits = Limits::default();
+
+        // Create two identical frames
+        let frame1 = make_red_frame(100, 100, 10);
+        let frame2 = make_red_frame(100, 100, 10);
+
+        let output_with_diff = {
+            let mut output = Vec::new();
+            let mut encoder = Encoder::new(&mut output, config.clone(), limits.clone(), Unstoppable).unwrap();
+            encoder.add_frame(frame1.clone()).unwrap();
+            encoder.add_frame(frame2.clone()).unwrap();
+            encoder.finish().unwrap();
+            output
+        };
+
+        // Encode without transparency optimization
+        let config_no_opt = config.use_transparency(false);
+        let output_without_diff = {
+            let mut output = Vec::new();
+            let mut encoder = Encoder::new(&mut output, config_no_opt, limits, Unstoppable).unwrap();
+            encoder.add_frame(frame1).unwrap();
+            encoder.add_frame(frame2).unwrap();
+            encoder.finish().unwrap();
+            output
+        };
+
+        // With diff optimization, output should be smaller
+        // (identical second frame becomes tiny 1x1 transparent)
+        assert!(
+            output_with_diff.len() < output_without_diff.len(),
+            "Output with diff ({} bytes) should be smaller than without ({} bytes)",
+            output_with_diff.len(),
+            output_without_diff.len()
+        );
     }
 }
