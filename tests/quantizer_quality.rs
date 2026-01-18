@@ -1,17 +1,24 @@
 //! Integration tests comparing quantizer quality using SSIMULACRA2.
 //!
 //! These tests encode real PNG images to GIF with different quantizers,
-//! then decode and measure the quality degradation using SSIMULACRA2.
+//! then decode and measure the quality degradation using multiple metrics.
 //!
 //! SSIMULACRA2 scores (higher is better, max ~100):
 //! - 90+: Excellent (nearly indistinguishable)
 //! - 70-90: Good (minor differences)
 //! - 50-70: Fair (noticeable but acceptable)
 //! - <50: Poor (significant degradation)
+//!
+//! MSE (Mean Squared Error, lower is better, 0 = identical):
+//! - <50: Excellent
+//! - 50-200: Good
+//! - 200-500: Fair
+//! - >500: Poor
 
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::time::{Duration, Instant};
 use zengif::{Limits, QuantizerBackend, Rgba, Stats, Unstoppable};
 
 /// Decode a PNG file to RGBA pixels.
@@ -77,13 +84,40 @@ fn calculate_ssim2(
     }
 }
 
+/// Calculate MSE (Mean Squared Error) between original and quantized frames.
+/// Returns a value where lower is better (0 = identical).
+/// We use this as a simple secondary metric.
+fn calculate_mse(
+    original: &[Rgba],
+    quantized: &[Rgba],
+) -> f64 {
+    if original.len() != quantized.len() || original.is_empty() {
+        return f64::MAX;
+    }
+
+    let sum: f64 = original
+        .iter()
+        .zip(quantized.iter())
+        .map(|(o, q)| {
+            let dr = (o.r as f64 - q.r as f64).powi(2);
+            let dg = (o.g as f64 - q.g as f64).powi(2);
+            let db = (o.b as f64 - q.b as f64).powi(2);
+            dr + dg + db
+        })
+        .sum();
+
+    sum / (original.len() as f64 * 3.0)
+}
+
 /// Test result for a single quantizer on a single image.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct QuantizerResult {
     backend: QuantizerBackend,
     available: bool,
     ssim2_score: Option<f64>,
+    mse_score: Option<f64>,
     output_size: Option<usize>,
+    encode_time: Option<Duration>,
 }
 
 /// Encode PNG pixels to GIF with a specific quantizer, decode, and measure quality.
@@ -98,7 +132,9 @@ fn test_quantizer_on_png(
             backend,
             available: false,
             ssim2_score: None,
+            mse_score: None,
             output_size: None,
+            encode_time: None,
         };
     }
 
@@ -109,8 +145,10 @@ fn test_quantizer_on_png(
     let config = zengif::EncoderConfig::new(width as u16, height as u16)
         .quantizer_backend(backend);
 
-    // Encode to GIF
+    // Encode to GIF with timing
     let mut output = Vec::new();
+    let start = Instant::now();
+
     let mut encoder = match zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable) {
         Ok(e) => e,
         Err(_) => {
@@ -118,7 +156,9 @@ fn test_quantizer_on_png(
                 backend,
                 available: true,
                 ssim2_score: None,
+                mse_score: None,
                 output_size: None,
+                encode_time: None,
             };
         }
     };
@@ -129,7 +169,9 @@ fn test_quantizer_on_png(
             backend,
             available: true,
             ssim2_score: None,
+            mse_score: None,
             output_size: None,
+            encode_time: None,
         };
     }
 
@@ -138,10 +180,13 @@ fn test_quantizer_on_png(
             backend,
             available: true,
             ssim2_score: None,
+            mse_score: None,
             output_size: None,
+            encode_time: None,
         };
     }
 
+    let encode_time = start.elapsed();
     let output_size = output.len();
 
     // Decode the GIF back
@@ -153,7 +198,9 @@ fn test_quantizer_on_png(
                 backend,
                 available: true,
                 ssim2_score: None,
+                mse_score: None,
                 output_size: Some(output_size),
+                encode_time: Some(encode_time),
             };
         }
     };
@@ -163,24 +210,24 @@ fn test_quantizer_on_png(
             backend,
             available: true,
             ssim2_score: None,
+            mse_score: None,
             output_size: Some(output_size),
+            encode_time: Some(encode_time),
         };
     }
 
-    // Calculate SSIM2 between original and decoded
+    // Calculate metrics between original and decoded
     let decoded = &decoded_frames[0];
-    let score = calculate_ssim2(
-        pixels,
-        &decoded.pixels,
-        width as usize,
-        height as usize,
-    );
+    let ssim2 = calculate_ssim2(pixels, &decoded.pixels, width as usize, height as usize);
+    let mse = calculate_mse(pixels, &decoded.pixels);
 
     QuantizerResult {
         backend,
         available: true,
-        ssim2_score: Some(score),
+        ssim2_score: Some(ssim2),
+        mse_score: Some(mse),
         output_size: Some(output_size),
+        encode_time: Some(encode_time),
     }
 }
 
@@ -224,6 +271,204 @@ mod quality_tests {
         }
     }
 
+    /// Aggregate results across multiple images
+    #[derive(Default)]
+    struct AggregateResults {
+        ssim2_sum: [f64; 4],
+        mse_sum: [f64; 4],
+        size_sum: [usize; 4],
+        time_sum: [Duration; 4],
+        counts: [usize; 4],
+    }
+
+    impl AggregateResults {
+        fn add(&mut self, results: &[QuantizerResult]) {
+            for (i, r) in results.iter().enumerate() {
+                if r.available {
+                    if let Some(s) = r.ssim2_score {
+                        self.ssim2_sum[i] += s;
+                    }
+                    if let Some(d) = r.mse_score {
+                        self.mse_sum[i] += d;
+                    }
+                    if let Some(sz) = r.output_size {
+                        self.size_sum[i] += sz;
+                    }
+                    if let Some(t) = r.encode_time {
+                        self.time_sum[i] += t;
+                    }
+                    if r.ssim2_score.is_some() {
+                        self.counts[i] += 1;
+                    }
+                }
+            }
+        }
+
+        fn avg_ssim2(&self, i: usize) -> Option<f64> {
+            if self.counts[i] > 0 {
+                Some(self.ssim2_sum[i] / self.counts[i] as f64)
+            } else {
+                None
+            }
+        }
+
+        fn avg_mse(&self, i: usize) -> Option<f64> {
+            if self.counts[i] > 0 {
+                Some(self.mse_sum[i] / self.counts[i] as f64)
+            } else {
+                None
+            }
+        }
+
+        fn avg_size(&self, i: usize) -> Option<usize> {
+            if self.counts[i] > 0 {
+                Some(self.size_sum[i] / self.counts[i])
+            } else {
+                None
+            }
+        }
+
+        fn avg_time_ms(&self, i: usize) -> Option<f64> {
+            if self.counts[i] > 0 {
+                Some(self.time_sum[i].as_secs_f64() * 1000.0 / self.counts[i] as f64)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn quantizer_benchmark_cid22() {
+        let Some(corpus) = corpus_path() else {
+            println!("Skipping: codec-corpus not found");
+            return;
+        };
+
+        let cid_path = corpus.join("CID22/CID22-512/training");
+        if !cid_path.exists() {
+            println!("Skipping: CID22 corpus not found at {}", cid_path.display());
+            return;
+        }
+
+        // Get first 10 images for benchmarking
+        let images: Vec<_> = std::fs::read_dir(&cid_path)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|e| e == "png").unwrap_or(false))
+            .take(10)
+            .collect();
+
+        if images.is_empty() {
+            println!("Skipping: No PNG files found in CID22 corpus");
+            return;
+        }
+
+        println!("\n=== Quantizer Benchmark: CID22 Corpus ({} images) ===\n", images.len());
+
+        let mut agg = AggregateResults::default();
+
+        // Header
+        println!(
+            "{:<40} {:>10} {:>10} {:>10} {:>10}",
+            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
+        );
+        println!("{}", "=".repeat(100));
+
+        for path in &images {
+            let filename = path.file_name().unwrap().to_string_lossy();
+            let short_name: String = if filename.len() > 38 {
+                format!("{}...", &filename[..35])
+            } else {
+                filename.to_string()
+            };
+
+            let results = test_quantizer_quality_on_png(path);
+            if results.is_empty() {
+                continue;
+            }
+
+            agg.add(&results);
+
+            // Show SSIM2 for each image
+            let scores: Vec<String> = results
+                .iter()
+                .map(|r| {
+                    if r.available {
+                        r.ssim2_score
+                            .map(|s| format!("{:.1}", s))
+                            .unwrap_or_else(|| "err".to_string())
+                    } else {
+                        "n/a".to_string()
+                    }
+                })
+                .collect();
+
+            println!(
+                "{:<40} {:>10} {:>10} {:>10} {:>10}",
+                short_name,
+                &scores[0],
+                &scores[1],
+                &scores[2],
+                &scores[3],
+            );
+        }
+
+        // Summary
+        println!("{}", "=".repeat(100));
+        println!("\n=== SUMMARY ===\n");
+
+        let backends = ["imagequant", "exoquant", "quantizr", "color_quant"];
+
+        // SSIM2 (higher is better)
+        println!("SSIMULACRA2 (higher is better, max 100):");
+        for (i, name) in backends.iter().enumerate() {
+            if let Some(avg) = agg.avg_ssim2(i) {
+                println!("  {:<12}: {:.2}", name, avg);
+            }
+        }
+        println!();
+
+        // MSE (lower is better)
+        println!("MSE (lower is better, 0 = identical):");
+        for (i, name) in backends.iter().enumerate() {
+            if let Some(avg) = agg.avg_mse(i) {
+                println!("  {:<12}: {:.1}", name, avg);
+            }
+        }
+        println!();
+
+        // File size
+        println!("Average file size:");
+        for (i, name) in backends.iter().enumerate() {
+            if let Some(avg) = agg.avg_size(i) {
+                println!("  {:<12}: {:.1} KB", name, avg as f64 / 1024.0);
+            }
+        }
+        println!();
+
+        // Encode time
+        println!("Average encode time:");
+        for (i, name) in backends.iter().enumerate() {
+            if let Some(avg) = agg.avg_time_ms(i) {
+                println!("  {:<12}: {:.1} ms", name, avg);
+            }
+        }
+        println!();
+
+        // Throughput (pixels per second)
+        println!("Throughput (512x512 images):");
+        let pixels_per_image = 512 * 512;
+        for (i, name) in backends.iter().enumerate() {
+            if let Some(avg_ms) = agg.avg_time_ms(i) {
+                let mpix_per_sec = (pixels_per_image as f64 / 1_000_000.0) / (avg_ms / 1000.0);
+                println!("  {:<12}: {:.2} Mpix/s", name, mpix_per_sec);
+            }
+        }
+
+        println!("\nNote: GIF is limited to 256 colors, so quality degradation is expected.");
+    }
+
     #[test]
     fn quantizer_quality_kodak_01() {
         let Some(corpus) = corpus_path() else {
@@ -242,19 +487,21 @@ mod quality_tests {
         println!("\n=== Quantizer Quality: kodak/1.png ===");
         for result in &results {
             if result.available {
-                if let Some(score) = result.ssim2_score {
+                if let (Some(ssim2), Some(mse)) = (result.ssim2_score, result.mse_score) {
                     println!(
-                        "{:?}: SSIM2={:.2}, size={} bytes",
+                        "{:?}: SSIM2={:.2}, MSE={:.1}, size={}KB, time={:.1}ms",
                         result.backend,
-                        score,
-                        result.output_size.unwrap_or(0)
+                        ssim2,
+                        mse,
+                        result.output_size.unwrap_or(0) / 1024,
+                        result.encode_time.map(|t| t.as_secs_f64() * 1000.0).unwrap_or(0.0)
                     );
                     // Kodak images are complex - expect some degradation but still reasonable
                     assert!(
-                        score > 40.0,
+                        ssim2 > 40.0,
                         "{:?} produced poor quality: {:.2}",
                         result.backend,
-                        score
+                        ssim2
                     );
                 } else {
                     println!("{:?}: failed to process", result.backend);
@@ -282,8 +529,7 @@ mod quality_tests {
         );
         println!("{}", "-".repeat(67));
 
-        let mut totals = [0.0f64; 4];
-        let mut counts = [0usize; 4];
+        let mut agg = AggregateResults::default();
 
         for image in test_images {
             let path = corpus.join("kodak").join(image);
@@ -292,18 +538,14 @@ mod quality_tests {
             }
 
             let results = test_quantizer_quality_on_png(&path);
+            agg.add(&results);
 
             let scores: Vec<String> = results
                 .iter()
-                .enumerate()
-                .map(|(i, r)| {
+                .map(|r| {
                     if r.available {
                         r.ssim2_score
-                            .map(|s| {
-                                totals[i] += s;
-                                counts[i] += 1;
-                                format!("{:.1}", s)
-                            })
+                            .map(|s| format!("{:.1}", s))
                             .unwrap_or_else(|| "err".to_string())
                     } else {
                         "n/a".to_string()
@@ -314,30 +556,22 @@ mod quality_tests {
             println!(
                 "{:<15} {:>12} {:>12} {:>12} {:>12}",
                 image,
-                scores.first().unwrap_or(&String::new()),
-                scores.get(1).unwrap_or(&String::new()),
-                scores.get(2).unwrap_or(&String::new()),
-                scores.get(3).unwrap_or(&String::new()),
+                &scores[0],
+                &scores[1],
+                &scores[2],
+                &scores[3],
             );
         }
 
         // Print averages
         println!("{}", "-".repeat(67));
-        let avgs: Vec<String> = totals
-            .iter()
-            .zip(counts.iter())
-            .map(|(&t, &c)| {
-                if c > 0 {
-                    format!("{:.1}", t / c as f64)
-                } else {
-                    "n/a".to_string()
-                }
-            })
-            .collect();
-
         println!(
             "{:<15} {:>12} {:>12} {:>12} {:>12}",
-            "AVERAGE", avgs[0], avgs[1], avgs[2], avgs[3]
+            "AVERAGE",
+            agg.avg_ssim2(0).map(|v| format!("{:.1}", v)).unwrap_or_default(),
+            agg.avg_ssim2(1).map(|v| format!("{:.1}", v)).unwrap_or_default(),
+            agg.avg_ssim2(2).map(|v| format!("{:.1}", v)).unwrap_or_default(),
+            agg.avg_ssim2(3).map(|v| format!("{:.1}", v)).unwrap_or_default(),
         );
 
         println!("\nNote: Higher SSIM2 scores are better (max ~100)");
@@ -363,12 +597,13 @@ mod quality_tests {
         println!("\n=== Quantizer Quality: gradients.png (challenging) ===");
         for result in &results {
             if result.available {
-                if let Some(score) = result.ssim2_score {
+                if let (Some(ssim2), Some(mse)) = (result.ssim2_score, result.mse_score) {
                     println!(
-                        "{:?}: SSIM2={:.2}, size={} bytes",
+                        "{:?}: SSIM2={:.2}, MSE={:.1}, size={}KB",
                         result.backend,
-                        score,
-                        result.output_size.unwrap_or(0)
+                        ssim2,
+                        mse,
+                        result.output_size.unwrap_or(0) / 1024
                     );
                 } else {
                     println!("{:?}: failed to process", result.backend);
@@ -417,10 +652,10 @@ mod quality_tests {
             println!(
                 "{:<15} {:>12} {:>12} {:>12} {:>12}",
                 image,
-                sizes.first().unwrap_or(&String::new()),
-                sizes.get(1).unwrap_or(&String::new()),
-                sizes.get(2).unwrap_or(&String::new()),
-                sizes.get(3).unwrap_or(&String::new()),
+                &sizes[0],
+                &sizes[1],
+                &sizes[2],
+                &sizes[3],
             );
         }
     }
