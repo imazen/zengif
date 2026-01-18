@@ -4,6 +4,8 @@
 //! with proper disposal method handling.
 
 use std::io::{BufRead, BufReader, Read};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use enough::Stop;
 use whereat::at;
@@ -13,6 +15,35 @@ use crate::limits::Limits;
 use crate::screen::{Screen, ScreenBuilder};
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat, Rgba};
+
+/// A reader wrapper that counts bytes read.
+///
+/// Used to track compressed input size for decompression ratio checks.
+struct CountingRead<R> {
+    inner: R,
+    bytes_read: Arc<AtomicU64>,
+}
+
+impl<R> CountingRead<R> {
+    fn new(inner: R) -> (Self, Arc<AtomicU64>) {
+        let bytes_read = Arc::new(AtomicU64::new(0));
+        (
+            Self {
+                inner,
+                bytes_read: Arc::clone(&bytes_read),
+            },
+            bytes_read,
+        )
+    }
+}
+
+impl<R: Read> Read for CountingRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
 
 /// GIF header size: magic (6) + logical screen descriptor (7) = 13 bytes
 const GIF_HEADER_SIZE: usize = 13;
@@ -63,8 +94,8 @@ fn pre_validate_header<R: BufRead>(reader: &mut R, limits: &Limits) -> Result<(u
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
 pub struct Decoder<R: Read, S: Stop> {
-    /// Underlying gif crate reader (wrapped in BufReader for pre-validation).
-    reader: gif::Decoder<BufReader<R>>,
+    /// Underlying gif crate reader (wrapped in CountingRead + BufReader for pre-validation).
+    reader: gif::Decoder<BufReader<CountingRead<R>>>,
 
     /// Compositing screen.
     screen: Screen,
@@ -89,6 +120,12 @@ pub struct Decoder<R: Read, S: Stop> {
 
     /// Cached metadata.
     metadata: Metadata,
+
+    /// Counter for compressed bytes read (for decompression ratio check).
+    bytes_read: Arc<AtomicU64>,
+
+    /// Counter for total decompressed bytes output.
+    bytes_decompressed: u64,
 }
 
 /// Reference to stats for decoder.
@@ -128,8 +165,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in BufReader for pre-validation
-        let mut buf_reader = BufReader::new(reader);
+        // Wrap in CountingRead to track compressed bytes, then BufReader for pre-validation
+        let (counting_reader, bytes_read) = CountingRead::new(reader);
+        let mut buf_reader = BufReader::new(counting_reader);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
@@ -147,13 +185,13 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         }
 
         // Parse the GIF (header already validated, dimensions already checked)
-        let reader = options
+        let gif_reader = options
             .read_info(buf_reader)
             .map_err(|e| at!(GifError::from(e)))?;
 
         // Extract metadata
-        let global_palette = reader.global_palette().map(Palette::from_rgb_bytes);
-        let background_index = reader.bg_color().map(|c| c as u8);
+        let global_palette = gif_reader.global_palette().map(Palette::from_rgb_bytes);
+        let background_index = gif_reader.bg_color().map(|c| c as u8);
 
         let metadata = Metadata {
             width,
@@ -166,7 +204,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         };
 
         // Create the compositing screen
-        let screen = ScreenBuilder::from_decoder(&reader).build(stats, &limits)?;
+        let screen = ScreenBuilder::from_decoder(&gif_reader).build(stats, &limits)?;
 
         // Allocate pixel buffer (fallible)
         let buffer_size = width as usize * height as usize;
@@ -183,7 +221,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         pixel_buffer.resize(buffer_size, 0u8);
 
         Ok(Self {
-            reader,
+            reader: gif_reader,
             screen,
             frame_index: 0,
             pixel_buffer,
@@ -192,6 +230,8 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             stop,
             finished: false,
             metadata,
+            bytes_read,
+            bytes_decompressed: 0,
         })
     }
 
@@ -202,8 +242,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in BufReader for pre-validation
-        let mut buf_reader = BufReader::new(reader);
+        // Wrap in CountingRead to track compressed bytes, then BufReader for pre-validation
+        let (counting_reader, bytes_read) = CountingRead::new(reader);
+        let mut buf_reader = BufReader::new(counting_reader);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
@@ -214,13 +255,13 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         options.allow_unknown_blocks(true);
 
         // Parse the GIF (header already validated, dimensions already checked)
-        let reader = options
+        let gif_reader = options
             .read_info(buf_reader)
             .map_err(|e| at!(GifError::from(e)))?;
 
         // Extract metadata
-        let global_palette = reader.global_palette().map(Palette::from_rgb_bytes);
-        let background_index = reader.bg_color().map(|c| c as u8);
+        let global_palette = gif_reader.global_palette().map(Palette::from_rgb_bytes);
+        let background_index = gif_reader.bg_color().map(|c| c as u8);
 
         let metadata = Metadata {
             width,
@@ -233,7 +274,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         };
 
         // Create the compositing screen
-        let screen = ScreenBuilder::from_decoder(&reader).build(&stats, &limits)?;
+        let screen = ScreenBuilder::from_decoder(&gif_reader).build(&stats, &limits)?;
 
         // Allocate pixel buffer (fallible)
         let buffer_size = width as usize * height as usize;
@@ -249,7 +290,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         pixel_buffer.resize(buffer_size, 0u8);
 
         Ok(Self {
-            reader,
+            reader: gif_reader,
             screen,
             frame_index: 0,
             pixel_buffer,
@@ -258,6 +299,8 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             stop,
             finished: false,
             metadata,
+            bytes_read,
+            bytes_decompressed: 0,
         })
     }
 
@@ -333,6 +376,12 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         self.reader
             .read_into_buffer(buffer_slice)
             .map_err(|e| at!(GifError::from(e)))?;
+
+        // Track decompressed bytes and check ratio (zip bomb protection)
+        self.bytes_decompressed += frame_size as u64;
+        let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        self.limits
+            .check_decompression_ratio(bytes_read, self.bytes_decompressed)?;
 
         // Create RawFrame (fallible pixel copy)
         let mut pixels = Vec::new();
@@ -419,6 +468,12 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         self.reader
             .read_into_buffer(buffer_slice)
             .map_err(|e| at!(GifError::from(e)))?;
+
+        // Track decompressed bytes and check ratio (zip bomb protection)
+        self.bytes_decompressed += frame_size as u64;
+        let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        self.limits
+            .check_decompression_ratio(bytes_read, self.bytes_decompressed)?;
 
         // Create RawFrame (fallible pixel copy - unavoidable here)
         let mut pixels = Vec::new();
@@ -603,5 +658,38 @@ mod tests {
         assert_eq!(metadata.width, 1);
         assert_eq!(metadata.height, 1);
         assert_eq!(frames.len(), 1);
+    }
+
+    #[test]
+    fn decompression_ratio_check() {
+        let stats = Stats::new();
+        // Set a very low decompression ratio limit (0.1x means compressed must be
+        // larger than decompressed, which is impossible for real GIFs)
+        let limits = Limits::default().max_decompression_ratio(0.01);
+
+        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+
+        // Should fail due to decompression ratio exceeded
+        let result = decoder.next_frame();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().error(),
+            GifError::DecompressionRatioExceeded { .. }
+        ));
+    }
+
+    #[test]
+    fn decompression_ratio_ok() {
+        let stats = Stats::new();
+        // Normal ratio limit (1000x) should pass for typical GIFs
+        let limits = Limits::default().max_decompression_ratio(1000.0);
+
+        let cursor = std::io::Cursor::new(MINIMAL_GIF);
+        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+
+        // Should succeed
+        let frame = decoder.next_frame().unwrap();
+        assert!(frame.is_some());
     }
 }
