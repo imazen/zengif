@@ -1,6 +1,6 @@
 //! Exoquant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, Quantizer};
+use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -50,7 +50,7 @@ impl Default for ExoquantQuantizer {
     }
 }
 
-impl Quantizer for ExoquantQuantizer {
+impl QuantizerTrait for ExoquantQuantizer {
     fn quantize_frame(
         &mut self,
         pixels: &[Rgba],

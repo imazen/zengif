@@ -86,10 +86,30 @@
 //!
 //! Choose one or more quantization backends for encoding:
 //!
-//! - **`imagequant`**: Highest quality (AGPL-3.0, [commercial license available][imagequant-license])
-//! - **`exoquant`**: High quality K-Means (MIT)
-//! - **`quantizr`**: Fast, good quality (MIT)
-//! - **`color_quant`**: NEUQUANT algorithm (MIT)
+//! | Feature | Quality | Speed | File Size | License | Use Case |
+//! |---------|---------|-------|-----------|---------|----------|
+//! | `quantizr` | **Best** | Fast | Medium | MIT | **Recommended** for most uses |
+//! | `imagequant` | Good | Medium | **Smallest** | AGPL-3.0 | When file size is critical |
+//! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
+//! | `exoquant-deprecated` | Good | Slow | Medium | MIT | Legacy compatibility only |
+//!
+//! Configure the quantizer using the [`Quantizer`] enum:
+//!
+//! ```rust,ignore
+//! use zengif::{EncoderConfig, Quantizer};
+//!
+//! // Use quantizr (recommended) with custom dithering
+//! let config = EncoderConfig::new(100, 100)
+//!     .quantizer(Quantizer::quantizr_with_dithering(0.3));
+//!
+//! // Use imagequant (AGPL) for smallest files
+//! let config = EncoderConfig::new(100, 100)
+//!     .quantizer(Quantizer::imagequant());
+//!
+//! // Auto-select best available
+//! let config = EncoderConfig::new(100, 100)
+//!     .quantizer(Quantizer::auto());
+//! ```
 //!
 //! Without any quantization feature, zengif is purely MIT/Apache-2.0 licensed.
 //!
@@ -119,19 +139,31 @@ mod types;
 // Public API
 pub use decode::{decode_gif, Decoder, FrameIterator};
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
-#[cfg(feature = "imagequant")]
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
 pub use error::{GifError, Result};
 pub use limits::Limits;
 #[cfg(feature = "color_quant")]
 pub use quantize::ColorQuantQuantizer;
-#[cfg(feature = "exoquant")]
+#[cfg(feature = "exoquant-deprecated")]
 pub use quantize::ExoquantQuantizer;
 #[cfg(feature = "imagequant")]
 pub use quantize::ImagequantQuantizer;
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+pub use quantize::Quantizer;
 #[cfg(feature = "quantizr")]
 pub use quantize::QuantizrQuantizer;
-pub use quantize::{QuantizeConfig, QuantizedFrame, Quantizer, QuantizerBackend};
+pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{
     tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc,

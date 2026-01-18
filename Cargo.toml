@@ -19,14 +19,16 @@ alloc = ["enough/alloc"]
 simd = ["wide", "multiversed"]
 
 # Color quantization backends (choose one or more)
-# imagequant: Highest quality, AGPL-3.0 licensed (commercial license available)
-imagequant = ["dep:imagequant"]
-# quantizr: Fast, MIT licensed
+# quantizr: Best quality, fast, MIT licensed (RECOMMENDED)
 quantizr = ["dep:quantizr"]
-# exoquant: High quality K-Means, MIT licensed
-exoquant = ["dep:exoquant"]
-# color_quant: NEUQUANT algorithm, MIT licensed (already a transitive dep of gif crate)
+# imagequant: Best compression (smallest files), AGPL-3.0 licensed
+# Note: AGPL requires source disclosure. Commercial license: https://pngquant.org
+imagequant = ["dep:imagequant"]
+# color_quant: Fastest encoder, MIT licensed (good for high-throughput)
 color_quant = ["dep:color_quant"]
+# exoquant-deprecated: Slow K-Means quantizer, kept for compatibility
+# Use quantizr instead (faster AND better quality)
+exoquant-deprecated = ["dep:exoquant"]
 
 # RGB/imgref ecosystem interop
 rgb-interop = ["rgb"]

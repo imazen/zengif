@@ -1,6 +1,6 @@
 //! ColorQuant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, Quantizer};
+use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -48,7 +48,7 @@ impl Default for ColorQuantQuantizer {
     }
 }
 
-impl Quantizer for ColorQuantQuantizer {
+impl QuantizerTrait for ColorQuantQuantizer {
     fn quantize_frame(
         &mut self,
         pixels: &[Rgba],

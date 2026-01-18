@@ -62,12 +62,7 @@ fn decode_png(path: &Path) -> Option<(Vec<Rgba>, u32, u32)> {
 
 /// Calculate SSIMULACRA2 score between original and quantized frames.
 /// Returns a score where higher is better (max ~100).
-fn calculate_ssim2(
-    original: &[Rgba],
-    quantized: &[Rgba],
-    width: usize,
-    height: usize,
-) -> f64 {
+fn calculate_ssim2(original: &[Rgba], quantized: &[Rgba], width: usize, height: usize) -> f64 {
     use imgref::ImgVec;
 
     // Convert RGBA to RGB arrays for fast-ssim2
@@ -78,19 +73,13 @@ fn calculate_ssim2(
     let quant_img = ImgVec::new(quant_rgb, width, height);
 
     // Calculate SSIMULACRA2 score
-    match fast_ssim2::compute_ssimulacra2(orig_img.as_ref(), quant_img.as_ref()) {
-        Ok(score) => score,
-        Err(_) => 0.0,
-    }
+    fast_ssim2::compute_ssimulacra2(orig_img.as_ref(), quant_img.as_ref()).unwrap_or(0.0)
 }
 
 /// Calculate MSE (Mean Squared Error) between original and quantized frames.
 /// Returns a value where lower is better (0 = identical).
 /// We use this as a simple secondary metric.
-fn calculate_mse(
-    original: &[Rgba],
-    quantized: &[Rgba],
-) -> f64 {
+fn calculate_mse(original: &[Rgba], quantized: &[Rgba]) -> f64 {
     if original.len() != quantized.len() || original.is_empty() {
         return f64::MAX;
     }
@@ -121,6 +110,7 @@ struct QuantizerResult {
 }
 
 /// Encode PNG pixels to GIF with a specific quantizer, decode, and measure quality.
+#[allow(deprecated)] // Testing deprecated quantizer_backend API
 fn test_quantizer_on_png(
     pixels: &[Rgba],
     width: u32,
@@ -142,8 +132,7 @@ fn test_quantizer_on_png(
     let limits = Limits::default();
 
     // Create encoder config with specific backend
-    let config = zengif::EncoderConfig::new(width as u16, height as u16)
-        .quantizer_backend(backend);
+    let config = zengif::EncoderConfig::new(width as u16, height as u16).quantizer_backend(backend);
 
     // Encode to GIF with timing
     let mut output = Vec::new();
@@ -255,7 +244,7 @@ fn test_quantizer_quality_on_png(path: &Path) -> Vec<QuantizerResult> {
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant",
+    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 mod quality_tests {
@@ -364,7 +353,10 @@ mod quality_tests {
             return;
         }
 
-        println!("\n=== Quantizer Benchmark: CID22 Corpus ({} images) ===\n", images.len());
+        println!(
+            "\n=== Quantizer Benchmark: CID22 Corpus ({} images) ===\n",
+            images.len()
+        );
 
         let mut agg = AggregateResults::default();
 
@@ -406,11 +398,7 @@ mod quality_tests {
 
             println!(
                 "{:<40} {:>10} {:>10} {:>10} {:>10}",
-                short_name,
-                &scores[0],
-                &scores[1],
-                &scores[2],
-                &scores[3],
+                short_name, &scores[0], &scores[1], &scores[2], &scores[3],
             );
         }
 
@@ -494,7 +482,10 @@ mod quality_tests {
                         ssim2,
                         mse,
                         result.output_size.unwrap_or(0) / 1024,
-                        result.encode_time.map(|t| t.as_secs_f64() * 1000.0).unwrap_or(0.0)
+                        result
+                            .encode_time
+                            .map(|t| t.as_secs_f64() * 1000.0)
+                            .unwrap_or(0.0)
                     );
                     // Kodak images are complex - expect some degradation but still reasonable
                     assert!(
@@ -555,11 +546,7 @@ mod quality_tests {
 
             println!(
                 "{:<15} {:>12} {:>12} {:>12} {:>12}",
-                image,
-                &scores[0],
-                &scores[1],
-                &scores[2],
-                &scores[3],
+                image, &scores[0], &scores[1], &scores[2], &scores[3],
             );
         }
 
@@ -568,10 +555,18 @@ mod quality_tests {
         println!(
             "{:<15} {:>12} {:>12} {:>12} {:>12}",
             "AVERAGE",
-            agg.avg_ssim2(0).map(|v| format!("{:.1}", v)).unwrap_or_default(),
-            agg.avg_ssim2(1).map(|v| format!("{:.1}", v)).unwrap_or_default(),
-            agg.avg_ssim2(2).map(|v| format!("{:.1}", v)).unwrap_or_default(),
-            agg.avg_ssim2(3).map(|v| format!("{:.1}", v)).unwrap_or_default(),
+            agg.avg_ssim2(0)
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_default(),
+            agg.avg_ssim2(1)
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_default(),
+            agg.avg_ssim2(2)
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_default(),
+            agg.avg_ssim2(3)
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_default(),
         );
 
         println!("\nNote: Higher SSIM2 scores are better (max ~100)");
@@ -651,11 +646,7 @@ mod quality_tests {
 
             println!(
                 "{:<15} {:>12} {:>12} {:>12} {:>12}",
-                image,
-                &sizes[0],
-                &sizes[1],
-                &sizes[2],
-                &sizes[3],
+                image, &sizes[0], &sizes[1], &sizes[2], &sizes[3],
             );
         }
     }
@@ -663,6 +654,7 @@ mod quality_tests {
     /// Test how dithering level affects file size for quantizr
     #[test]
     #[cfg(feature = "quantizr")]
+    #[allow(deprecated)] // Testing deprecated quantizer_backend API
     fn quantizr_dithering_comparison() {
         let Some(corpus) = corpus_path() else {
             println!("Skipping: codec-corpus not found");
@@ -684,7 +676,10 @@ mod quality_tests {
         };
 
         println!("\n=== Quantizr Dithering Level Comparison ===\n");
-        println!("{:<15} {:>12} {:>12} {:>12}", "Dithering", "SSIM2", "File Size", "Reduction");
+        println!(
+            "{:<15} {:>12} {:>12} {:>12}",
+            "Dithering", "SSIM2", "File Size", "Reduction"
+        );
         println!("{}", "-".repeat(55));
 
         let dither_levels = [0.0, 0.25, 0.5, 0.75, 1.0];
@@ -699,8 +694,9 @@ mod quality_tests {
                 .dithering(dither);
 
             let mut output = Vec::new();
-            let mut encoder = zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable)
-                .expect("encoder creation failed");
+            let mut encoder =
+                zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable)
+                    .expect("encoder creation failed");
 
             let input = zengif::FrameInput::new(width as u16, height as u16, 100, pixels.clone());
             encoder.add_frame(input).expect("add_frame failed");
@@ -713,17 +709,25 @@ mod quality_tests {
 
             // Decode and measure quality
             let stats = Stats::new();
-            let (_, decoded_frames) = zengif::decode_gif(&output, limits, &stats, Unstoppable)
-                .expect("decode failed");
+            let (_, decoded_frames) =
+                zengif::decode_gif(&output, limits, &stats, Unstoppable).expect("decode failed");
 
             let ssim2 = if !decoded_frames.is_empty() {
-                calculate_ssim2(&pixels, &decoded_frames[0].pixels, width as usize, height as usize)
+                calculate_ssim2(
+                    &pixels,
+                    &decoded_frames[0].pixels,
+                    width as usize,
+                    height as usize,
+                )
             } else {
                 0.0
             };
 
             let reduction = if baseline_size > 0 {
-                format!("{:+.1}%", (output_size as f64 / baseline_size as f64 - 1.0) * 100.0)
+                format!(
+                    "{:+.1}%",
+                    (output_size as f64 / baseline_size as f64 - 1.0) * 100.0
+                )
             } else {
                 "baseline".to_string()
             };

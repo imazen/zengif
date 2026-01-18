@@ -1,6 +1,6 @@
 //! Quantizr quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, Quantizer};
+use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -47,7 +47,7 @@ impl Default for QuantizrQuantizer {
     }
 }
 
-impl Quantizer for QuantizrQuantizer {
+impl QuantizerTrait for QuantizrQuantizer {
     fn quantize_frame(
         &mut self,
         pixels: &[Rgba],

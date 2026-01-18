@@ -1,6 +1,6 @@
 //! Imagequant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, Quantizer};
+use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -59,7 +59,7 @@ impl Default for ImagequantQuantizer {
     }
 }
 
-impl Quantizer for ImagequantQuantizer {
+impl QuantizerTrait for ImagequantQuantizer {
     fn quantize_frame(
         &mut self,
         pixels: &[Rgba],
@@ -289,7 +289,10 @@ mod tests {
         assert!(!result.palette.is_empty());
         assert_eq!(result.pixels.len(), 16);
         // Palette should contain red-ish color
-        assert!(result.palette.chunks(3).any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50));
+        assert!(result
+            .palette
+            .chunks(3)
+            .any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50));
     }
 
     #[test]
@@ -333,9 +336,7 @@ mod tests {
         };
 
         // Create frames where second is slightly different
-        let bg_pixels: Vec<Rgba> = (0..16)
-            .map(|i| Rgba::rgb((i * 16) as u8, 0, 0))
-            .collect();
+        let bg_pixels: Vec<Rgba> = (0..16).map(|i| Rgba::rgb((i * 16) as u8, 0, 0)).collect();
         let fg_pixels: Vec<Rgba> = (0..16)
             .map(|i| {
                 if i < 8 {

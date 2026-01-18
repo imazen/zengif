@@ -1,7 +1,17 @@
 //! Quantization abstractions for GIF encoding.
 //!
 //! This module provides a trait-based abstraction for color quantization,
-//! allowing different quantization backends (imagequant, quantizr, exoquant, color_quant).
+//! with multiple backend options for different quality/speed/license tradeoffs.
+//!
+//! # Choosing a Quantizer
+//!
+//! Use [`Quantizer`] to select and configure your quantization backend:
+//!
+//! | Feature | Quality | Speed | File Size | License | Use Case |
+//! |---------|---------|-------|-----------|---------|----------|
+//! | `quantizr` | **Best** | Fast | Medium | MIT | **Recommended** for most uses |
+//! | `imagequant` | Good | Medium | **Smallest** | AGPL-3.0 | When file size is critical |
+//! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //!
 //! # Frame-Aware Quantization
 //!
@@ -14,15 +24,6 @@
 //! For large animations, building a palette from every frame can be slow.
 //! The [`QuantizeConfig::max_palette_frames`] option limits how many frames
 //! are sampled, using uniform distribution across the animation.
-//!
-//! # Available Backends
-//!
-//! | Feature | Crate | License | Quality | Speed |
-//! |---------|-------|---------|---------|-------|
-//! | `imagequant` | libimagequant | AGPL-3.0 | Excellent | Medium |
-//! | `exoquant` | exoquant | MIT | Very Good | Medium |
-//! | `quantizr` | quantizr | MIT | Good | Fast |
-//! | `color_quant` | color_quant | MIT | Good | Fast |
 
 use crate::error::Result;
 use crate::types::Rgba;
@@ -31,7 +32,7 @@ use enough::Stop;
 // Backend implementations
 #[cfg(feature = "color_quant")]
 mod color_quant_impl;
-#[cfg(feature = "exoquant")]
+#[cfg(feature = "exoquant-deprecated")]
 mod exoquant_impl;
 #[cfg(feature = "imagequant")]
 mod imagequant_impl;
@@ -41,7 +42,7 @@ mod quantizr_impl;
 // Re-export backend quantizers
 #[cfg(feature = "color_quant")]
 pub use color_quant_impl::ColorQuantQuantizer;
-#[cfg(feature = "exoquant")]
+#[cfg(feature = "exoquant-deprecated")]
 pub use exoquant_impl::ExoquantQuantizer;
 #[cfg(feature = "imagequant")]
 pub use imagequant_impl::ImagequantQuantizer;
@@ -115,6 +116,231 @@ impl QuantizeConfig {
     }
 }
 
+/// Quantizer selection with backend-specific configuration.
+///
+/// Each backend has different trade-offs for quality, speed, and file size.
+/// See the [module documentation](self) for a comparison table.
+///
+/// # Example
+///
+/// ```ignore
+/// use zengif::{EncoderConfig, Quantizer};
+///
+/// // Best quality (recommended)
+/// let config = EncoderConfig::new(100, 100)
+///     .quantizer(Quantizer::quantizr());
+///
+/// // Smallest files (AGPL license)
+/// let config = EncoderConfig::new(100, 100)
+///     .quantizer(Quantizer::imagequant());
+///
+/// // Fastest encoding
+/// let config = EncoderConfig::new(100, 100)
+///     .quantizer(Quantizer::color_quant());
+/// ```
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+pub enum Quantizer {
+    /// Quantizr: Best quality, fast, MIT licensed.
+    ///
+    /// Recommended for most use cases. Produces high-quality output
+    /// with good encoding speed.
+    #[cfg(feature = "quantizr")]
+    Quantizr {
+        /// Dithering level (0.0 = none, 1.0 = full).
+        ///
+        /// Lower values produce smaller files but may show color banding.
+        /// Default: 0.5
+        dithering: f32,
+    },
+
+    /// Imagequant (libimagequant): Best compression, AGPL-3.0 licensed.
+    ///
+    /// Produces the smallest files through optimized dithering patterns.
+    /// **Requires AGPL-3.0 compliance** (source disclosure).
+    /// Commercial license available at <https://pngquant.org>.
+    #[cfg(feature = "imagequant")]
+    Imagequant {
+        /// Quality level (1-100). Higher = better quality, slower.
+        /// Default: 80
+        quality: u8,
+        /// Dithering level (0.0 = none, 1.0 = full).
+        /// Default: 0.5
+        dithering: f32,
+    },
+
+    /// ColorQuant: Fastest encoder, MIT licensed.
+    ///
+    /// Uses the NeuQuant neural network algorithm.
+    /// Best for high-throughput scenarios where encoding speed matters most.
+    #[cfg(feature = "color_quant")]
+    ColorQuant {
+        /// Sample factor (1 = best quality/slowest, 30 = fastest/lowest quality).
+        ///
+        /// Controls the fraction of pixels used for learning.
+        /// Default: 10
+        sample_factor: i32,
+    },
+
+    /// Exoquant: K-Means quantizer (DEPRECATED).
+    ///
+    /// **Deprecated**: Use `Quantizr` instead, which is faster AND better quality.
+    /// This backend is kept only for compatibility and will be removed in a future version.
+    #[cfg(feature = "exoquant-deprecated")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use Quantizr instead - faster and better quality"
+    )]
+    Exoquant {
+        /// Dithering level (0.0 = none, 1.0 = full).
+        /// Default: 0.5
+        dithering: f32,
+    },
+}
+
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+impl Quantizer {
+    /// Create a Quantizr quantizer with default settings.
+    ///
+    /// This is the **recommended** quantizer for most use cases.
+    #[cfg(feature = "quantizr")]
+    #[must_use]
+    pub fn quantizr() -> Self {
+        Self::Quantizr { dithering: 0.5 }
+    }
+
+    /// Create a Quantizr quantizer with custom dithering.
+    ///
+    /// # Arguments
+    /// * `dithering` - Dithering level (0.0 = none, 1.0 = full)
+    #[cfg(feature = "quantizr")]
+    #[must_use]
+    pub fn quantizr_with_dithering(dithering: f32) -> Self {
+        Self::Quantizr {
+            dithering: dithering.clamp(0.0, 1.0),
+        }
+    }
+
+    /// Create an Imagequant quantizer with default settings.
+    ///
+    /// **Note**: Imagequant is AGPL-3.0 licensed. See <https://pngquant.org> for commercial licensing.
+    #[cfg(feature = "imagequant")]
+    #[must_use]
+    pub fn imagequant() -> Self {
+        Self::Imagequant {
+            quality: 80,
+            dithering: 0.5,
+        }
+    }
+
+    /// Create an Imagequant quantizer with custom settings.
+    ///
+    /// # Arguments
+    /// * `quality` - Quality level (1-100, higher = better)
+    /// * `dithering` - Dithering level (0.0 = none, 1.0 = full)
+    #[cfg(feature = "imagequant")]
+    #[must_use]
+    pub fn imagequant_with_settings(quality: u8, dithering: f32) -> Self {
+        Self::Imagequant {
+            quality: quality.clamp(1, 100),
+            dithering: dithering.clamp(0.0, 1.0),
+        }
+    }
+
+    /// Create a ColorQuant quantizer with default settings.
+    ///
+    /// This is the **fastest** quantizer, best for high-throughput scenarios.
+    #[cfg(feature = "color_quant")]
+    #[must_use]
+    pub fn color_quant() -> Self {
+        Self::ColorQuant { sample_factor: 10 }
+    }
+
+    /// Create a ColorQuant quantizer with custom sample factor.
+    ///
+    /// # Arguments
+    /// * `sample_factor` - Sample factor (1 = best quality, 30 = fastest)
+    #[cfg(feature = "color_quant")]
+    #[must_use]
+    pub fn color_quant_with_sample_factor(sample_factor: i32) -> Self {
+        Self::ColorQuant {
+            sample_factor: sample_factor.clamp(1, 30),
+        }
+    }
+
+    /// Create the default quantizer based on available features.
+    ///
+    /// Priority: quantizr > imagequant > color_quant > exoquant-deprecated
+    #[must_use]
+    #[allow(clippy::needless_return)] // Returns needed for conditional compilation branches
+    pub fn auto() -> Self {
+        #[cfg(feature = "quantizr")]
+        {
+            return Self::quantizr();
+        }
+        #[cfg(all(feature = "imagequant", not(feature = "quantizr")))]
+        {
+            return Self::imagequant();
+        }
+        #[cfg(all(
+            feature = "color_quant",
+            not(feature = "quantizr"),
+            not(feature = "imagequant")
+        ))]
+        {
+            return Self::color_quant();
+        }
+        #[cfg(all(
+            feature = "exoquant-deprecated",
+            not(feature = "quantizr"),
+            not(feature = "imagequant"),
+            not(feature = "color_quant")
+        ))]
+        {
+            #[allow(deprecated)]
+            return Self::Exoquant { dithering: 0.5 };
+        }
+    }
+
+    /// Create the backend quantizer instance.
+    pub(crate) fn create_backend(&self) -> Box<dyn QuantizerTrait> {
+        match self {
+            #[cfg(feature = "quantizr")]
+            Self::Quantizr { .. } => Box::new(QuantizrQuantizer::new()),
+            #[cfg(feature = "imagequant")]
+            Self::Imagequant { .. } => Box::new(ImagequantQuantizer::new()),
+            #[cfg(feature = "color_quant")]
+            Self::ColorQuant { .. } => Box::new(ColorQuantQuantizer::new()),
+            #[cfg(feature = "exoquant-deprecated")]
+            #[allow(deprecated)]
+            Self::Exoquant { .. } => Box::new(ExoquantQuantizer::new()),
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+impl Default for Quantizer {
+    fn default() -> Self {
+        Self::auto()
+    }
+}
+
 /// Compute indices of frames to sample for palette building.
 ///
 /// Returns indices uniformly distributed across the frame range.
@@ -122,10 +348,13 @@ impl QuantizeConfig {
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant",
+    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
-pub(crate) fn compute_sample_indices(total_frames: usize, max_samples: Option<usize>) -> Vec<usize> {
+pub(crate) fn compute_sample_indices(
+    total_frames: usize,
+    max_samples: Option<usize>,
+) -> Vec<usize> {
     let max = match max_samples {
         None => return (0..total_frames).collect(),
         Some(m) if m >= total_frames => return (0..total_frames).collect(),
@@ -159,7 +388,7 @@ pub(crate) fn compute_sample_indices(total_frames: usize, max_samples: Option<us
 /// - Shared palettes across frames
 /// - Frame-to-frame background optimization
 /// - Histogram accumulation
-pub trait Quantizer: Send {
+pub trait QuantizerTrait: Send {
     /// Quantize a single frame.
     ///
     /// # Arguments
@@ -247,16 +476,16 @@ impl QuantizerBackend {
     ///
     /// Returns `None` if the required feature is not enabled.
     #[must_use]
-    pub fn create_quantizer(&self) -> Option<Box<dyn Quantizer>> {
+    pub fn create_quantizer(&self) -> Option<Box<dyn QuantizerTrait>> {
         match self {
             #[cfg(feature = "imagequant")]
             QuantizerBackend::Imagequant => Some(Box::new(ImagequantQuantizer::new())),
             #[cfg(not(feature = "imagequant"))]
             QuantizerBackend::Imagequant => None,
 
-            #[cfg(feature = "exoquant")]
+            #[cfg(feature = "exoquant-deprecated")]
             QuantizerBackend::Exoquant => Some(Box::new(ExoquantQuantizer::new())),
-            #[cfg(not(feature = "exoquant"))]
+            #[cfg(not(feature = "exoquant-deprecated"))]
             QuantizerBackend::Exoquant => None,
 
             #[cfg(feature = "quantizr")]
@@ -276,7 +505,7 @@ impl QuantizerBackend {
     pub fn is_available(&self) -> bool {
         match self {
             QuantizerBackend::Imagequant => cfg!(feature = "imagequant"),
-            QuantizerBackend::Exoquant => cfg!(feature = "exoquant"),
+            QuantizerBackend::Exoquant => cfg!(feature = "exoquant-deprecated"),
             QuantizerBackend::Quantizr => cfg!(feature = "quantizr"),
             QuantizerBackend::ColorQuant => cfg!(feature = "color_quant"),
         }
@@ -291,7 +520,7 @@ mod tests {
     #[cfg(any(
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant",
+        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -307,7 +536,7 @@ mod tests {
     #[cfg(any(
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant",
+        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -320,7 +549,7 @@ mod tests {
     #[cfg(any(
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant",
+        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -335,7 +564,7 @@ mod tests {
     #[cfg(any(
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant",
+        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
