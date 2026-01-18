@@ -196,13 +196,15 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
 
-        // Configure gif decoder
+        // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::Indexed);
         options.allow_unknown_blocks(true);
+        options.check_frame_consistency(true); // Validate frame bounds against canvas
 
-        // Set memory limit based on our limits
+        // Set memory limit based on our limits (convert pixels to bytes)
         if let Some(max_pixels) = limits.max_total_pixels {
+            // Each pixel is 1 byte (indexed) in gif crate's buffer
             if let Some(limit) = std::num::NonZeroU64::new(max_pixels) {
                 options.set_memory_limit(gif::MemoryLimit::Bytes(limit));
             }
@@ -273,10 +275,18 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
 
-        // Configure gif decoder
+        // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::Indexed);
         options.allow_unknown_blocks(true);
+        options.check_frame_consistency(true); // Validate frame bounds against canvas
+
+        // Set memory limit based on our limits (convert pixels to bytes)
+        if let Some(max_pixels) = limits.max_total_pixels {
+            if let Some(limit) = std::num::NonZeroU64::new(max_pixels) {
+                options.set_memory_limit(gif::MemoryLimit::Bytes(limit));
+            }
+        }
 
         // Parse the GIF (header already validated, dimensions already checked)
         let gif_reader = options

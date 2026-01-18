@@ -301,7 +301,18 @@ MIT OR Apache-2.0 (dual license)
 
 ## Known Bugs
 
-(none yet - new project)
+(none critical)
+
+### Note: LZW Cancellation Latency (Documented Limitation)
+
+The gif crate's LZW decoder cannot be cancelled mid-decompression. However, this is adequately mitigated:
+
+1. **Dimension limits** bound maximum output per frame (CPU work is proportional to output size)
+2. **gif crate's `check_frame_consistency(true)`** validates frame bounds against canvas
+3. **gif crate's `set_memory_limit()`** provides additional bounds
+4. **Pre-validation** rejects oversized dimensions before gif crate allocates
+
+With default 16384x16384 max dimensions, worst-case per-frame CPU time is bounded. For tighter server limits, reduce `max_dimensions` (e.g., 4096x4096).
 
 ## Current Implementation Status (for context reset)
 
