@@ -198,7 +198,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             height,
             global_palette: global_palette.clone(),
             background_color_index: background_index,
-            repeat: Repeat::Infinite, // TODO: Read from NETSCAPE extension
+            repeat: Repeat::Infinite, // Updated after first frame from NETSCAPE extension
             frame_count: 0,           // Unknown until we read all frames
             comments: Vec::new(),
         };
@@ -315,8 +315,19 @@ impl<R: Read, S: Stop> Decoder<R, S> {
     }
 
     /// Get the metadata.
+    ///
+    /// Note: The `repeat` field is updated as frames are read, since the
+    /// NETSCAPE extension is parsed during frame iteration.
     pub fn metadata(&self) -> &Metadata {
         &self.metadata
+    }
+
+    /// Get the current repeat/loop setting.
+    ///
+    /// This value may change as frames are read, since the NETSCAPE
+    /// extension is parsed during frame iteration.
+    pub fn repeat(&self) -> Repeat {
+        Repeat::from(self.reader.repeat())
     }
 
     /// Get the stats.
@@ -416,6 +427,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
 
         self.frame_index += 1;
 
+        // Update metadata with repeat value (parsed from NETSCAPE extension during frame read)
+        self.metadata.repeat = Repeat::from(self.reader.repeat());
+
         Ok(Some(composed))
     }
 
@@ -509,6 +523,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             .process_frame_in_place(&raw_frame, stats, &self.limits)?;
 
         self.frame_index += 1;
+
+        // Update metadata with repeat value (parsed from NETSCAPE extension during frame read)
+        self.metadata.repeat = Repeat::from(self.reader.repeat());
 
         // Call user callback with reference to composed pixels
         Ok(Some(f(index, delay, self.screen.pixels())))
