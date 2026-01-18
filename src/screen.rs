@@ -13,12 +13,13 @@ use crate::types::{ComposedFrame, Palette, RawFrame, Rgba};
 ///
 /// Maintains the canvas state and applies frames with proper
 /// disposal method handling to produce composited output.
+#[non_exhaustive]
 pub struct Screen {
     /// Canvas width.
     width: u16,
 
     /// Canvas height.
-    pub height: u16,
+    height: u16,
 
     /// Current canvas pixels (RGBA).
     pixels: Vec<Rgba>,
@@ -295,7 +296,8 @@ impl Screen {
     }
 }
 
-/// Builder for creating a Screen from a gif::Decoder.
+/// Builder for creating a Screen.
+#[non_exhaustive]
 pub struct ScreenBuilder {
     width: u16,
     height: u16,
@@ -305,7 +307,7 @@ pub struct ScreenBuilder {
 
 impl ScreenBuilder {
     /// Create a new screen builder from a gif decoder.
-    pub fn from_decoder<R: std::io::Read>(decoder: &gif::Decoder<R>) -> Self {
+    pub(crate) fn from_decoder<R: std::io::Read>(decoder: &gif::Decoder<R>) -> Self {
         let global_palette = decoder.global_palette().map(Palette::from_rgb_bytes);
 
         Self {

@@ -136,6 +136,7 @@ impl From<Rgba> for rgb::RGB8 {
 ///
 /// Determines what happens to the canvas area after displaying a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum DisposalMethod {
     /// No disposal specified (treat as Keep).
@@ -182,19 +183,12 @@ impl From<gif::DisposalMethod> for DisposalMethod {
     }
 }
 
-impl From<DisposalMethod> for gif::DisposalMethod {
-    fn from(d: DisposalMethod) -> Self {
-        match d {
-            DisposalMethod::Unspecified => gif::DisposalMethod::Any,
-            DisposalMethod::Keep => gif::DisposalMethod::Keep,
-            DisposalMethod::Background => gif::DisposalMethod::Background,
-            DisposalMethod::Previous => gif::DisposalMethod::Previous,
-        }
-    }
-}
+// Note: We intentionally do NOT implement From<DisposalMethod> for gif::DisposalMethod
+// to avoid leaking the gif crate dependency in our public API.
 
 /// Loop/repeat behavior for animations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Repeat {
     /// Play once, do not loop.
     Once,
@@ -217,15 +211,8 @@ impl From<gif::Repeat> for Repeat {
     }
 }
 
-impl From<Repeat> for gif::Repeat {
-    fn from(r: Repeat) -> Self {
-        match r {
-            Repeat::Once => gif::Repeat::Finite(0),
-            Repeat::Infinite => gif::Repeat::Infinite,
-            Repeat::Count(n) => gif::Repeat::Finite(n),
-        }
-    }
-}
+// Note: We intentionally do NOT implement From<Repeat> for gif::Repeat
+// to avoid leaking the gif crate dependency in our public API.
 
 /// A color palette (up to 256 colors).
 #[derive(Clone)]
@@ -362,6 +349,7 @@ impl Default for Palette {
 
 /// Raw frame data as read from GIF (before compositing).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RawFrame {
     /// Frame index (0-based).
     pub index: usize,
@@ -412,6 +400,7 @@ impl RawFrame {
 /// This is the result of applying disposal methods and transparency
 /// to produce the actual visible frame.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ComposedFrame {
     /// Frame index (0-based).
     pub index: usize,
@@ -546,6 +535,7 @@ impl From<(usize, u16, imgref::ImgVec<rgb::RGBA8>)> for ComposedFrame {
 
 /// Metadata about a GIF file.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct Metadata {
     /// Canvas width.
     pub width: u16,
@@ -586,6 +576,7 @@ impl Metadata {
 
 /// Frame input for encoding.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct FrameInput {
     /// Frame delay in centiseconds.
     pub delay: u16,

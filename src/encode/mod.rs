@@ -45,6 +45,7 @@ use crate::types::{FrameInput, Metadata, Repeat, Rgba};
 
 /// Strategy for palette selection during encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum PaletteStrategy {
     /// Each frame gets its own optimal 256-color palette.
     ///
@@ -160,6 +161,7 @@ fn compute_frame_diff(
 
 /// Encoder configuration.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct EncoderConfig {
     /// Canvas width.
     pub width: u16,

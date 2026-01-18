@@ -15,6 +15,7 @@ use whereat::at;
 /// during GIF processing. All operations are atomic and safe
 /// for concurrent use.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct Stats {
     /// Current memory usage in bytes.
     current_bytes: AtomicUsize,
@@ -160,6 +161,7 @@ impl Stats {
 
 /// Immutable snapshot of statistics at a point in time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct StatsSnapshot {
     /// Current memory usage in bytes.
     pub current_bytes: usize,

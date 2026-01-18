@@ -22,6 +22,7 @@ use whereat::at;
 
 /// Result of quantizing a single frame.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct QuantizedFrame {
     /// The 256-color palette for this frame (RGB, no alpha in palette itself).
     pub palette: Vec<u8>,
@@ -33,6 +34,7 @@ pub struct QuantizedFrame {
 
 /// Configuration for quantization.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct QuantizeConfig {
     /// Quality level (1-100). Higher = better quality, slower.
     pub quality: u8,

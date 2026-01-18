@@ -10,6 +10,7 @@ use whereat::at;
 ///
 /// All limits are optional; `None` means unlimited.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Limits {
     /// Maximum canvas width in pixels.
     pub max_width: Option<u16>,
