@@ -185,11 +185,25 @@ pub struct EncoderConfig {
     #[cfg(feature = "quantize")]
     pub dithering: f32,
 
-    /// If true, compute a shared palette across all frames before encoding.
+    /// If true, buffer frames and compute a shared palette before encoding.
     /// This improves compression and reduces flickering in animations.
-    /// Requires collecting all frames first.
+    ///
+    /// When using the streaming `Encoder::add_frame()` API with this enabled,
+    /// frames are buffered until `max_buffer_frames` or `max_buffer_bytes` is
+    /// reached, at which point the palette is computed and all buffered frames
+    /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(feature = "quantize")]
     pub shared_palette: bool,
+
+    /// Maximum frames to buffer before building shared palette.
+    /// Default is 64. Only used when `shared_palette` is true.
+    #[cfg(feature = "quantize")]
+    pub max_buffer_frames: usize,
+
+    /// Maximum bytes to buffer before building shared palette.
+    /// Default is 64MB. Only used when `shared_palette` is true.
+    #[cfg(feature = "quantize")]
+    pub max_buffer_bytes: usize,
 }
 
 impl EncoderConfig {
@@ -207,6 +221,10 @@ impl EncoderConfig {
             dithering: 0.5, // Lower default for better compression
             #[cfg(feature = "quantize")]
             shared_palette: false,
+            #[cfg(feature = "quantize")]
+            max_buffer_frames: 64,
+            #[cfg(feature = "quantize")]
+            max_buffer_bytes: 64 * 1024 * 1024, // 64 MB
         }
     }
 
@@ -253,13 +271,41 @@ impl EncoderConfig {
 
     /// Enable shared palette mode.
     ///
-    /// When true, a single palette is computed from all frames and shared,
-    /// which improves compression and reduces flickering. This requires
-    /// using `encode_gif_shared_palette()` instead of streaming encoding.
+    /// When true, frames are buffered until buffer limits are reached,
+    /// then a single palette is computed and used for all frames.
+    /// This improves compression and reduces flickering.
+    ///
+    /// For streaming encoding, frames are buffered up to `max_buffer_frames`
+    /// or `max_buffer_bytes`, then the palette is built and buffered frames
+    /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(feature = "quantize")]
     #[must_use]
     pub fn shared_palette(mut self, shared: bool) -> Self {
         self.shared_palette = shared;
+        self
+    }
+
+    /// Set maximum frames to buffer for shared palette building.
+    ///
+    /// When `shared_palette` is enabled, frames are buffered until this
+    /// limit is reached, then the palette is computed and encoding begins.
+    /// Default is 64 frames.
+    #[cfg(feature = "quantize")]
+    #[must_use]
+    pub fn max_buffer_frames(mut self, max: usize) -> Self {
+        self.max_buffer_frames = max;
+        self
+    }
+
+    /// Set maximum bytes to buffer for shared palette building.
+    ///
+    /// When `shared_palette` is enabled, frames are buffered until this
+    /// memory limit is reached, then the palette is computed and encoding begins.
+    /// Default is 64 MB.
+    #[cfg(feature = "quantize")]
+    #[must_use]
+    pub fn max_buffer_bytes(mut self, max: usize) -> Self {
+        self.max_buffer_bytes = max;
         self
     }
 
@@ -303,6 +349,24 @@ pub struct Encoder<W: Write, S: Stop> {
 
     /// Whether the repeat extension has been written.
     repeat_written: bool,
+
+    /// Buffered frames for shared palette mode.
+    /// Frames are buffered until limits are reached, then palette is built.
+    #[cfg(feature = "quantize")]
+    buffered_frames: Vec<FrameInput>,
+
+    /// Current buffered memory in bytes.
+    #[cfg(feature = "quantize")]
+    buffered_bytes: usize,
+
+    /// Shared palette (computed once buffer limits are reached).
+    /// Once set, all subsequent frames use this palette.
+    #[cfg(feature = "quantize")]
+    computed_palette: Option<Vec<u8>>,
+
+    /// Quantizer instance for shared palette mode.
+    #[cfg(feature = "quantize")]
+    quantizer: crate::quantize::ImagequantQuantizer,
 }
 
 impl<W: Write, S: Stop> Encoder<W, S> {
@@ -335,6 +399,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             stats,
             stop,
             repeat_written: false,
+            #[cfg(feature = "quantize")]
+            buffered_frames: Vec::new(),
+            #[cfg(feature = "quantize")]
+            buffered_bytes: 0,
+            #[cfg(feature = "quantize")]
+            computed_palette: None,
+            #[cfg(feature = "quantize")]
+            quantizer: crate::quantize::ImagequantQuantizer::new(),
         })
     }
 
@@ -358,6 +430,10 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             dithering: 0.0, // No dithering for round-trip (already dithered)
             #[cfg(feature = "quantize")]
             shared_palette: false, // Will use global if available
+            #[cfg(feature = "quantize")]
+            max_buffer_frames: 64,
+            #[cfg(feature = "quantize")]
+            max_buffer_bytes: 64 * 1024 * 1024,
         };
 
         Self::new(writer, config, limits, stop)
@@ -401,6 +477,10 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     /// Add a frame to the animation.
     ///
     /// The frame pixels must match the encoder dimensions.
+    ///
+    /// When `shared_palette` is enabled, frames are buffered until buffer
+    /// limits are reached, then the palette is computed and all frames are
+    /// encoded. Subsequent frames are encoded immediately with the shared palette.
     pub fn add_frame(&mut self, input: FrameInput) -> Result<()> {
         // Check cancellation
         self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
@@ -415,9 +495,92 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             }));
         }
 
-        // Check frame count
-        self.limits.check_frame_count(self.frame_index)?;
+        // Check frame count (including buffered frames)
+        #[cfg(feature = "quantize")]
+        let total_frames = self.frame_index + self.buffered_frames.len();
+        #[cfg(not(feature = "quantize"))]
+        let total_frames = self.frame_index;
+        self.limits.check_frame_count(total_frames)?;
 
+        // Handle shared palette buffering mode
+        #[cfg(feature = "quantize")]
+        if self.config.shared_palette && self.computed_palette.is_none() {
+            return self.buffer_frame(input);
+        }
+
+        // Direct encode mode
+        self.encode_frame_direct(input)
+    }
+
+    /// Buffer a frame for later encoding with shared palette.
+    #[cfg(feature = "quantize")]
+    fn buffer_frame(&mut self, input: FrameInput) -> Result<()> {
+        let frame_bytes = input.pixels.len() * 4; // RGBA = 4 bytes per pixel
+        self.buffered_frames.push(input);
+        self.buffered_bytes += frame_bytes;
+
+        // Check if buffer limits reached
+        let should_flush = self.buffered_frames.len() >= self.config.max_buffer_frames
+            || self.buffered_bytes >= self.config.max_buffer_bytes;
+
+        if should_flush {
+            self.flush_buffer()?;
+        }
+
+        Ok(())
+    }
+
+    /// Build shared palette from buffered frames and encode them all.
+    #[cfg(feature = "quantize")]
+    fn flush_buffer(&mut self) -> Result<()> {
+        use crate::quantize::{QuantizeConfig, Quantizer};
+
+        if self.buffered_frames.is_empty() {
+            return Ok(());
+        }
+
+        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+        // Build quantize config
+        let quant_config = QuantizeConfig {
+            quality: self.config.quality,
+            dithering: self.config.dithering,
+            use_background: self.config.use_transparency,
+            max_palette_frames: None, // Use all buffered frames for palette
+        };
+
+        // Collect frame pixel references
+        let frame_refs: Vec<&[Rgba]> = self
+            .buffered_frames
+            .iter()
+            .map(|f| f.pixels.as_slice())
+            .collect();
+
+        // Build shared palette
+        let palette_bytes = self.quantizer.build_shared_palette(
+            &frame_refs,
+            self.config.width,
+            self.config.height,
+            &quant_config,
+            &self.stop,
+        )?;
+
+        self.computed_palette = Some(palette_bytes);
+
+        // Take ownership of buffered frames
+        let frames = core::mem::take(&mut self.buffered_frames);
+        self.buffered_bytes = 0;
+
+        // Encode all buffered frames with the shared palette
+        for frame_input in frames {
+            self.encode_frame_direct(frame_input)?;
+        }
+
+        Ok(())
+    }
+
+    /// Encode a frame directly (not buffered).
+    fn encode_frame_direct(&mut self, input: FrameInput) -> Result<()> {
         // Ensure repeat is written before first frame
         self.ensure_repeat_written()?;
 
@@ -494,7 +657,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     /// Frame preparation with imagequant quantization.
     #[cfg(feature = "quantize")]
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
-        use imagequant::Attributes;
+        use crate::quantize::{QuantizeConfig, Quantizer};
 
         // Check if we can optimize using frame differencing
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
@@ -518,68 +681,37 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 (input.pixels.clone(), 0, 0, input.width, input.height)
             };
 
-        // Set up quantizer
-        let mut attr = Attributes::new();
-        attr.set_quality(0, self.config.quality).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "failed to set quality"
-            })
-        })?;
-
-        // Prepare image data
-        let rgba_slice: &[imagequant::RGBA] = unsafe {
-            std::slice::from_raw_parts(
-                frame_pixels.as_ptr() as *const imagequant::RGBA,
-                frame_pixels.len(),
-            )
+        let quant_config = QuantizeConfig {
+            quality: self.config.quality,
+            dithering: self.config.dithering,
+            use_background: self.config.use_transparency,
+            max_palette_frames: None,
         };
 
-        let mut img = attr
-            .new_image(
-                rgba_slice,
-                frame_width as usize,
-                frame_height as usize,
-                0.0,
-            )
-            .map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "failed to create image"
-                })
-            })?;
-
-        // Quantize
-        let mut result = attr.quantize(&mut img).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "quantization failed"
-            })
-        })?;
-
-        // Set dithering (use config value, default 0.5 for better compression)
-        result
-            .set_dithering_level(self.config.dithering)
-            .map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "failed to set dithering"
-                })
-            })?;
-
-        // Remap to palette
-        let (palette, pixels) = result.remapped(&mut img).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "remapping failed"
-            })
-        })?;
-
-        // Find transparent index (most transparent color)
-        let transparent_index = palette
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.a < 128)
-            .max_by_key(|(_, c)| 255 - c.a)
-            .map(|(i, _)| i as u8);
-
-        // Build gif frame with position offset for cropped region
-        let palette_bytes: Vec<u8> = palette.iter().flat_map(|c| [c.r, c.g, c.b]).collect();
+        // Use shared palette if available, otherwise per-frame quantization
+        let (palette_bytes, pixels, transparent_index) = if self.computed_palette.is_some() {
+            // Shared palette mode: use pre-computed palette
+            let background = self.previous_frame.as_deref();
+            let quantized = self.quantizer.quantize_frame_with_palette(
+                &frame_pixels,
+                frame_width,
+                frame_height,
+                background,
+                &quant_config,
+            )?;
+            (quantized.palette, quantized.pixels, quantized.transparent_index)
+        } else {
+            // Per-frame quantization
+            let background = self.previous_frame.as_deref();
+            let quantized = self.quantizer.quantize_frame(
+                &frame_pixels,
+                frame_width,
+                frame_height,
+                background,
+                &quant_config,
+            )?;
+            (quantized.palette, quantized.pixels, quantized.transparent_index)
+        };
 
         let frame = gif::Frame {
             left: frame_left,
@@ -598,7 +730,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Finish encoding and return the writer.
-    pub fn finish(self) -> Result<W> {
+    ///
+    /// If there are buffered frames (from shared palette mode), they are
+    /// encoded before finishing.
+    pub fn finish(mut self) -> Result<W> {
+        // Flush any remaining buffered frames
+        #[cfg(feature = "quantize")]
+        self.flush_buffer()?;
+
         let writer = self
             .encoder
             .into_inner()
@@ -1141,5 +1280,90 @@ mod tests {
         // Should have zero dithering and shared palette enabled
         assert_eq!(config.dithering, 0.0);
         assert!(config.shared_palette);
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn buffered_streaming_shared_palette() {
+        // Test that streaming encoder buffers frames and builds shared palette
+        let config = EncoderConfig::new(4, 4)
+            .repeat(Repeat::Infinite)
+            .shared_palette(true)
+            .max_buffer_frames(3); // Buffer up to 3 frames
+
+        let limits = Limits::default();
+
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+
+        // Add 5 frames - should buffer first 3, then flush and encode
+        for i in 0..5 {
+            let color = ((i * 50) % 256) as u8;
+            let pixels = vec![Rgba::rgb(color, color, color); 16];
+            let frame = FrameInput::new(4, 4, 10, pixels);
+            encoder.add_frame(frame).unwrap();
+        }
+
+        encoder.finish().unwrap();
+
+        // Should have produced valid GIF
+        assert!(output.len() > 50, "Should produce valid GIF output");
+        assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn buffered_streaming_flushes_on_finish() {
+        // Test that finish() flushes remaining buffered frames
+        let config = EncoderConfig::new(4, 4)
+            .repeat(Repeat::Once)
+            .shared_palette(true)
+            .max_buffer_frames(10); // Large buffer - won't hit limit
+
+        let limits = Limits::default();
+
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+
+        // Add only 2 frames - less than buffer limit
+        for _ in 0..2 {
+            let frame = make_red_frame(4, 4, 10);
+            encoder.add_frame(frame).unwrap();
+        }
+
+        // finish() should flush the buffer
+        encoder.finish().unwrap();
+
+        // Should have produced valid GIF with content
+        assert!(output.len() > 50, "Should produce valid GIF output");
+        assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(feature = "quantize")]
+    #[test]
+    fn buffered_streaming_memory_limit() {
+        // Test that buffer flushes when memory limit is reached
+        let config = EncoderConfig::new(4, 4)
+            .repeat(Repeat::Once)
+            .shared_palette(true)
+            .max_buffer_frames(1000) // High frame limit
+            .max_buffer_bytes(100);  // Low memory limit (~1 frame = 64 bytes RGBA)
+
+        let limits = Limits::default();
+
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+
+        // Add 5 frames - should trigger memory limit flush
+        for _ in 0..5 {
+            let frame = make_red_frame(4, 4, 10);
+            encoder.add_frame(frame).unwrap();
+        }
+
+        encoder.finish().unwrap();
+
+        // Should have produced valid GIF
+        assert!(output.len() > 50);
+        assert_eq!(&output[0..6], b"GIF89a");
     }
 }
