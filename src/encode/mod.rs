@@ -638,6 +638,27 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 (input.pixels.clone(), 0, 0, input.width, input.height)
             };
 
+        // If frame has a palette, use it directly (pass-through mode)
+        if let Some(ref palette) = input.palette {
+            let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
+            let palette_bytes = palette.to_rgb_bytes();
+
+            let frame = gif::Frame {
+                left: frame_left,
+                top: frame_top,
+                width: frame_width,
+                height: frame_height,
+                delay: input.delay,
+                dispose: gif::DisposalMethod::Keep,
+                transparent: transparent_index,
+                palette: Some(palette_bytes),
+                buffer: std::borrow::Cow::Owned(pixels),
+                ..Default::default()
+            };
+
+            return Ok(frame);
+        }
+
         // Convert RGBA to the gif crate's expected format
         let mut rgba_bytes: Vec<u8> = frame_pixels
             .iter()
@@ -680,6 +701,27 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 // Transparency optimization disabled
                 (input.pixels.clone(), 0, 0, input.width, input.height)
             };
+
+        // If frame has a palette, use it directly (pass-through mode)
+        if let Some(ref palette) = input.palette {
+            let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
+            let palette_bytes = palette.to_rgb_bytes();
+
+            let frame = gif::Frame {
+                left: frame_left,
+                top: frame_top,
+                width: frame_width,
+                height: frame_height,
+                delay: input.delay,
+                dispose: gif::DisposalMethod::Keep,
+                transparent: transparent_index,
+                palette: Some(palette_bytes),
+                buffer: std::borrow::Cow::Owned(pixels),
+                ..Default::default()
+            };
+
+            return Ok(frame);
+        }
 
         let quant_config = QuantizeConfig {
             quality: self.config.quality,
@@ -1365,5 +1407,66 @@ mod tests {
         // Should have produced valid GIF
         assert!(output.len() > 50);
         assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[test]
+    fn palette_passthrough_encoding() {
+        use crate::types::Palette;
+
+        // Create a simple 4-color palette
+        let palette = Palette::from_rgba(vec![
+            Rgba::rgb(255, 0, 0),   // 0: red
+            Rgba::rgb(0, 255, 0),   // 1: green
+            Rgba::rgb(0, 0, 255),   // 2: blue
+            Rgba::new(0, 0, 0, 0), // 3: transparent
+        ]);
+
+        // Create pixels using palette colors
+        let pixels = vec![
+            Rgba::rgb(255, 0, 0), // red
+            Rgba::rgb(0, 255, 0), // green
+            Rgba::rgb(0, 0, 255), // blue
+            Rgba::new(0, 0, 0, 0), // transparent
+        ];
+
+        // Create frame with explicit palette (pass-through mode)
+        let frame = FrameInput::with_palette(2, 2, 10, pixels, palette);
+
+        let config = EncoderConfig::new(2, 2).repeat(Repeat::Once);
+        let limits = Limits::default();
+
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+        encoder.add_frame(frame).unwrap();
+        encoder.finish().unwrap();
+
+        // Should have produced valid GIF
+        assert!(output.len() > 10);
+        assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[test]
+    fn palette_nearest_color_mapping() {
+        use crate::types::Palette;
+
+        // Create a simple palette
+        let palette = Palette::from_rgba(vec![
+            Rgba::rgb(255, 0, 0),     // 0: red
+            Rgba::rgb(0, 255, 0),     // 1: green
+            Rgba::rgb(0, 0, 255),     // 2: blue
+            Rgba::new(0, 0, 0, 0),   // 3: transparent
+        ]);
+
+        // Test exact matches
+        assert_eq!(palette.find_nearest(Rgba::rgb(255, 0, 0)), 0);
+        assert_eq!(palette.find_nearest(Rgba::rgb(0, 255, 0)), 1);
+        assert_eq!(palette.find_nearest(Rgba::rgb(0, 0, 255)), 2);
+
+        // Test near matches (should find nearest)
+        assert_eq!(palette.find_nearest(Rgba::rgb(250, 10, 10)), 0); // nearest to red
+        assert_eq!(palette.find_nearest(Rgba::rgb(10, 250, 10)), 1); // nearest to green
+
+        // Test transparent pixels
+        assert_eq!(palette.find_nearest(Rgba::new(128, 128, 128, 0)), 3); // transparent
     }
 }

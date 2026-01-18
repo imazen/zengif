@@ -285,6 +285,65 @@ impl Palette {
     pub fn to_rgb_bytes(&self) -> Vec<u8> {
         self.colors.iter().flat_map(|c| [c.r, c.g, c.b]).collect()
     }
+
+    /// Find the nearest palette color index for an RGBA color.
+    ///
+    /// Uses squared Euclidean distance in RGB space. For transparent pixels,
+    /// returns the transparent index if one exists in the palette.
+    pub fn find_nearest(&self, color: Rgba) -> u8 {
+        if self.colors.is_empty() {
+            return 0;
+        }
+
+        // For transparent pixels, find a transparent palette entry if available
+        if color.a < 128 {
+            if let Some(idx) = self.find_transparent_index() {
+                return idx;
+            }
+        }
+
+        // Find nearest by RGB distance
+        let mut best_idx = 0u8;
+        let mut best_dist = u32::MAX;
+
+        for (idx, pc) in self.colors.iter().enumerate() {
+            let dr = (color.r as i32 - pc.r as i32).unsigned_abs();
+            let dg = (color.g as i32 - pc.g as i32).unsigned_abs();
+            let db = (color.b as i32 - pc.b as i32).unsigned_abs();
+            let dist = dr * dr + dg * dg + db * db;
+
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = idx as u8;
+                if dist == 0 {
+                    break; // Exact match
+                }
+            }
+        }
+
+        best_idx
+    }
+
+    /// Find the index of the most transparent color in the palette.
+    ///
+    /// Returns None if no color has alpha < 128.
+    pub fn find_transparent_index(&self) -> Option<u8> {
+        self.colors
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.a < 128)
+            .max_by_key(|(_, c)| 255 - c.a)
+            .map(|(i, _)| i as u8)
+    }
+
+    /// Map RGBA pixels to palette indices.
+    ///
+    /// Returns (indexed_pixels, transparent_index).
+    pub fn map_pixels(&self, pixels: &[Rgba]) -> (Vec<u8>, Option<u8>) {
+        let transparent_index = self.find_transparent_index();
+        let indexed: Vec<u8> = pixels.iter().map(|p| self.find_nearest(*p)).collect();
+        (indexed, transparent_index)
+    }
 }
 
 impl fmt::Debug for Palette {
@@ -509,6 +568,17 @@ pub struct FrameInput {
 
     /// Frame height (must match encoder canvas).
     pub height: u16,
+
+    /// Optional palette for this frame.
+    ///
+    /// When provided, RGBA pixels are mapped to the nearest palette color
+    /// instead of being quantized. This is useful for:
+    /// - Pass-through resizing (preserving original palettes after resize)
+    /// - Round-trip encoding with known palettes
+    /// - Avoiding quantization overhead when palette is already known
+    ///
+    /// If None, the encoder will quantize the frame (or use global palette).
+    pub palette: Option<Palette>,
 }
 
 impl FrameInput {
@@ -519,6 +589,28 @@ impl FrameInput {
             pixels,
             width,
             height,
+            palette: None,
+        }
+    }
+
+    /// Create a new frame input with a specific palette.
+    ///
+    /// When a palette is provided, RGBA pixels are mapped to the nearest
+    /// palette color instead of being quantized. This is useful for
+    /// pass-through encoding where you want to preserve the original palette.
+    pub fn with_palette(
+        width: u16,
+        height: u16,
+        delay: u16,
+        pixels: Vec<Rgba>,
+        palette: Palette,
+    ) -> Self {
+        Self {
+            delay,
+            pixels,
+            width,
+            height,
+            palette: Some(palette),
         }
     }
 
@@ -533,6 +625,7 @@ impl FrameInput {
             pixels,
             width,
             height,
+            palette: None,
         }
     }
 
@@ -551,6 +644,7 @@ impl FrameInput {
             pixels,
             width,
             height,
+            palette: None,
         }
     }
 
@@ -569,6 +663,7 @@ impl FrameInput {
             pixels,
             width,
             height,
+            palette: None,
         }
     }
 }
