@@ -1,5 +1,8 @@
 //! Core types for GIF processing.
 
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::{string::String, vec::Vec};
+
 use core::fmt;
 
 /// RGBA pixel (4 bytes).
@@ -176,6 +179,7 @@ impl DisposalMethod {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<gif::DisposalMethod> for DisposalMethod {
     fn from(d: gif::DisposalMethod) -> Self {
         match d {
@@ -205,6 +209,7 @@ pub enum Repeat {
     Count(u16),
 }
 
+#[cfg(feature = "std")]
 impl From<gif::Repeat> for Repeat {
     fn from(r: gif::Repeat) -> Self {
         match r {

@@ -3,6 +3,9 @@
 //! The screen maintains the canvas state and applies disposal methods
 //! to produce correctly composited frames.
 
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::vec::Vec;
+
 use crate::disposal::Disposal;
 use crate::error::Result;
 use crate::limits::Limits;
@@ -307,6 +310,7 @@ pub struct ScreenBuilder {
 
 impl ScreenBuilder {
     /// Create a new screen builder from a gif decoder.
+    #[cfg(feature = "std")]
     pub(crate) fn from_decoder<R: std::io::Read>(decoder: &gif::Decoder<R>) -> Self {
         let global_palette = decoder.global_palette().map(Palette::from_rgb_bytes);
 

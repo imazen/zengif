@@ -13,8 +13,8 @@ readme = "README.md"
 
 [features]
 default = ["std"]
-std = ["enough/std", "whereat/std"]
-# NOTE: no_std support not yet implemented - std is required
+std = ["enough/std", "whereat/std", "embedded-io-adapters/std", "gif/std"]
+alloc = ["embedded-io/alloc"]
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
 
@@ -35,8 +35,13 @@ rgb-interop = ["rgb"]
 imgref-interop = ["imgref", "rgb-interop"]
 
 [dependencies]
-# Core GIF codec (we may fork if needed)
-gif = "0.14"
+# Core GIF codec (TODO: vendor fork with no_std support)
+# We enable std and raii_no_panic but not color_quant (we use our own quantizers)
+gif = { version = "0.14", default-features = false, features = ["std", "raii_no_panic"] }
+
+# no_std I/O traits
+embedded-io = { version = "0.7", default-features = false }
+embedded-io-adapters = { version = "0.7", default-features = false }
 
 # Error tracing for production debugging
 whereat = "0.1"

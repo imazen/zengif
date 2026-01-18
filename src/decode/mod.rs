@@ -3,9 +3,22 @@
 //! Provides a streaming decoder that produces composited RGBA frames
 //! with proper disposal method handling.
 
-use std::io::{Cursor, Read};
-use std::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
+
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::sync::Arc;
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
 use std::sync::Arc;
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
+// TODO: When gif crate fork is ready, switch to crate::io types
+// For now, gif crate requires std::io
+#[cfg(feature = "std")]
+use std::io::{Cursor, Read};
 
 use enough::Stop;
 use whereat::at;
@@ -111,6 +124,8 @@ fn pre_validate_header<R: Read>(
 }
 
 /// Reader type that chains the pre-read header bytes with the rest of the stream.
+// TODO: Replace with crate::io::Chain when gif crate fork is ready
+#[cfg(feature = "std")]
 type ChainedReader<R, S> = std::io::Chain<Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
 
 /// Streaming GIF decoder.
@@ -208,7 +223,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         // Set memory limit based on our limits (convert pixels to bytes)
         if let Some(max_pixels) = limits.max_total_pixels {
             // Each pixel is 1 byte (indexed) in gif crate's buffer
-            if let Some(limit) = std::num::NonZeroU64::new(max_pixels) {
+            if let Some(limit) = core::num::NonZeroU64::new(max_pixels) {
                 options.set_memory_limit(gif::MemoryLimit::Bytes(limit));
             }
         }
@@ -288,7 +303,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 
         // Set memory limit based on our limits (convert pixels to bytes)
         if let Some(max_pixels) = limits.max_total_pixels {
-            if let Some(limit) = std::num::NonZeroU64::new(max_pixels) {
+            if let Some(limit) = core::num::NonZeroU64::new(max_pixels) {
                 options.set_memory_limit(gif::MemoryLimit::Bytes(limit));
             }
         }

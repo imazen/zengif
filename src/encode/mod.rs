@@ -33,6 +33,12 @@
 //! **Note**: Temporal dithering (spreading error across frames) is not yet
 //! implemented. This is an advanced feature that would require explicit opt-in.
 
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::{borrow::Cow, vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::borrow::Cow;
+#[cfg(feature = "std")]
 use std::io::Write;
 
 use enough::Stop;
@@ -904,26 +910,47 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Prepare a frame for encoding.
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
-        #[cfg(any(
-            feature = "imagequant",
-            feature = "quantizr",
-            feature = "exoquant-deprecated",
-            feature = "color_quant"
-        ))]
-        {
-            self.prepare_frame_quantized(input)
-        }
-
-        #[cfg(not(feature = "imagequant"))]
-        {
-            self.prepare_frame_simple(input)
-        }
+        self.prepare_frame_quantized(input)
     }
 
-    /// Simple frame preparation without quantization.
-    #[cfg(not(feature = "imagequant"))]
-    fn prepare_frame_simple(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+    /// Prepare a frame for encoding (no quantizer available).
+    ///
+    /// This path requires frames to have pre-computed palettes.
+    #[cfg(not(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    )))]
+    fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+        self.prepare_frame_passthrough(input)
+    }
+
+    /// Passthrough frame preparation - requires frames to have palettes already.
+    ///
+    /// Without a quantizer feature enabled, frames must have pre-computed palettes.
+    /// This is typically used for round-trip encoding where the palette is preserved.
+    #[cfg(not(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    )))]
+    fn prepare_frame_passthrough(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+        // Without a quantizer, frames MUST have a palette
+        let palette = input.palette.as_ref().ok_or_else(|| {
+            at!(GifError::QuantizationFailed {
+                message: "no quantizer feature enabled and frame has no palette"
+            })
+        })?;
+
         // Check if we can optimize using frame differencing
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
             if self.config.use_transparency {
@@ -931,53 +958,32 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                     if let Some(diff) =
                         compute_frame_diff(&input.pixels, prev, input.width, input.height)
                     {
-                        // Use the optimized diff region
                         (diff.pixels, diff.left, diff.top, diff.width, diff.height)
                     } else {
-                        // No optimization possible, use full frame
                         (input.pixels.clone(), 0, 0, input.width, input.height)
                     }
                 } else {
-                    // First frame, no diff possible
                     (input.pixels.clone(), 0, 0, input.width, input.height)
                 }
             } else {
-                // Transparency optimization disabled
                 (input.pixels.clone(), 0, 0, input.width, input.height)
             };
 
-        // If frame has a palette, use it directly (pass-through mode)
-        if let Some(ref palette) = input.palette {
-            let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
-            let palette_bytes = palette.to_rgb_bytes();
+        let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
+        let palette_bytes = palette.to_rgb_bytes();
 
-            let frame = gif::Frame {
-                left: frame_left,
-                top: frame_top,
-                width: frame_width,
-                height: frame_height,
-                delay: input.delay,
-                dispose: gif::DisposalMethod::Keep,
-                transparent: transparent_index,
-                palette: Some(palette_bytes),
-                buffer: std::borrow::Cow::Owned(pixels),
-                ..Default::default()
-            };
-
-            return Ok(frame);
-        }
-
-        // Convert RGBA to the gif crate's expected format
-        let mut rgba_bytes: Vec<u8> = frame_pixels
-            .iter()
-            .flat_map(|p| [p.r, p.g, p.b, p.a])
-            .collect();
-
-        let mut frame = gif::Frame::from_rgba_speed(frame_width, frame_height, &mut rgba_bytes, 10);
-
-        frame.left = frame_left;
-        frame.top = frame_top;
-        frame.delay = input.delay;
+        let frame = gif::Frame {
+            left: frame_left,
+            top: frame_top,
+            width: frame_width,
+            height: frame_height,
+            delay: input.delay,
+            dispose: gif::DisposalMethod::Keep,
+            transparent: transparent_index,
+            palette: Some(palette_bytes),
+            buffer: Cow::Owned(pixels),
+            ..Default::default()
+        };
 
         Ok(frame)
     }
@@ -1028,7 +1034,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 dispose: gif::DisposalMethod::Keep,
                 transparent: transparent_index,
                 palette: Some(palette_bytes),
-                buffer: std::borrow::Cow::Owned(pixels),
+                buffer: Cow::Owned(pixels),
                 ..Default::default()
             };
 
@@ -1084,7 +1090,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             dispose: gif::DisposalMethod::Keep,
             transparent: transparent_index,
             palette: Some(palette_bytes),
-            buffer: std::borrow::Cow::Owned(pixels),
+            buffer: Cow::Owned(pixels),
             ..Default::default()
         };
 
@@ -1276,7 +1282,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
             dispose: gif::DisposalMethod::Keep,
             transparent: quantized.transparent_index,
             palette: None, // Use global palette
-            buffer: std::borrow::Cow::Owned(quantized.pixels),
+            buffer: Cow::Owned(quantized.pixels),
             ..Default::default()
         };
 

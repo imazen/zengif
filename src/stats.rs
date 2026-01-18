@@ -3,6 +3,9 @@
 //! Provides thread-safe tracking of current and peak memory usage
 //! for zengif operations.
 
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::vec::Vec;
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::{GifError, Result};

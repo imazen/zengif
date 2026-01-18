@@ -33,7 +33,7 @@ impl ImagequantQuantizer {
     fn as_imagequant_rgba(pixels: &[Rgba]) -> &[imagequant::RGBA] {
         // SAFETY: Rgba and imagequant::RGBA have identical memory layout (4 bytes RGBA)
         unsafe {
-            std::slice::from_raw_parts(pixels.as_ptr() as *const imagequant::RGBA, pixels.len())
+            core::slice::from_raw_parts(pixels.as_ptr() as *const imagequant::RGBA, pixels.len())
         }
     }
 
