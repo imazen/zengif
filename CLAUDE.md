@@ -303,6 +303,58 @@ MIT OR Apache-2.0 (dual license)
 
 (none yet - new project)
 
+## Critical TODOs
+
+### 1. Fallible Allocations (BLOCKING for production)
+**Status: NOT IMPLEMENTED**
+
+Currently using infallible `vec![]` and `Vec::new()` throughout (28 occurrences). Per global CLAUDE.md rules, all allocations must be fallible using `try_reserve()` or `Vec::try_with_capacity()`.
+
+Files needing conversion:
+- `src/decode/mod.rs` - 5 infallible allocations
+- `src/encode/mod.rs` - 7 infallible allocations
+- `src/screen.rs` - 10 infallible allocations
+- `src/disposal.rs` - 3 infallible allocations
+- `src/types.rs` - 2 infallible allocations
+
+Only `src/stats.rs` has one `try_reserve` usage in a helper function.
+
+### 2. File Size Efficiency (NOT IMPLEMENTED)
+**Status: Basic encoding only - no optimizations**
+
+Current encoder does NOT:
+- Use frame differencing (only encode changed pixels)
+- Mark unchanged pixels as transparent between frames
+- Compute minimal bounding box for changed regions
+- Use optimal disposal method selection
+- Apply delta frame encoding
+
+The `previous_frame` field exists but is never used for optimization.
+
+Gifski achieves 30-50% smaller files through these techniques. Our output is likely 2-3x larger than optimal.
+
+### 3. Codec-Corpus Testing (NOT IMPLEMENTED)
+**Status: No real-world GIF corpus testing**
+
+Should test against `codec-corpus` crate with:
+- Real-world GIF samples
+- Edge case files
+- Malformed files from the wild
+- Performance regression tracking
+
+### 4. RGB/imgref Interop (NOT IMPLEMENTED)
+**Status: Custom Rgba type only, no ecosystem interop**
+
+Should add:
+- `From`/`Into` traits for `rgb::RGBA8`
+- `imgref::ImgVec` / `imgref::ImgRef` support
+- Feature-gated to avoid mandatory dependencies
+
+### 5. Decompression Ratio Check (NOT IMPLEMENTED)
+**Status: Limits field exists but never checked**
+
+`Limits::max_decompression_ratio` exists but the check is never performed during decode. This leaves zip-bomb protection incomplete.
+
 ## Investigation Notes
 
 (none yet - new project)
