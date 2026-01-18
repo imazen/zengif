@@ -345,6 +345,24 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         self.frame_index
     }
 
+    /// Ensure the pixel buffer is large enough for the given frame size.
+    fn ensure_buffer_capacity(&mut self, needed: usize) -> Result<()> {
+        if self.pixel_buffer.len() >= needed {
+            return Ok(());
+        }
+        // Need to grow the buffer
+        let additional = needed - self.pixel_buffer.len();
+        self.stats_ref.get().try_alloc(additional, &self.limits)?;
+        self.pixel_buffer.try_reserve(additional).map_err(|_| {
+            self.stats_ref.get().track_dealloc(additional);
+            at!(GifError::AllocationFailed {
+                requested: additional
+            })
+        })?;
+        self.pixel_buffer.resize(needed, 0);
+        Ok(())
+    }
+
     /// Read and compose the next frame.
     ///
     /// Returns `None` when all frames have been read.
@@ -379,8 +397,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             // We'll clip it during compositing
         }
 
-        // Read frame pixels
+        // Read frame pixels - ensure buffer is large enough for this frame
         let frame_size = frame_info.width as usize * frame_info.height as usize;
+        self.ensure_buffer_capacity(frame_size)?;
         let buffer_slice = &mut self.pixel_buffer[..frame_size];
         buffer_slice.fill(0);
 
@@ -474,8 +493,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             }
         };
 
-        // Read frame pixels
+        // Read frame pixels - ensure buffer is large enough for this frame
         let frame_size = frame_info.width as usize * frame_info.height as usize;
+        self.ensure_buffer_capacity(frame_size)?;
         let buffer_slice = &mut self.pixel_buffer[..frame_size];
         buffer_slice.fill(0);
 
