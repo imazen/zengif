@@ -25,6 +25,16 @@ just test       # run tests
 just outdated   # check dependency versions
 just bench      # run benchmarks
 just doc        # generate docs
+
+# Fuzzing (requires: cargo install cargo-fuzz && rustup install nightly)
+just fuzz              # run main decode fuzzer with dictionary
+just fuzz-seeded       # run with seed corpus
+just fuzz-streaming    # fuzz streaming decoder
+just fuzz-roundtrip    # fuzz encode/decode consistency
+just fuzz-limits       # fuzz limits enforcement
+just fuzz-timed 3600   # run for 1 hour
+just fuzz-list         # list all fuzz targets
+just fuzz-build        # build fuzz targets (for CI)
 ```
 
 ## Core Requirements
@@ -267,6 +277,55 @@ Gather test GIFs demonstrating:
 - Large dimensions
 - Many frames
 - Edge cases (1x1, 1 frame, etc.)
+
+## Fuzzing
+
+Fuzz testing infrastructure is in `fuzz/`. See `fuzz/README.md` for full documentation.
+
+### Fuzz Targets
+
+| Target | Description |
+|--------|-------------|
+| `fuzz_decode` | Full decode path via `decode_gif()` |
+| `fuzz_decode_streaming` | Streaming decode via `Decoder` frame iteration |
+| `fuzz_roundtrip` | Encode → Decode consistency |
+| `fuzz_limits` | Limits enforcement with arbitrary configurations |
+
+### Quick Start
+
+```bash
+cargo install cargo-fuzz
+rustup install nightly
+just fuzz              # Main target with GIF dictionary
+just fuzz-seeded       # With seed corpus
+just fuzz-timed 3600   # Run for 1 hour
+```
+
+### Corpus
+
+Seed corpus in `fuzz/corpus/seed/` includes:
+- All test GIFs from `tests/corpus/`
+- Dimension bombs and malformed inputs
+- Minimal valid GIFs for edge cases
+
+External corpora can be downloaded via `just fuzz-download-corpus`:
+- [dvyukov/go-fuzz-corpus](https://github.com/dvyukov/go-fuzz-corpus/tree/master/gif)
+- [peterdn/gif-test-suite](https://github.com/peterdn/gif-test-suite)
+
+### Dictionary
+
+`fuzz/gif.dict` contains GIF-specific tokens:
+- Magic headers, block types, extension labels
+- LZW code sizes, disposal method patterns
+- Common dimension and delay values
+
+### Known CVEs Targeted
+
+| CVE | Issue | Relevant Target |
+|-----|-------|-----------------|
+| CVE-2025-27598 | OOB write from crafted frame length | `fuzz_limits` |
+| CVE-2021-44648 | Heap overflow with LZW min code = 12 | `fuzz_decode` |
+| CVE-2019-15133 | Divide by zero with height = 0 | `fuzz_decode` |
 
 ## Performance Targets
 

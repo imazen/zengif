@@ -1,0 +1,65 @@
+[package]
+name = "zengif-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.zengif]
+path = ".."
+features = ["std"]
+
+# Path deps required by zengif
+[dependencies.enough]
+path = "../../enough/crates/enough"
+features = ["std"]
+
+[dependencies.almost-enough]
+path = "../../enough/crates/almost-enough"
+
+# Explicit features for fuzzing
+[features]
+default = []
+
+[[bin]]
+name = "fuzz_decode"
+path = "fuzz_targets/fuzz_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decode_streaming"
+path = "fuzz_targets/fuzz_decode_streaming.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_roundtrip"
+path = "fuzz_targets/fuzz_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_limits"
+path = "fuzz_targets/fuzz_limits.rs"
+test = false
+doc = false
+bench = false
+
+# Recommended profile settings for fuzzing
+[profile.release]
+debug = 1
+opt-level = 3
+
+# For faster iteration during development
+[profile.dev]
+opt-level = 1

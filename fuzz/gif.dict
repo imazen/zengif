@@ -1,0 +1,98 @@
+# GIF format dictionary for fuzzing
+# Comments with # at start of line are supported
+
+# Magic headers
+header_87a="GIF87a"
+header_89a="GIF89a"
+
+# Block terminators
+block_term="\x00"
+trailer="\x3b"
+
+# Extension introducer
+ext_intro="\x21"
+
+# Image separator
+img_sep="\x2c"
+
+# Extension labels
+gce_label="\xf9"
+comment_label="\xfe"
+app_label="\xff"
+plaintext_label="\x01"
+
+# NETSCAPE application extension (animation loop)
+netscape1="NETSCAPE"
+netscape2="NETSCAPE2.0"
+netscape3="\x0bNETSCAPE2.0"
+
+# Disposal methods in GCE (packed byte patterns)
+disposal_none="\x00"
+disposal_keep="\x04"
+disposal_bg="\x08"
+disposal_prev="\x0c"
+
+# Transparency flag patterns
+trans_only="\x01"
+trans_keep="\x05"
+trans_bg="\x09"
+trans_prev="\x0d"
+
+# Common LZW minimum code sizes
+lzw_2="\x02"
+lzw_3="\x03"
+lzw_4="\x04"
+lzw_7="\x07"
+lzw_8="\x08"
+
+# LZW special codes
+lzw_sp1="\x00\x01"
+lzw_sp2="\x01\x01"
+
+# Common dimension patterns (little-endian)
+dim_1="\x01\x00"
+dim_8="\x08\x00"
+dim_16="\x10\x00"
+dim_32="\x20\x00"
+dim_64="\x40\x00"
+dim_128="\x80\x00"
+dim_256="\x00\x01"
+dim_512="\x00\x02"
+dim_1024="\x00\x04"
+
+# Global/Local Color Table flags (packed byte)
+no_gct="\x00"
+gct_2="\x80"
+gct_256="\x87"
+gct_full="\xf7"
+
+# Frame delays (centiseconds, little-endian)
+delay_0="\x00\x00"
+delay_1="\x01\x00"
+delay_4="\x04\x00"
+delay_10="\x0a\x00"
+delay_100="\x64\x00"
+
+# Interlace flag
+interlaced="\x40"
+non_interlaced="\x00"
+
+# Block sizes
+gce_size="\x04"
+netscape_size="\x0b"
+
+# Edge case values
+max_u16="\xff\xff"
+zero="\x00\x00"
+min_dim="\x01\x00"
+
+# Palette entries (RGB triplets)
+black="\x00\x00\x00"
+white="\xff\xff\xff"
+red="\xff\x00\x00"
+green="\x00\xff\x00"
+blue="\x00\x00\xff"
+
+# Common sub-block patterns
+gce_notrans="\x04\x01\x00\x00\x00"
+gce_trans_bg="\x04\x09\x00\x00\x00"

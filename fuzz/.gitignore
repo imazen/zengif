@@ -1,0 +1,8 @@
+target
+artifacts
+coverage
+
+# Ignore fuzzer-generated corpus but keep seed corpus
+corpus/fuzz_*
+corpus/merged
+corpus/external
