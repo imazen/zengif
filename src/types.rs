@@ -427,6 +427,13 @@ pub struct ComposedFrame {
 
     /// RGBA pixel data (4 bytes per pixel).
     pub pixels: Vec<Rgba>,
+
+    /// The effective palette used for this frame.
+    ///
+    /// This is either the frame's local palette (if present) or the global palette.
+    /// Useful for pass-through encoding where you want to preserve the original
+    /// palette after processing (e.g., resizing) the RGBA pixels.
+    pub palette: Option<Palette>,
 }
 
 impl ComposedFrame {
@@ -438,6 +445,28 @@ impl ComposedFrame {
             height,
             delay,
             pixels,
+            palette: None,
+        }
+    }
+
+    /// Create a new composed frame with an explicit palette.
+    ///
+    /// Use this when you want to preserve the original palette for pass-through encoding.
+    pub fn with_palette(
+        index: usize,
+        width: u16,
+        height: u16,
+        delay: u16,
+        pixels: Vec<Rgba>,
+        palette: Palette,
+    ) -> Self {
+        Self {
+            index,
+            width,
+            height,
+            delay,
+            pixels,
+            palette: Some(palette),
         }
     }
 
@@ -510,6 +539,7 @@ impl From<(usize, u16, imgref::ImgVec<rgb::RGBA8>)> for ComposedFrame {
             height,
             delay,
             pixels,
+            palette: None,
         }
     }
 }

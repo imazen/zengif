@@ -219,3 +219,166 @@ fn streaming_decode_matches_batch() {
         assert_eq!(batch.pixels.len(), stream.pixels.len());
     }
 }
+
+/// Vertically flip pixels in place.
+fn vflip(pixels: &mut [Rgba], width: usize, height: usize) {
+    for y in 0..height / 2 {
+        let top_row_start = y * width;
+        let bottom_row_start = (height - 1 - y) * width;
+        for x in 0..width {
+            pixels.swap(top_row_start + x, bottom_row_start + x);
+        }
+    }
+}
+
+/// Test round-trip with vflip transformation using palette pass-through.
+///
+/// This verifies that:
+/// 1. Palettes are correctly exposed during decode
+/// 2. Palette pass-through encoding works correctly
+/// 3. The full cycle: decode -> vflip -> encode -> decode -> vflip produces original
+#[test]
+fn round_trip_vflip_with_palette_passthrough() {
+    // Create a multi-colored animation to test palette preservation
+    let width = 4u16;
+    let height = 4u16;
+
+    // Create frames with different colors - a gradient pattern
+    let original_frames: Vec<FrameInput> = (0..3)
+        .map(|i| {
+            let mut pixels = Vec::with_capacity(width as usize * height as usize);
+            for y in 0..height {
+                for x in 0..width {
+                    // Create a pattern that changes with frame index
+                    let r = ((x as u32 * 60 + i * 30) % 256) as u8;
+                    let g = ((y as u32 * 60 + i * 20) % 256) as u8;
+                    let b = (((x + y) as u32 * 40 + i * 40) % 256) as u8;
+                    pixels.push(Rgba::rgb(r, g, b));
+                }
+            }
+            FrameInput::new(width, height, 10, pixels)
+        })
+        .collect();
+
+    // Step 1: Encode original
+    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let encoded1 = encode_gif(original_frames, config.clone(), Limits::default(), Unstoppable)
+        .expect("Initial encode failed");
+
+    // Step 2: Decode
+    let stats1 = Stats::new();
+    let (metadata1, frames1) =
+        decode_gif(&encoded1, Limits::default(), &stats1, Unstoppable).expect("First decode failed");
+
+    assert_eq!(frames1.len(), 3);
+
+    // Verify palettes are exposed
+    for (i, frame) in frames1.iter().enumerate() {
+        assert!(
+            frame.palette.is_some(),
+            "Frame {} should have palette exposed",
+            i
+        );
+    }
+
+    // Step 3: Vflip and encode with original palettes
+    let flipped_frames: Vec<FrameInput> = frames1
+        .iter()
+        .map(|frame| {
+            let mut pixels = frame.pixels.clone();
+            vflip(&mut pixels, frame.width as usize, frame.height as usize);
+
+            // Use palette pass-through
+            if let Some(ref palette) = frame.palette {
+                FrameInput::with_palette(frame.width, frame.height, frame.delay, pixels, palette.clone())
+            } else {
+                FrameInput::new(frame.width, frame.height, frame.delay, pixels)
+            }
+        })
+        .collect();
+
+    let config2 = EncoderConfig::new(metadata1.width, metadata1.height).repeat(metadata1.repeat);
+    let encoded2 = encode_gif(flipped_frames, config2.clone(), Limits::default(), Unstoppable)
+        .expect("Flipped encode failed");
+
+    // Step 4: Decode flipped
+    let stats2 = Stats::new();
+    let (_, frames2) =
+        decode_gif(&encoded2, Limits::default(), &stats2, Unstoppable).expect("Second decode failed");
+
+    assert_eq!(frames2.len(), 3);
+
+    // Step 5: Vflip again and encode
+    let reflipped_frames: Vec<FrameInput> = frames2
+        .iter()
+        .map(|frame| {
+            let mut pixels = frame.pixels.clone();
+            vflip(&mut pixels, frame.width as usize, frame.height as usize);
+
+            if let Some(ref palette) = frame.palette {
+                FrameInput::with_palette(frame.width, frame.height, frame.delay, pixels, palette.clone())
+            } else {
+                FrameInput::new(frame.width, frame.height, frame.delay, pixels)
+            }
+        })
+        .collect();
+
+    let encoded3 = encode_gif(reflipped_frames, config2, Limits::default(), Unstoppable)
+        .expect("Re-flipped encode failed");
+
+    // Step 6: Decode final
+    let stats3 = Stats::new();
+    let (_, frames3) =
+        decode_gif(&encoded3, Limits::default(), &stats3, Unstoppable).expect("Final decode failed");
+
+    assert_eq!(frames3.len(), 3);
+
+    // Step 7: Compare with original decode (frames1)
+    // After vflip -> encode -> decode -> vflip -> encode -> decode,
+    // we should get back approximately the same pixels
+    // (exact match isn't guaranteed due to palette quantization, but should be close)
+    for (i, (original, final_frame)) in frames1.iter().zip(frames3.iter()).enumerate() {
+        assert_eq!(
+            original.width, final_frame.width,
+            "Frame {} width mismatch",
+            i
+        );
+        assert_eq!(
+            original.height, final_frame.height,
+            "Frame {} height mismatch",
+            i
+        );
+        assert_eq!(
+            original.delay, final_frame.delay,
+            "Frame {} delay mismatch",
+            i
+        );
+        assert_eq!(
+            original.pixels.len(),
+            final_frame.pixels.len(),
+            "Frame {} pixel count mismatch",
+            i
+        );
+
+        // Check that most pixels are similar (within tolerance due to palette mapping)
+        let mut close_count = 0;
+        for (orig_px, final_px) in original.pixels.iter().zip(final_frame.pixels.iter()) {
+            let dr = (orig_px.r as i32 - final_px.r as i32).abs();
+            let dg = (orig_px.g as i32 - final_px.g as i32).abs();
+            let db = (orig_px.b as i32 - final_px.b as i32).abs();
+            // Allow some tolerance for palette mapping differences
+            if dr <= 32 && dg <= 32 && db <= 32 {
+                close_count += 1;
+            }
+        }
+
+        let total = original.pixels.len();
+        let close_ratio = close_count as f64 / total as f64;
+        assert!(
+            close_ratio >= 0.8,
+            "Frame {}: Only {:.1}% of pixels are close (expected >= 80%)",
+            i,
+            close_ratio * 100.0
+        );
+    }
+}

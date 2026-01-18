@@ -227,7 +227,21 @@ impl Screen {
             })?;
         composed_pixels.extend_from_slice(&self.pixels);
 
-        let composed = ComposedFrame::new(index, self.width, self.height, delay, composed_pixels);
+        // Get effective palette (local if present, else global)
+        let effective_palette = frame
+            .palette
+            .as_ref()
+            .or(self.global_palette.as_ref())
+            .cloned();
+
+        let composed = ComposedFrame {
+            index,
+            width: self.width,
+            height: self.height,
+            delay,
+            pixels: composed_pixels,
+            palette: effective_palette,
+        };
 
         Ok(composed)
     }
