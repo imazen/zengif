@@ -200,7 +200,7 @@ impl<R: Read, S: Stop> Decoder<R, S> {
             background_color_index: background_index,
             repeat: Repeat::Infinite, // Updated after first frame from NETSCAPE extension
             frame_count: 0,           // Unknown until we read all frames
-            comments: Vec::new(),
+            comments: Vec::new(),     // Note: gif crate doesn't expose comment extensions
         };
 
         // Create the compositing screen

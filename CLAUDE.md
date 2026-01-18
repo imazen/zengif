@@ -319,37 +319,39 @@ MIT OR Apache-2.0 (dual license)
 - ✅ Fallible allocations with try_reserve() throughout
 
 **NOT DONE (nice to have):**
-- ❌ Pngquant/imagequant frame optimization (P0)
-- ❌ Frame differencing for small output
-- ❌ Decompression ratio check (P4)
+- ✅ Pngquant/imagequant frame optimization (P0) - DONE 2026-01-17
+- ✅ Frame differencing for small output - DONE 2026-01-17
+- ✅ Decompression ratio check (P4) - DONE 2026-01-17
 - ❌ Codec-corpus testing (P2)
-- ❌ RGB/imgref interop (P3)
+- ✅ RGB/imgref interop (P3) - DONE 2026-01-17
+- ✅ NETSCAPE extension parsing - DONE 2026-01-17
+- ⚠️ Comment extraction - BLOCKED (gif crate doesn't expose comment extensions)
 
 **Key files:**
 - `src/decode/mod.rs` - Streaming decoder with `pre_validate_header()` for zero-trust
-- `src/encode/mod.rs` - Encoder with `previous_frame` field (exists but unused)
+- `src/encode/mod.rs` - Encoder with frame differencing via `compute_frame_diff()`
 - `src/disposal.rs` - Disposal state machine
 - `src/screen.rs` - Canvas compositing
 - `src/stats.rs` - Memory tracking with `try_alloc()` helper
 
 ## Critical TODOs (PRIORITIZED)
 
-### P0: Pngquant/Imagequant Integration (HIGH PRIORITY)
-**Status: BASIC ONLY - needs frame optimization**
+### P0: Pngquant/Imagequant Integration ✅ DONE
+**Status: IMPLEMENTED (2026-01-17)**
 
-Current state:
-- `imagequant` is optional dependency (feature = "quantize")
-- `prepare_frame_quantized()` in src/encode/mod.rs uses imagequant
-- BUT: No frame differencing, no delta encoding, no size optimization
+Frame differencing is now implemented in `src/encode/mod.rs`:
+- `compute_frame_diff()` compares current and previous frames
+- Finds minimal bounding box of changed pixels
+- Marks unchanged pixels within the region as transparent
+- Sets frame offset (left, top) for cropped region
+- Both quantized and simple paths use the optimization
 
-Need to implement in src/encode/mod.rs:
-1. Compare current frame to `previous_frame` (field exists, line 95)
-2. Compute minimal bounding box of changed pixels
-3. Mark unchanged pixels as transparent
-4. Use optimal disposal method based on frame content
-5. Only encode the delta region
-
-Reference: gifski source for frame differencing algorithm
+Tests added:
+- `frame_diff_finds_changed_region`
+- `frame_diff_marks_unchanged_as_transparent`
+- `frame_diff_no_changes`
+- `frame_diff_full_change`
+- `frame_diff_produces_smaller_output`
 
 ### P1: Fallible Allocations ✅ DONE
 **Status: IMPLEMENTED (2026-01-17)**
@@ -373,18 +375,21 @@ Should test against `codec-corpus` crate with:
 - Malformed files from the wild
 - Performance regression tracking
 
-### P3: RGB/imgref Interop
-**Status: Custom Rgba type only, no ecosystem interop**
+### P3: RGB/imgref Interop ✅ DONE
+**Status: IMPLEMENTED (2026-01-17)**
 
-Should add:
-- `From`/`Into` traits for `rgb::RGBA8`
-- `imgref::ImgVec` / `imgref::ImgRef` support
-- Feature-gated to avoid mandatory dependencies
+Added feature-gated interop:
+- `rgb-interop` feature: From/Into for `rgb::RGBA8` and `rgb::RGB8`
+- `imgref-interop` feature: `ComposedFrame::into_imgvec()`, `as_imgref()`, `FrameInput::from_imgvec()`, `from_imgref()`
 
-### P4: Decompression Ratio Check
-**Status: Limits field exists but never checked**
+### P4: Decompression Ratio Check ✅ DONE
+**Status: IMPLEMENTED (2026-01-17)**
 
-`Limits::max_decompression_ratio` exists but the check is never performed during decode. This leaves zip-bomb protection incomplete.
+Added `CountingRead` wrapper in decoder to track compressed bytes read.
+After each frame, checks ratio against `Limits::max_decompression_ratio` (default 1000x).
+Returns `DecompressionRatioExceeded` error if exceeded.
+
+Tests added: `decompression_ratio_check`, `decompression_ratio_ok`
 
 ### P5: Color Space / Linear Alpha Blending
 **Status: sRGB assumed but undocumented**
@@ -396,46 +401,21 @@ Should add:
 
 ## Investigation Notes
 
-### Gifski Frame Optimization Algorithm
+### Gifski Frame Optimization Algorithm ✅ IMPLEMENTED
 
-To match gifski output sizes, implement in `src/encode/mod.rs`:
-
-```rust
-fn optimize_frame(&mut self, current: &[Rgba], previous: &[Rgba]) -> OptimizedFrame {
-    // 1. Find changed pixels
-    let mut min_x = width;
-    let mut min_y = height;
-    let mut max_x = 0;
-    let mut max_y = 0;
-
-    for y in 0..height {
-        for x in 0..width {
-            let idx = y * width + x;
-            if current[idx] != previous[idx] {
-                min_x = min_x.min(x);
-                min_y = min_y.min(y);
-                max_x = max_x.max(x);
-                max_y = max_y.max(y);
-            }
-        }
-    }
-
-    // 2. Extract delta region
-    // 3. Mark unchanged as transparent
-    // 4. Choose disposal: Keep if few changes, Background if reverting to bg
-}
-```
+Frame differencing now implemented in `compute_frame_diff()` in `src/encode/mod.rs`.
+See P0 section above for details.
 
 ### Pngquant Integration Points
 
 - `imagequant::Attributes` for quality settings (already used)
-- Frame-to-frame palette consistency for smoother animations
-- Temporal dithering: spread error across frames, not just spatially
+- Frame-to-frame palette consistency for smoother animations (future enhancement)
+- Temporal dithering: spread error across frames, not just spatially (future enhancement)
 
 ## Next Session Checklist
 
 1. Read this CLAUDE.md first
 2. Run `cargo test` to verify state
 3. Check `git log --oneline -5` for recent commits
-4. Priority order: P0 (pngquant optimization) → P1 (fallible allocs) → P2 (corpus testing)
-5. Key file for P0: `src/encode/mod.rs` lines 95, 229-232 (`previous_frame` handling)
+4. Priority order: P2 (corpus testing) → P5 (linear alpha blending)
+5. Comment extraction blocked by gif crate limitation
