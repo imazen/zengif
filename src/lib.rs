@@ -13,23 +13,68 @@
 //!
 //! ## Quick Start
 //!
+//! ### Decoding
+//!
 //! ```rust,ignore
-//! use zengif::{GifDecoder, DecodeLimits, Stats};
+//! use zengif::{Decoder, Limits, Stats};
 //! use enough::Unstoppable;
 //!
-//! let limits = DecodeLimits::default();
+//! let limits = Limits::default();
 //! let stats = Stats::new();
 //!
-//! let decoder = GifDecoder::new(reader, limits, &stats, Unstoppable)?;
+//! let mut decoder = Decoder::new(reader, limits, &stats, Unstoppable)?;
 //!
-//! for frame in decoder.frames() {
-//!     let frame = frame?;
+//! while let Some(frame) = decoder.next_frame()? {
 //!     // frame.pixels is composited RGBA
+//!     // frame.delay is in centiseconds
 //! }
+//! ```
+//!
+//! ### Encoding
+//!
+//! ```rust,ignore
+//! use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat};
+//! use enough::Unstoppable;
+//!
+//! let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+//! let limits = Limits::default();
+//!
+//! let mut encoder = Encoder::new(writer, config, limits, Unstoppable)?;
+//!
+//! for frame in frames {
+//!     encoder.add_frame(frame)?;
+//! }
+//!
+//! encoder.finish()?;
+//! ```
+//!
+//! ## Memory Tracking
+//!
+//! All operations track memory usage through a `Stats` object:
+//!
+//! ```rust,ignore
+//! let stats = Stats::new();
+//! // ... use decoder/encoder ...
+//! println!("Peak memory: {} bytes", stats.peak());
+//! ```
+//!
+//! ## Cancellation
+//!
+//! Operations support cooperative cancellation via the `enough` crate:
+//!
+//! ```rust,ignore
+//! use almost_enough::Stopper;
+//!
+//! let stop = Stopper::new();
+//! let stop_clone = stop.clone();
+//!
+//! // In another thread:
+//! stop_clone.cancel();
+//!
+//! // Decoder will return GifError::Cancelled
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
@@ -39,23 +84,26 @@ extern crate alloc;
 // Crate info for whereat error tracing
 whereat::define_at_crate_info!();
 
-// Module declarations (to be implemented)
-// mod decode;
-// mod encode;
-// mod disposal;
-// mod screen;
-// mod error;
-// mod limits;
-// mod stats;
-// mod types;
+// Internal modules
+mod decode;
+mod disposal;
+mod encode;
+mod error;
+mod limits;
+mod screen;
+mod stats;
+mod types;
 
-// Re-exports
-// pub use decode::GifDecoder;
-// pub use encode::GifEncoder;
-// pub use error::{GifError, Result};
-// pub use limits::DecodeLimits;
-// pub use stats::Stats;
-// pub use types::{Frame, ComposedFrame, Metadata, Repeat};
+// Public API
+pub use decode::{decode_gif, Decoder, FrameIterator};
+pub use encode::{encode_gif, Encoder, EncoderConfig};
+pub use error::{GifError, Result};
+pub use limits::Limits;
+pub use screen::{Screen, ScreenBuilder};
+pub use stats::{tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc};
+pub use types::{
+    ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, RawFrame, Repeat, Rgba,
+};
 
 // Re-export enough for user convenience
 pub use enough::{Stop, Unstoppable};
