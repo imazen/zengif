@@ -8,3 +8,5 @@ Cargo.lock
 perf.data
 perf.data.old
 flamegraph.svg
+# Test corpus files (copied from codec-corpus, not committed)
+tests/corpus/image-rs/

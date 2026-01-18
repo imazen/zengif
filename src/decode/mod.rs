@@ -16,29 +16,50 @@ use crate::screen::{Screen, ScreenBuilder};
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat, Rgba};
 
-/// A reader wrapper that counts bytes read.
+/// A reader wrapper that counts bytes read and checks for cancellation.
 ///
-/// Used to track compressed input size for decompression ratio checks.
-struct CountingRead<R> {
+/// Used to:
+/// 1. Track compressed input size for decompression ratio checks
+/// 2. Check Stop on every read, enabling cancellation during LZW decompression
+struct StopCheckingRead<R, S: Stop> {
     inner: R,
     bytes_read: Arc<AtomicU64>,
+    stop: S,
+    /// Only check stop every N bytes to reduce overhead
+    check_interval: u64,
+    bytes_since_check: u64,
 }
 
-impl<R> CountingRead<R> {
-    fn new(inner: R) -> (Self, Arc<AtomicU64>) {
+impl<R, S: Stop> StopCheckingRead<R, S> {
+    fn new(inner: R, stop: S) -> (Self, Arc<AtomicU64>) {
         let bytes_read = Arc::new(AtomicU64::new(0));
         (
             Self {
                 inner,
                 bytes_read: Arc::clone(&bytes_read),
+                stop,
+                check_interval: 64 * 1024, // Check every 64KB
+                bytes_since_check: 0,
             },
             bytes_read,
         )
     }
 }
 
-impl<R: Read> Read for CountingRead<R> {
+impl<R: Read, S: Stop> Read for StopCheckingRead<R, S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Check for cancellation periodically (not on every read for performance)
+        self.bytes_since_check += buf.len() as u64;
+        if self.bytes_since_check >= self.check_interval {
+            self.bytes_since_check = 0;
+            if self.stop.check().is_err() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "operation cancelled",
+                ));
+            }
+        }
+
         let n = self.inner.read(buf)?;
         self.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
         Ok(n)
@@ -93,9 +114,10 @@ fn pre_validate_header<R: BufRead>(reader: &mut R, limits: &Limits) -> Result<(u
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
-pub struct Decoder<R: Read, S: Stop> {
-    /// Underlying gif crate reader (wrapped in CountingRead + BufReader for pre-validation).
-    reader: gif::Decoder<BufReader<CountingRead<R>>>,
+pub struct Decoder<R: Read, S: Stop + Clone> {
+    /// Underlying gif crate reader (wrapped in StopCheckingRead + BufReader for pre-validation).
+    /// The reader checks Stop on every 64KB read, enabling cancellation during LZW decompression.
+    reader: gif::Decoder<BufReader<StopCheckingRead<R, S>>>,
 
     /// Compositing screen.
     screen: Screen,
@@ -153,21 +175,21 @@ impl StatsRef {
 unsafe impl Send for StatsRef {}
 unsafe impl Sync for StatsRef {}
 
-impl<R: Read, S: Stop> Decoder<R, S> {
+impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     /// Create a new decoder from a reader.
     ///
     /// # Arguments
     /// * `reader` - The GIF data source
     /// * `limits` - Size and memory limits
     /// * `stats` - Memory tracking statistics
-    /// * `stop` - Cancellation checker
+    /// * `stop` - Cancellation checker (must be Clone; checked every 64KB during LZW decode)
     pub fn new(reader: R, limits: Limits, stats: &Stats, stop: S) -> Result<Self> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in CountingRead to track compressed bytes, then BufReader for pre-validation
-        let (counting_reader, bytes_read) = CountingRead::new(reader);
-        let mut buf_reader = BufReader::new(counting_reader);
+        // Wrap in StopCheckingRead to track bytes and enable cancellation during LZW decompression
+        let (stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
+        let mut buf_reader = BufReader::new(stop_reader);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
@@ -242,9 +264,9 @@ impl<R: Read, S: Stop> Decoder<R, S> {
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        // Wrap in CountingRead to track compressed bytes, then BufReader for pre-validation
-        let (counting_reader, bytes_read) = CountingRead::new(reader);
-        let mut buf_reader = BufReader::new(counting_reader);
+        // Wrap in StopCheckingRead to track bytes and enable cancellation during LZW decompression
+        let (stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
+        let mut buf_reader = BufReader::new(stop_reader);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (width, height) = pre_validate_header(&mut buf_reader, &limits)?;
@@ -580,11 +602,11 @@ impl<R: Read, S: Stop> Decoder<R, S> {
 }
 
 /// Iterator adapter for decoder frames.
-pub struct FrameIterator<R: Read, S: Stop> {
+pub struct FrameIterator<R: Read, S: Stop + Clone> {
     decoder: Decoder<R, S>,
 }
 
-impl<R: Read, S: Stop> Iterator for FrameIterator<R, S> {
+impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
     type Item = Result<ComposedFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -601,7 +623,7 @@ impl<R: Read, S: Stop> Iterator for FrameIterator<R, S> {
 }
 
 /// Convenience function to decode a GIF from bytes.
-pub fn decode_gif<S: Stop>(
+pub fn decode_gif<S: Stop + Clone>(
     data: &[u8],
     limits: Limits,
     stats: &Stats,
