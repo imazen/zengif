@@ -691,17 +691,19 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::Quantizer>
         quality: config.quality,
         dithering: config.dithering,
         use_background: config.use_transparency,
+        max_palette_frames: None, // Sample all frames for shared palette
     };
 
     // Collect frame references for shared palette building
     let frame_refs: Vec<&[Rgba]> = frames.iter().map(|f| f.pixels.as_slice()).collect();
 
-    // Build shared palette from all frames
+    // Build shared palette from all frames (with cancellation support)
     let palette_bytes = quantizer.build_shared_palette(
         &frame_refs,
         config.width,
         config.height,
         &quant_config,
+        &stop,
     )?;
 
     // Estimate output size

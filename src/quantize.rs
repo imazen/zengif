@@ -8,9 +8,16 @@
 //! For animations, quantizers can use the previous frame as a "background"
 //! to optimize transparency. Pixels that match the background after
 //! quantization are made transparent, improving compression.
+//!
+//! # Frame Sampling
+//!
+//! For large animations, building a palette from every frame can be slow.
+//! The [`QuantizeConfig::max_palette_frames`] option limits how many frames
+//! are sampled, using uniform distribution across the animation.
 
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
+use enough::Stop;
 use whereat::at;
 
 /// Result of quantizing a single frame.
@@ -33,6 +40,10 @@ pub struct QuantizeConfig {
     pub dithering: f32,
     /// Whether to use the previous frame as background for transparency optimization.
     pub use_background: bool,
+    /// Maximum frames to sample for shared palette building.
+    /// If None, all frames are used. If Some(n), uniformly samples n frames.
+    /// This limits CPU/memory usage for large animations.
+    pub max_palette_frames: Option<usize>,
 }
 
 impl Default for QuantizeConfig {
@@ -41,6 +52,7 @@ impl Default for QuantizeConfig {
             quality: 80,
             dithering: 0.5,
             use_background: true,
+            max_palette_frames: None, // Use all frames by default
         }
     }
 }
@@ -52,8 +64,57 @@ impl QuantizeConfig {
             quality: 100,
             dithering: 0.0,
             use_background: true,
+            max_palette_frames: None,
         }
     }
+
+    /// Set maximum frames to sample for palette building.
+    ///
+    /// For large animations, sampling a subset of frames can significantly
+    /// reduce palette building time while still producing good results.
+    /// Frames are sampled uniformly across the animation.
+    ///
+    /// Recommended values:
+    /// - 16-32 for most animations
+    /// - 64+ for animations with many distinct scenes
+    /// - None to use all frames (default)
+    #[must_use]
+    pub fn max_palette_frames(mut self, max: usize) -> Self {
+        self.max_palette_frames = Some(max);
+        self
+    }
+}
+
+/// Compute indices of frames to sample for palette building.
+///
+/// Returns indices uniformly distributed across the frame range.
+/// Always includes first and last frame if max_samples >= 2.
+pub fn compute_sample_indices(total_frames: usize, max_samples: Option<usize>) -> Vec<usize> {
+    let max = match max_samples {
+        None => return (0..total_frames).collect(),
+        Some(m) if m >= total_frames => return (0..total_frames).collect(),
+        Some(0) => return vec![],
+        Some(m) => m,
+    };
+
+    if max == 1 {
+        return vec![0];
+    }
+
+    // Uniform sampling including first and last
+    let mut indices = Vec::with_capacity(max);
+    for i in 0..max {
+        let idx = if max == 1 {
+            0
+        } else {
+            i * (total_frames - 1) / (max - 1)
+        };
+        indices.push(idx);
+    }
+
+    // Remove duplicates (can happen with very few frames)
+    indices.dedup();
+    indices
 }
 
 /// Trait for color quantization implementations.
@@ -84,12 +145,23 @@ pub trait Quantizer: Send {
     ///
     /// Call this before `quantize_frame_with_palette` to compute
     /// an optimal palette across all frames.
-    fn build_shared_palette(
+    ///
+    /// # Arguments
+    /// * `frames` - All frames to consider for palette building
+    /// * `width` - Frame width
+    /// * `height` - Frame height
+    /// * `config` - Quantization settings (including max_palette_frames for sampling)
+    /// * `stop` - Cancellation token
+    ///
+    /// If `config.max_palette_frames` is set, only a sample of frames
+    /// will be used for histogram building (uniformly distributed).
+    fn build_shared_palette<S: Stop>(
         &mut self,
         frames: &[&[Rgba]],
         width: u16,
         height: u16,
         config: &QuantizeConfig,
+        stop: &S,
     ) -> Result<Vec<u8>>;
 
     /// Quantize a frame using a pre-computed shared palette.
@@ -247,14 +319,17 @@ impl Quantizer for ImagequantQuantizer {
         })
     }
 
-    fn build_shared_palette(
+    fn build_shared_palette<S: Stop>(
         &mut self,
         frames: &[&[Rgba]],
         width: u16,
         height: u16,
         config: &QuantizeConfig,
+        stop: &S,
     ) -> Result<Vec<u8>> {
         use imagequant::Histogram;
+
+        stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         self.attr.set_quality(0, config.quality).map_err(|_| {
             at!(GifError::QuantizationFailed {
@@ -264,8 +339,15 @@ impl Quantizer for ImagequantQuantizer {
 
         let mut histogram = Histogram::new(&self.attr);
 
-        // Add all frames to histogram
-        for frame_pixels in frames {
+        // Determine which frames to sample
+        let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
+
+        // Add sampled frames to histogram
+        for &idx in &sample_indices {
+            // Check for cancellation periodically
+            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+            let frame_pixels = frames[idx];
             let rgba_slice = Self::as_imagequant_rgba(frame_pixels);
             let mut img = self
                 .attr
@@ -395,6 +477,8 @@ mod tests {
     #[cfg(feature = "quantize")]
     #[test]
     fn imagequant_shared_palette() {
+        use enough::Unstoppable;
+
         let mut quantizer = ImagequantQuantizer::new();
         let config = QuantizeConfig::default();
 
@@ -405,7 +489,7 @@ mod tests {
 
         let frames: Vec<&[Rgba]> = vec![&frame1, &frame2, &frame3];
         let palette = quantizer
-            .build_shared_palette(&frames, 4, 4, &config)
+            .build_shared_palette(&frames, 4, 4, &config, &Unstoppable)
             .unwrap();
 
         assert!(!palette.is_empty());
@@ -514,5 +598,44 @@ mod tests {
             transparent_with_bg,
             transparent_no_bg
         );
+    }
+
+    #[test]
+    fn compute_sample_indices_all_frames() {
+        // None means use all frames
+        assert_eq!(compute_sample_indices(10, None), (0..10).collect::<Vec<_>>());
+        assert_eq!(compute_sample_indices(3, None), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn compute_sample_indices_more_than_total() {
+        // max_samples >= total returns all frames
+        assert_eq!(compute_sample_indices(5, Some(5)), vec![0, 1, 2, 3, 4]);
+        assert_eq!(compute_sample_indices(5, Some(10)), vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn compute_sample_indices_uniform_distribution() {
+        // Sample 3 from 10: should be 0, 4 or 5, 9
+        let indices = compute_sample_indices(10, Some(3));
+        assert_eq!(indices.len(), 3);
+        assert_eq!(indices[0], 0); // Always includes first
+        assert_eq!(indices[2], 9); // Always includes last
+    }
+
+    #[test]
+    fn compute_sample_indices_edge_cases() {
+        // Zero samples
+        assert_eq!(compute_sample_indices(10, Some(0)), Vec::<usize>::new());
+
+        // One sample
+        assert_eq!(compute_sample_indices(10, Some(1)), vec![0]);
+
+        // Two samples: first and last
+        assert_eq!(compute_sample_indices(10, Some(2)), vec![0, 9]);
+
+        // Single frame animation
+        assert_eq!(compute_sample_indices(1, Some(5)), vec![0]);
+        assert_eq!(compute_sample_indices(1, None), vec![0]);
     }
 }
