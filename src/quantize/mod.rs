@@ -25,9 +25,6 @@
 //! The [`QuantizeConfig::max_palette_frames`] option limits how many frames
 //! are sampled, using uniform distribution across the animation.
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{boxed::Box, vec::Vec};
-
 use crate::error::Result;
 use crate::types::Rgba;
 use enough::Stop;

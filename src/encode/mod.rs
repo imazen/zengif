@@ -33,14 +33,8 @@
 //! **Note**: Temporal dithering (spreading error across frames) is not yet
 //! implemented. This is an advanced feature that would require explicit opt-in.
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::{borrow::Cow, vec, vec::Vec};
-
-#[cfg(feature = "std")]
 use std::borrow::Cow;
-
-// Use gif crate's Write trait for no_std compatibility
-use gif::io::Write;
+use std::io::Write;
 
 use enough::Stop;
 use whereat::at;
@@ -1261,9 +1255,8 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
     })?;
 
     // Create encoder with global palette
-    let mut gif_encoder =
-        gif::Encoder::new(output, config.width, config.height, &palette_bytes)
-            .map_err(|e| at!(GifError::from(e)))?;
+    let mut gif_encoder = gif::Encoder::new(output, config.width, config.height, &palette_bytes)
+        .map_err(|e| at!(GifError::from(e)))?;
 
     // Write repeat extension
     let repeat = match config.repeat {

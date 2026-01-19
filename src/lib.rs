@@ -76,8 +76,6 @@
 //!
 //! ## Feature Flags
 //!
-//! - **`std`** (default): Standard library support
-//! - **`alloc`**: Heap allocation without std (for no_std environments)
 //! - **`simd`**: SIMD acceleration via wide/multiversed
 //! - **`rgb-interop`**: Interop with the `rgb` crate
 //! - **`imgref-interop`**: Interop with the `imgref` crate
@@ -115,22 +113,11 @@
 //!
 //! [imagequant-license]: https://supso.org/projects/pngquant
 
-#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
-// For tests in no_std mode
-#[cfg(all(test, not(feature = "std")))]
-extern crate std;
-
 // Crate info for whereat error tracing
 whereat::define_at_crate_info!();
-
-// I/O abstraction for no_std compatibility
-pub mod io;
 
 // Internal modules
 mod decode;
@@ -144,7 +131,7 @@ mod stats;
 mod types;
 
 // Public API
-pub use decode::{decode_gif, Decoder, DecoderRead, FrameIterator};
+pub use decode::{decode_gif, Decoder, FrameIterator};
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
 #[cfg(any(
     feature = "imagequant",

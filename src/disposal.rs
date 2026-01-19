@@ -3,9 +3,6 @@
 //! Disposal methods determine what happens to the canvas area covered by a frame
 //! after that frame has been displayed and before the next frame is shown.
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::vec::Vec;
-
 use crate::error::Result;
 use crate::limits::Limits;
 use crate::stats::Stats;

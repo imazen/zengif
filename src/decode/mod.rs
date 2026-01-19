@@ -3,40 +3,9 @@
 //! Provides a streaming decoder that produces composited RGBA frames
 //! with proper disposal method handling.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::sync::Arc;
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::vec::Vec;
-
-#[cfg(feature = "std")]
+use std::io::Read;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-// Use gif crate's io module
-#[cfg(not(feature = "std"))]
-use gif::io::{ErrorKind, IoError, Read};
-// Use our io module for Cursor, Chain, and ReadExt (no_std only)
-#[cfg(not(feature = "std"))]
-use crate::io::{Chain, Cursor, ReadExt};
-
-/// Trait alias for reader types compatible with the decoder.
-///
-/// In `std` mode, this requires [`std::io::Read`].
-/// In `no_std` mode, this requires [`gif::io::Read`] (which is `embedded_io::Read`).
-#[cfg(feature = "std")]
-pub trait DecoderRead: std::io::Read {}
-#[cfg(feature = "std")]
-impl<T: std::io::Read> DecoderRead for T {}
-
-/// Trait alias for reader types compatible with the decoder.
-///
-/// In `std` mode, this requires [`std::io::Read`].
-/// In `no_std` mode, this requires [`gif::io::Read`] (which is `embedded_io::Read`).
-#[cfg(not(feature = "std"))]
-pub trait DecoderRead: gif::io::Read {}
-#[cfg(not(feature = "std"))]
-impl<T: gif::io::Read> DecoderRead for T {}
 
 use enough::Stop;
 use whereat::at;
@@ -82,52 +51,9 @@ impl<R, S: Stop> StopCheckingRead<R, S> {
     }
 }
 
-// Implement gif::io::Read for use with gif decoder (no_std only)
-// In std mode, gif crate has blanket impl: impl<T: std::io::Read> gif::io::Read for T
-// so we only need std::io::Read there
-#[cfg(not(feature = "std"))]
 impl<R: Read, S: Stop> Read for StopCheckingRead<R, S> {
-    fn read(&mut self, buf: &mut [u8]) -> gif::io::Result<usize> {
-        // Check for cancellation on every read. This aligns with BufReader's 8KB refill cycle.
-        // See struct doc comment for latency considerations.
-        if self.stop.check().is_err() {
-            return Err(IoError::new(ErrorKind::Other)); // Interrupted
-        }
-
-        let n = self.inner.read(buf)?;
-        self.bytes_read.fetch_add(n, Ordering::Relaxed);
-        Ok(n)
-    }
-}
-
-// Implement embedded_io::Read for use with our Chain/Cursor types (no_std only)
-// In std mode, we use std::io::Read instead
-#[cfg(not(feature = "std"))]
-impl<R: Read, S: Stop> embedded_io::ErrorType for StopCheckingRead<R, S> {
-    type Error = crate::io::Error;
-}
-
-#[cfg(not(feature = "std"))]
-impl<R: Read, S: Stop> embedded_io::Read for StopCheckingRead<R, S> {
-    fn read(&mut self, buf: &mut [u8]) -> core::result::Result<usize, Self::Error> {
-        // Check for cancellation
-        if self.stop.check().is_err() {
-            return Err(crate::io::Error::new(embedded_io::ErrorKind::Other));
-        }
-
-        // Use gif::io::Read
-        let n = <Self as Read>::read(self, buf).map_err(|e| {
-            crate::io::Error::new(e.kind())
-        })?;
-        Ok(n)
-    }
-}
-
-// In std mode, also implement std::io::Read so the gif crate's blanket impl works
-#[cfg(feature = "std")]
-impl<R: std::io::Read, S: Stop> std::io::Read for StopCheckingRead<R, S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // Check for cancellation
+        // Check for cancellation on every read
         if self.stop.check().is_err() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Interrupted,
@@ -149,26 +75,14 @@ const GIF_HEADER_SIZE: usize = 13;
 /// This allows us to check dimensions before the gif crate allocates memory.
 /// Returns (header_bytes, width, height) on success. The header bytes must be
 /// chained back to the reader before passing to gif crate.
-fn pre_validate_header<R: DecoderRead>(
+fn pre_validate_header<R: Read>(
     reader: &mut R,
     limits: &Limits,
 ) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
     let mut buf = [0u8; GIF_HEADER_SIZE];
-    #[cfg(feature = "std")]
-    {
-        reader.read_exact(&mut buf).map_err(|e| {
-            at!(GifError::from(e))
-        })?;
-    }
-    #[cfg(not(feature = "std"))]
-    {
-        reader.read_exact(&mut buf).map_err(|e| {
-            at!(GifError::Io {
-                kind: e.kind(),
-                context: Some("reading GIF header")
-            })
-        })?;
-    }
+    reader
+        .read_exact(&mut buf)
+        .map_err(|e| at!(GifError::from(e)))?;
 
     // Validate magic (GIF87a or GIF89a)
     if &buf[0..3] != b"GIF" {
@@ -193,18 +107,14 @@ fn pre_validate_header<R: DecoderRead>(
 }
 
 /// Reader type that chains the pre-read header bytes with the rest of the stream.
-#[cfg(feature = "std")]
 type ChainedReader<R, S> =
     std::io::Chain<std::io::Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
-
-#[cfg(not(feature = "std"))]
-type ChainedReader<R, S> = Chain<Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
 
 /// Streaming GIF decoder.
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
-pub struct Decoder<R: DecoderRead, S: Stop + Clone> {
+pub struct Decoder<R: Read, S: Stop + Clone> {
     /// Underlying gif crate reader. Header bytes are chained back after pre-validation,
     /// and Stop is checked on every read for cancellation during LZW decompression.
     reader: gif::Decoder<ChainedReader<R, S>>,
@@ -265,7 +175,7 @@ impl StatsRef {
 unsafe impl Send for StatsRef {}
 unsafe impl Sync for StatsRef {}
 
-impl<R: DecoderRead, S: Stop + Clone> Decoder<R, S> {
+impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     /// Create a new decoder from a reader.
     ///
     /// # Arguments
@@ -284,13 +194,7 @@ impl<R: DecoderRead, S: Stop + Clone> Decoder<R, S> {
         let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
 
         // Chain header bytes back with the rest of the stream
-        #[cfg(feature = "std")]
-        let chained = {
-            use std::io::Read as _;
-            std::io::Cursor::new(header).chain(stop_reader)
-        };
-        #[cfg(not(feature = "std"))]
-        let chained = Cursor::new(header).chain(stop_reader);
+        let chained = std::io::Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
@@ -371,13 +275,7 @@ impl<R: DecoderRead, S: Stop + Clone> Decoder<R, S> {
         let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
 
         // Chain header bytes back with the rest of the stream
-        #[cfg(feature = "std")]
-        let chained = {
-            use std::io::Read as _;
-            std::io::Cursor::new(header).chain(stop_reader)
-        };
-        #[cfg(not(feature = "std"))]
-        let chained = Cursor::new(header).chain(stop_reader);
+        let chained = std::io::Cursor::new(header).chain(stop_reader);
 
         // Configure gif decoder with safety checks
         let mut options = gif::DecodeOptions::new();
@@ -718,11 +616,11 @@ impl<R: DecoderRead, S: Stop + Clone> Decoder<R, S> {
 }
 
 /// Iterator adapter for decoder frames.
-pub struct FrameIterator<R: DecoderRead, S: Stop + Clone> {
+pub struct FrameIterator<R: Read, S: Stop + Clone> {
     decoder: Decoder<R, S>,
 }
 
-impl<R: DecoderRead, S: Stop + Clone> Iterator for FrameIterator<R, S> {
+impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
     type Item = Result<ComposedFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -745,10 +643,7 @@ pub fn decode_gif<S: Stop + Clone>(
     stats: &Stats,
     stop: S,
 ) -> Result<(Metadata, Vec<ComposedFrame>)> {
-    #[cfg(feature = "std")]
     let cursor = std::io::Cursor::new(data);
-    #[cfg(not(feature = "std"))]
-    let cursor = Cursor::new(data);
     let mut decoder = Decoder::new(cursor, limits, stats, stop)?;
     let frames = decoder.decode_all()?;
     let mut metadata = decoder.metadata().clone();

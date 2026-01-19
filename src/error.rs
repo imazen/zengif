@@ -1,9 +1,7 @@
 //! Error types for zengif with whereat integration for production tracing.
 
 use core::fmt;
-
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-use alloc::string::{String, ToString};
+use std::string::ToString;
 
 use whereat::At;
 
@@ -162,7 +160,7 @@ pub enum GifError {
     /// I/O error during read or write.
     Io {
         /// The underlying I/O error kind.
-        kind: embedded_io::ErrorKind,
+        kind: std::io::ErrorKind,
         /// Optional context message.
         context: Option<&'static str>,
     },
@@ -290,32 +288,11 @@ impl fmt::Display for GifError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for GifError {}
 
 // Conversion from std::io::Error
-#[cfg(feature = "std")]
 impl From<std::io::Error> for GifError {
     fn from(err: std::io::Error) -> Self {
-        use std::io::ErrorKind as StdKind;
-        let kind = match err.kind() {
-            StdKind::InvalidData => embedded_io::ErrorKind::InvalidData,
-            StdKind::InvalidInput => embedded_io::ErrorKind::InvalidInput,
-            StdKind::WriteZero => embedded_io::ErrorKind::WriteZero,
-            StdKind::OutOfMemory => embedded_io::ErrorKind::OutOfMemory,
-            _ => embedded_io::ErrorKind::Other,
-        };
-        GifError::Io {
-            kind,
-            context: None,
-        }
-    }
-}
-
-// Conversion from our io::Error (for no_std)
-#[cfg(not(feature = "std"))]
-impl From<crate::io::Error> for GifError {
-    fn from(err: crate::io::Error) -> Self {
         GifError::Io {
             kind: err.kind(),
             context: None,
@@ -324,7 +301,6 @@ impl From<crate::io::Error> for GifError {
 }
 
 // Conversion from gif crate errors
-
 impl From<gif::DecodingError> for GifError {
     fn from(err: gif::DecodingError) -> Self {
         use gif::DecodingError;
@@ -344,7 +320,6 @@ impl From<gif::DecodingError> for GifError {
         }
     }
 }
-
 
 impl From<gif::EncodingError> for GifError {
     fn from(err: gif::EncodingError) -> Self {
