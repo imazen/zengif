@@ -1,7 +1,8 @@
 //! Memory usage statistics tracking.
 //!
-//! Provides thread-safe tracking of current and peak memory usage
-//! for zengif operations.
+//! Provides thread-safe tracking of zengif's own buffer allocations
+//! (canvas, pixel buffers, etc). Note: This does not include allocations
+//! made internally by the gif crate or quantizer libraries.
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 

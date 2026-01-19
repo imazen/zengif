@@ -7,7 +7,7 @@
 //!
 //! - **Streaming decode/encode**: Process GIFs without loading entire file
 //! - **Complete animation support**: Disposal methods, transparency, timing
-//! - **Memory bounded**: Track and limit allocations, reject oversized inputs
+//! - **Memory bounded**: Configurable limits, reject oversized inputs
 //! - **Production ready**: Error tracing via `whereat`, cancellation via `enough`
 //! - **Zero-trust**: Validate all inputs, handle malformed data gracefully
 //!
@@ -50,12 +50,13 @@
 //!
 //! ## Memory Tracking
 //!
-//! All operations track memory usage through a `Stats` object:
+//! zengif tracks its own buffer allocations (canvas, pixel buffers) through a `Stats` object.
+//! Note: This does not include allocations made internally by the gif crate or quantizers.
 //!
 //! ```rust,ignore
 //! let stats = Stats::new();
 //! // ... use decoder/encoder ...
-//! println!("Peak memory: {} bytes", stats.peak());
+//! println!("Peak zengif buffer usage: {} bytes", stats.peak());
 //! ```
 //!
 //! ## Cancellation

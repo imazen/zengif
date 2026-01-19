@@ -17,19 +17,18 @@ zengif combines streaming GIF codec capabilities with server-side production fea
 | Streaming decode | ✅ | ✅ |
 | Disposal + transparency | ✅ | ✅ |
 | Memory limits | ✅ | ✅ |
-| **Memory usage tracking** | ❌ | ✅ |
 | **Cooperative cancellation** | ❌ | ✅ |
 | **Error tracing (file:line)** | ❌ | ✅ |
 | **Round-trip metadata** | ❌ | ✅ |
 | **High-quality encode** | ❌ | ✅ |
 
-The `gif` crate provides excellent low-level GIF parsing with memory limits. `gif-dispose` adds disposal method handling. zengif builds on these foundations and adds production server features: memory usage tracking, cancellation, error tracing, and a unified encode/decode API with metadata preservation.
+The `gif` crate provides excellent low-level GIF parsing with memory limits. `gif-dispose` adds disposal method handling. zengif wraps these and adds: cancellation support, error tracing with file:line info, and a unified API for encode/decode with metadata preservation.
 
 ## Features
 
 - **Streaming decode/encode** - Process GIFs without loading entire file into memory
 - **Complete animation support** - All disposal methods (Keep, Background, Previous) + transparency working together
-- **Memory bounded** - Track current/peak usage, enforce configurable limits, reject oversized inputs before allocating
+- **Memory bounded** - Configurable limits, reject oversized inputs before allocating
 - **Production ready** - Error tracing via [`whereat`](https://crates.io/crates/whereat), cancellation via [`enough`](https://crates.io/crates/enough)
 - **Zero-trust design** - Validate headers, bounds-check frames, limit decompression ratio
 - **Round-trip fidelity** - Frame timing, loop count, palette, and disposal methods preserved
@@ -58,7 +57,7 @@ while let Some(frame) = decoder.next_frame()? {
     // frame.index: usize - frame number
 }
 
-println!("Peak memory: {} bytes", stats.peak());
+println!("Peak buffer usage: {} bytes", stats.peak());
 ```
 
 ### Encoding
