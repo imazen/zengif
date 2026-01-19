@@ -1325,6 +1325,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn encode_single_frame() {
         let config = EncoderConfig::new(2, 2).repeat(Repeat::Once);
         let limits = Limits::default();
@@ -1343,6 +1349,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn encode_multiple_frames() {
         let config = EncoderConfig::new(2, 2).repeat(Repeat::Infinite);
         let limits = Limits::default();
@@ -1376,6 +1388,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn encode_convenience_function() {
         let config = EncoderConfig::new(2, 2);
         let limits = Limits::default();
@@ -1389,6 +1407,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn encode_with_limits() {
         let config = EncoderConfig::new(2, 2);
         let limits = Limits::default().max_frame_count(1);
@@ -1502,6 +1526,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     fn frame_diff_produces_smaller_output() {
         // Encode two identical red frames - second should be tiny due to diff
         let config = EncoderConfig::new(100, 100)

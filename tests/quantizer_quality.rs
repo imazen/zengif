@@ -1,3 +1,9 @@
+#![cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 //! Integration tests comparing quantizer quality using SSIMULACRA2.
 //!
 //! These tests encode real PNG images to GIF with different quantizers,

@@ -89,6 +89,12 @@ fn encode_with_pre_cancelled_stopper() {
 }
 
 #[test]
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 fn encode_can_be_cancelled_between_frames() {
     let config = EncoderConfig::new(2, 2);
     let limits = Limits::default();
