@@ -10,19 +10,20 @@ Server-side GIF codec with zero-trust design, memory bounds, streaming, and full
 
 ## Why zengif?
 
-Existing GIF libraries leave gaps when building server-side image processing:
+zengif combines streaming GIF codec capabilities with server-side production features:
 
-| Feature | gif crate | gif-dispose | zengif |
-|---------|-----------|-------------|--------|
-| Streaming decode | ✅ | ❌ | ✅ |
-| Disposal methods | ❌ | ✅ | ✅ |
-| Transparency | Partial | ✅ | ✅ |
-| Memory limits | Basic | ❌ | ✅ |
-| Memory tracking | ❌ | ❌ | ✅ |
-| Cancellation | ❌ | ❌ | ✅ |
-| Error tracing | ❌ | ❌ | ✅ |
-| Round-trip GIF metadata | ❌ | ❌ | ✅ |
-| High-quality encode | ❌ | ❌ | ✅ |
+| Feature | gif + gif-dispose | zengif |
+|---------|-------------------|--------|
+| Streaming decode | ✅ | ✅ |
+| Disposal + transparency | ✅ | ✅ |
+| Memory limits | ✅ | ✅ |
+| **Memory usage tracking** | ❌ | ✅ |
+| **Cooperative cancellation** | ❌ | ✅ |
+| **Error tracing (file:line)** | ❌ | ✅ |
+| **Round-trip metadata** | ❌ | ✅ |
+| **High-quality encode** | ❌ | ✅ |
+
+The `gif` crate provides excellent low-level GIF parsing with memory limits. `gif-dispose` adds disposal method handling. zengif builds on these foundations and adds production server features: memory usage tracking, cancellation, error tracing, and a unified encode/decode API with metadata preservation.
 
 ## Features
 
