@@ -25,6 +25,7 @@ just test       # run tests
 just outdated   # check dependency versions
 just bench      # run benchmarks
 just doc        # generate docs
+just profile    # run allocation profiler (examples/alloc_profile.rs)
 
 # Fuzzing (requires: cargo install cargo-fuzz && rustup install nightly)
 just fuzz              # run main decode fuzzer with dictionary
@@ -35,6 +36,11 @@ just fuzz-limits       # fuzz limits enforcement
 just fuzz-timed 3600   # run for 1 hour
 just fuzz-list         # list all fuzz targets
 just fuzz-build        # build fuzz targets (for CI)
+
+# Profiling (memory/time measurement)
+just profile           # run allocation profiler with sweep
+just profile-heap      # run with heaptrack (Linux, requires heaptrack)
+just profile-view      # view latest heaptrack results
 ```
 
 ## Core Requirements

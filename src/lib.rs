@@ -125,6 +125,7 @@ mod decode;
 mod disposal;
 mod encode;
 mod error;
+pub mod heuristics;
 mod limits;
 mod quantize;
 mod screen;

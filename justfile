@@ -94,3 +94,21 @@ fuzz-coverage:
 # Build all fuzz targets (useful for CI)
 fuzz-build:
     cargo +nightly fuzz build
+
+# === Profiling ===
+
+# Run allocation sweep profiler (content types × sizes × quantizers)
+profile:
+    cargo run --release --all-features --example alloc_profile
+
+# Run memory profiler with tracking allocator (accurate B/pixel measurements)
+profile-memory:
+    cargo run --release --all-features --example memory_profile
+
+# Run allocation profiler with heaptrack (Linux only)
+profile-heap:
+    heaptrack cargo run --release --all-features --example alloc_profile
+
+# View heaptrack results (latest)
+profile-view:
+    heaptrack_gui $(ls -t heaptrack.alloc_profile.*.zst 2>/dev/null | head -1)
