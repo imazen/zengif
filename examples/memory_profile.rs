@@ -15,12 +15,12 @@ use std::time::Instant;
 use enough::Unstoppable;
 use zengif::{Decoder, EncoderConfig, FrameInput, Limits, Rgba};
 
+#[cfg(feature = "color_quant")]
+use zengif::ColorQuantQuantizer;
 #[cfg(feature = "imagequant")]
 use zengif::ImagequantQuantizer;
 #[cfg(feature = "quantizr")]
 use zengif::QuantizrQuantizer;
-#[cfg(feature = "color_quant")]
-use zengif::ColorQuantQuantizer;
 
 // =============================================================================
 // Tracking allocator
@@ -72,12 +72,16 @@ unsafe impl GlobalAlloc for TrackingAllocator {
                 if new_current <= current_peak {
                     break;
                 }
-                if self.peak.compare_exchange_weak(
-                    current_peak,
-                    new_current,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                ).is_ok() {
+                if self
+                    .peak
+                    .compare_exchange_weak(
+                        current_peak,
+                        new_current,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
                     break;
                 }
             }
@@ -87,9 +91,11 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         // Use saturating_sub to prevent underflow
-        self.current.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-            Some(v.saturating_sub(layout.size()))
-        }).ok();
+        self.current
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(v.saturating_sub(layout.size()))
+            })
+            .ok();
         self.inner.dealloc(ptr, layout);
     }
 
@@ -106,20 +112,26 @@ unsafe impl GlobalAlloc for TrackingAllocator {
                     if new_current <= current_peak {
                         break;
                     }
-                    if self.peak.compare_exchange_weak(
-                        current_peak,
-                        new_current,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    ).is_ok() {
+                    if self
+                        .peak
+                        .compare_exchange_weak(
+                            current_peak,
+                            new_current,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        )
+                        .is_ok()
+                    {
                         break;
                     }
                 }
             } else {
                 let diff = old_size - new_size;
-                self.current.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-                    Some(v.saturating_sub(diff))
-                }).ok();
+                self.current
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                        Some(v.saturating_sub(diff))
+                    })
+                    .ok();
             }
         }
         new_ptr
@@ -144,7 +156,8 @@ fn generate_photo_like(width: u32, height: u32, frame_index: u32) -> Vec<Rgba> {
             let fy = y as f32 / height as f32;
             let r = ((fx * 200.0 + (fy * PI + offset).sin() * 30.0).clamp(0.0, 255.0)) as u8;
             let g = ((fy * 180.0 + (fx * E + offset).cos() * 40.0).clamp(0.0, 255.0)) as u8;
-            let b = (((fx + fy) * 100.0 + ((fx * fy * 10.0) + offset).sin() * 50.0).clamp(0.0, 255.0)) as u8;
+            let b = (((fx + fy) * 100.0 + ((fx * fy * 10.0) + offset).sin() * 50.0)
+                .clamp(0.0, 255.0)) as u8;
             pixels.push(Rgba::rgb(r, g, b));
         }
     }
@@ -189,13 +202,26 @@ fn measure_decode(width: u32, height: u32, frame_count: u32, gif_data: &[u8]) ->
         frames: frame_count,
         time_us,
         peak_bytes: peak,
-        throughput_mpixels: if time_us > 0 { (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0 } else { 0.0 },
-        bytes_per_pixel: if pixels > 0 { peak as f64 / pixels as f64 } else { 0.0 },
+        throughput_mpixels: if time_us > 0 {
+            (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0
+        } else {
+            0.0
+        },
+        bytes_per_pixel: if pixels > 0 {
+            peak as f64 / pixels as f64
+        } else {
+            0.0
+        },
     }
 }
 
 #[cfg(feature = "imagequant")]
-fn measure_encode_imagequant(width: u32, height: u32, frame_count: u32, frames: Vec<FrameInput>) -> Measurement {
+fn measure_encode_imagequant(
+    width: u32,
+    height: u32,
+    frame_count: u32,
+    frames: Vec<FrameInput>,
+) -> Measurement {
     let pixels = (width as u64) * (height as u64) * (frame_count as u64);
 
     ALLOCATOR.reset();
@@ -204,8 +230,13 @@ fn measure_encode_imagequant(width: u32, height: u32, frame_count: u32, frames: 
     let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
     let quantizer = ImagequantQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
-        frames, config, Limits::default(), Unstoppable, quantizer
-    ).unwrap();
+        frames,
+        config,
+        Limits::default(),
+        Unstoppable,
+        quantizer,
+    )
+    .unwrap();
     let elapsed = start.elapsed();
 
     let peak = ALLOCATOR.peak();
@@ -218,13 +249,26 @@ fn measure_encode_imagequant(width: u32, height: u32, frame_count: u32, frames: 
         frames: frame_count,
         time_us,
         peak_bytes: peak,
-        throughput_mpixels: if time_us > 0 { (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0 } else { 0.0 },
-        bytes_per_pixel: if pixels > 0 { peak as f64 / pixels as f64 } else { 0.0 },
+        throughput_mpixels: if time_us > 0 {
+            (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0
+        } else {
+            0.0
+        },
+        bytes_per_pixel: if pixels > 0 {
+            peak as f64 / pixels as f64
+        } else {
+            0.0
+        },
     }
 }
 
 #[cfg(feature = "quantizr")]
-fn measure_encode_quantizr(width: u32, height: u32, frame_count: u32, frames: Vec<FrameInput>) -> Measurement {
+fn measure_encode_quantizr(
+    width: u32,
+    height: u32,
+    frame_count: u32,
+    frames: Vec<FrameInput>,
+) -> Measurement {
     let pixels = (width as u64) * (height as u64) * (frame_count as u64);
 
     ALLOCATOR.reset();
@@ -233,8 +277,13 @@ fn measure_encode_quantizr(width: u32, height: u32, frame_count: u32, frames: Ve
     let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
     let quantizer = QuantizrQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
-        frames, config, Limits::default(), Unstoppable, quantizer
-    ).unwrap();
+        frames,
+        config,
+        Limits::default(),
+        Unstoppable,
+        quantizer,
+    )
+    .unwrap();
     let elapsed = start.elapsed();
 
     let peak = ALLOCATOR.peak();
@@ -247,13 +296,26 @@ fn measure_encode_quantizr(width: u32, height: u32, frame_count: u32, frames: Ve
         frames: frame_count,
         time_us,
         peak_bytes: peak,
-        throughput_mpixels: if time_us > 0 { (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0 } else { 0.0 },
-        bytes_per_pixel: if pixels > 0 { peak as f64 / pixels as f64 } else { 0.0 },
+        throughput_mpixels: if time_us > 0 {
+            (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0
+        } else {
+            0.0
+        },
+        bytes_per_pixel: if pixels > 0 {
+            peak as f64 / pixels as f64
+        } else {
+            0.0
+        },
     }
 }
 
 #[cfg(feature = "color_quant")]
-fn measure_encode_color_quant(width: u32, height: u32, frame_count: u32, frames: Vec<FrameInput>) -> Measurement {
+fn measure_encode_color_quant(
+    width: u32,
+    height: u32,
+    frame_count: u32,
+    frames: Vec<FrameInput>,
+) -> Measurement {
     let pixels = (width as u64) * (height as u64) * (frame_count as u64);
 
     ALLOCATOR.reset();
@@ -262,8 +324,13 @@ fn measure_encode_color_quant(width: u32, height: u32, frame_count: u32, frames:
     let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
     let quantizer = ColorQuantQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
-        frames, config, Limits::default(), Unstoppable, quantizer
-    ).unwrap();
+        frames,
+        config,
+        Limits::default(),
+        Unstoppable,
+        quantizer,
+    )
+    .unwrap();
     let elapsed = start.elapsed();
 
     let peak = ALLOCATOR.peak();
@@ -276,8 +343,16 @@ fn measure_encode_color_quant(width: u32, height: u32, frame_count: u32, frames:
         frames: frame_count,
         time_us,
         peak_bytes: peak,
-        throughput_mpixels: if time_us > 0 { (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0 } else { 0.0 },
-        bytes_per_pixel: if pixels > 0 { peak as f64 / pixels as f64 } else { 0.0 },
+        throughput_mpixels: if time_us > 0 {
+            (pixels as f64) / (time_us as f64 / 1_000_000.0) / 1_000_000.0
+        } else {
+            0.0
+        },
+        bytes_per_pixel: if pixels > 0 {
+            peak as f64 / pixels as f64
+        } else {
+            0.0
+        },
     }
 }
 
@@ -320,8 +395,13 @@ fn main() {
             let config = EncoderConfig::new(width as u16, height as u16);
             let quantizer = ImagequantQuantizer::new();
             let gif_data = zengif::encode_gif_with_quantizer(
-                frames.clone(), config, Limits::default(), Unstoppable, quantizer
-            ).unwrap();
+                frames.clone(),
+                config,
+                Limits::default(),
+                Unstoppable,
+                quantizer,
+            )
+            .unwrap();
             test_gifs.push(((width, height, frame_count), gif_data));
         }
     }
