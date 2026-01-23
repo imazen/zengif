@@ -1,5 +1,8 @@
 //! Core types for GIF processing.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 use core::fmt;
 
 /// RGBA pixel (4 bytes).
@@ -176,6 +179,8 @@ impl DisposalMethod {
     }
 }
 
+// gif crate's DisposalMethod is only available with std feature
+#[cfg(feature = "std")]
 impl From<gif::DisposalMethod> for DisposalMethod {
     fn from(d: gif::DisposalMethod) -> Self {
         match d {
@@ -205,6 +210,8 @@ pub enum Repeat {
     Count(u16),
 }
 
+// gif crate's Repeat is only available with std feature
+#[cfg(feature = "std")]
 impl From<gif::Repeat> for Repeat {
     fn from(r: gif::Repeat) -> Self {
         match r {
@@ -727,6 +734,7 @@ mod tests {
         assert_eq!(palette.get(2), Some(Rgba::rgb(0, 0, 255)));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn repeat_conversion() {
         assert_eq!(Repeat::from(gif::Repeat::Infinite), Repeat::Infinite);

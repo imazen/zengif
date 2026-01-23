@@ -4,6 +4,9 @@
 //! (canvas, pixel buffers, etc). Note: This does not include allocations
 //! made internally by the gif crate or quantizer libraries.
 
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::{GifError, Result};

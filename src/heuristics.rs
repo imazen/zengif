@@ -208,10 +208,26 @@ impl QuantizerType {
     /// Get throughput values (max, typical, min) in Mpix/s.
     fn throughputs(self) -> (f64, f64, f64) {
         match self {
-            Self::None => (NO_QUANT_THROUGHPUT_MAX, NO_QUANT_THROUGHPUT_TYP, NO_QUANT_THROUGHPUT_MIN),
-            Self::Imagequant => (IMAGEQUANT_THROUGHPUT_MAX, IMAGEQUANT_THROUGHPUT_TYP, IMAGEQUANT_THROUGHPUT_MIN),
-            Self::Quantizr => (QUANTIZR_THROUGHPUT_MAX, QUANTIZR_THROUGHPUT_TYP, QUANTIZR_THROUGHPUT_MIN),
-            Self::ColorQuant => (COLOR_QUANT_THROUGHPUT_MAX, COLOR_QUANT_THROUGHPUT_TYP, COLOR_QUANT_THROUGHPUT_MIN),
+            Self::None => (
+                NO_QUANT_THROUGHPUT_MAX,
+                NO_QUANT_THROUGHPUT_TYP,
+                NO_QUANT_THROUGHPUT_MIN,
+            ),
+            Self::Imagequant => (
+                IMAGEQUANT_THROUGHPUT_MAX,
+                IMAGEQUANT_THROUGHPUT_TYP,
+                IMAGEQUANT_THROUGHPUT_MIN,
+            ),
+            Self::Quantizr => (
+                QUANTIZR_THROUGHPUT_MAX,
+                QUANTIZR_THROUGHPUT_TYP,
+                QUANTIZR_THROUGHPUT_MIN,
+            ),
+            Self::ColorQuant => (
+                COLOR_QUANT_THROUGHPUT_MAX,
+                COLOR_QUANT_THROUGHPUT_TYP,
+                COLOR_QUANT_THROUGHPUT_MIN,
+            ),
         }
     }
 }
@@ -404,8 +420,8 @@ pub fn estimate_encode(
     let base_memory = ENCODE_FIXED_OVERHEAD + (pixels as f64 * ENCODE_BASE_BYTES_PER_PIXEL) as u64;
 
     // Quantizer memory (per-frame working memory, not cumulative)
-    let quant_memory = quantizer.fixed_overhead()
-        + (pixels as f64 * quantizer.bytes_per_pixel()) as u64;
+    let quant_memory =
+        quantizer.fixed_overhead() + (pixels as f64 * quantizer.bytes_per_pixel()) as u64;
 
     let peak_memory = base_memory + quant_memory;
 
@@ -581,7 +597,9 @@ mod tests {
         assert!(
             ratio > 3.0,
             "Memory ratio for 10 frames vs 1 should be > 3, was {}. single={}, multi={}",
-            ratio, single.peak_memory_bytes, multi.peak_memory_bytes
+            ratio,
+            single.peak_memory_bytes,
+            multi.peak_memory_bytes
         );
         assert!(multi.time_ms > single.time_ms * 5.0);
     }
@@ -603,7 +621,10 @@ mod tests {
         // - imagequant: moderate (2-20 Mpix/s)
         // - color_quant: consistent but slow (1.5-2.2 Mpix/s)
         // For typical content, quantizr is faster than color_quant
-        assert!(qz.time_ms < cq.time_ms, "quantizr should be faster than color_quant");
+        assert!(
+            qz.time_ms < cq.time_ms,
+            "quantizr should be faster than color_quant"
+        );
     }
 
     #[test]

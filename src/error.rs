@@ -1,7 +1,9 @@
 //! Error types for zengif with whereat integration for production tracing.
 
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+
 use core::fmt;
-use std::string::ToString;
 
 use whereat::At;
 
@@ -158,9 +160,17 @@ pub enum GifError {
     UnexpectedEof,
 
     /// I/O error during read or write.
+    #[cfg(feature = "std")]
     Io {
         /// The underlying I/O error kind.
         kind: std::io::ErrorKind,
+        /// Optional context message.
+        context: Option<&'static str>,
+    },
+
+    /// I/O error during read or write (no_std version).
+    #[cfg(not(feature = "std"))]
+    Io {
         /// Optional context message.
         context: Option<&'static str>,
     },
@@ -275,11 +285,20 @@ impl fmt::Display for GifError {
                 write!(f, "encoder in invalid state: {}", message)
             }
             GifError::UnexpectedEof => write!(f, "unexpected end of file"),
+            #[cfg(feature = "std")]
             GifError::Io { kind, context } => {
                 if let Some(ctx) = context {
                     write!(f, "I/O error ({:?}): {}", kind, ctx)
                 } else {
                     write!(f, "I/O error: {:?}", kind)
+                }
+            }
+            #[cfg(not(feature = "std"))]
+            GifError::Io { context } => {
+                if let Some(ctx) = context {
+                    write!(f, "I/O error: {}", ctx)
+                } else {
+                    write!(f, "I/O error")
                 }
             }
             GifError::Cancelled => write!(f, "operation cancelled"),
@@ -288,9 +307,11 @@ impl fmt::Display for GifError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for GifError {}
 
 // Conversion from std::io::Error
+#[cfg(feature = "std")]
 impl From<std::io::Error> for GifError {
     fn from(err: std::io::Error) -> Self {
         GifError::Io {
@@ -300,7 +321,9 @@ impl From<std::io::Error> for GifError {
     }
 }
 
-// Conversion from gif crate errors
+// Conversion from gif crate errors (only available with std feature,
+// since gif crate's error types require std)
+#[cfg(feature = "std")]
 impl From<gif::DecodingError> for GifError {
     fn from(err: gif::DecodingError) -> Self {
         use gif::DecodingError;
@@ -321,6 +344,7 @@ impl From<gif::DecodingError> for GifError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<gif::EncodingError> for GifError {
     fn from(err: gif::EncodingError) -> Self {
         use gif::EncodingError;

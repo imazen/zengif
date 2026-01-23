@@ -10,6 +10,7 @@
 //! - **Memory bounded**: Configurable limits, reject oversized inputs
 //! - **Production ready**: Error tracing via `whereat`, cancellation via `enough`
 //! - **Zero-trust**: Validate all inputs, handle malformed data gracefully
+//! - **no_std compatible**: Works with `alloc` only (disable `std` feature)
 //!
 //! ## Quick Start
 //!
@@ -77,6 +78,7 @@
 //!
 //! ## Feature Flags
 //!
+//! - **`std`** (default): Enables `std::error::Error` impl and std I/O
 //! - **`simd`**: SIMD acceleration via wide/multiversed
 //! - **`rgb-interop`**: Interop with the `rgb` crate
 //! - **`imgref-interop`**: Interop with the `imgref` crate
@@ -114,51 +116,68 @@
 //!
 //! [imagequant-license]: https://supso.org/projects/pngquant
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
 
 // Crate info for whereat error tracing
 whereat::define_at_crate_info!();
 
 // Internal modules
+#[cfg(feature = "std")]
 mod decode;
 mod disposal;
+#[cfg(feature = "std")]
 mod encode;
 mod error;
+#[cfg(feature = "std")]
 pub mod heuristics;
 mod limits;
+#[cfg(feature = "std")]
 mod quantize;
 mod screen;
 mod stats;
 mod types;
 
 // Public API
+#[cfg(feature = "std")]
 pub use decode::{decode_gif, Decoder, FrameIterator};
+#[cfg(feature = "std")]
 pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
+#[cfg(all(
+    feature = "std",
+    any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    )
 ))]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
 pub use error::{GifError, Result};
 pub use limits::Limits;
-#[cfg(feature = "color_quant")]
+#[cfg(all(feature = "std", feature = "color_quant"))]
 pub use quantize::ColorQuantQuantizer;
-#[cfg(feature = "exoquant-deprecated")]
+#[cfg(all(feature = "std", feature = "exoquant-deprecated"))]
 pub use quantize::ExoquantQuantizer;
-#[cfg(feature = "imagequant")]
+#[cfg(all(feature = "std", feature = "imagequant"))]
 pub use quantize::ImagequantQuantizer;
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
+#[cfg(all(
+    feature = "std",
+    any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    )
 ))]
 pub use quantize::Quantizer;
-#[cfg(feature = "quantizr")]
+#[cfg(all(feature = "std", feature = "quantizr"))]
 pub use quantize::QuantizrQuantizer;
+#[cfg(feature = "std")]
 pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{

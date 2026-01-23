@@ -12,7 +12,10 @@ categories = ["multimedia::images", "encoding"]
 readme = "README.md"
 
 [features]
-default = []
+default = ["std"]
+# std feature - enables std::error::Error impl and std I/O traits
+# Disable for no_std+alloc environments (e.g., WASM)
+std = ["gif/std", "enough/std", "whereat/std"]
 # SIMD acceleration (opt-in)
 simd = ["wide", "multiversed"]
 
@@ -33,14 +36,14 @@ rgb-interop = ["rgb"]
 imgref-interop = ["imgref", "rgb-interop"]
 
 [dependencies]
-# Core GIF codec
-gif = "0.14"
+# Core GIF codec (no_std compatible with alloc)
+gif = { version = "0.14", default-features = false }
 
-# Error tracing for production debugging
-whereat = "0.1"
+# Error tracing for production debugging (no_std compatible)
+whereat = { version = "0.1", default-features = false }
 
-# Cooperative cancellation
-enough = "0.3"
+# Cooperative cancellation (no_std compatible)
+enough = { version = "0.3", default-features = false }
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
