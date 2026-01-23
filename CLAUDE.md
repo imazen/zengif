@@ -14,6 +14,7 @@ See [FEEDBACK.md](FEEDBACK.md) for user feedback log.
 - Animation transparency and disposal must work correctly
 - Round-trip encoding must preserve timing and metadata
 - Output sizes must be reasonable (not bloated like imageflow's current gif output)
+- WASM/no_std deployment (core types available without std)
 
 ## Quick Commands
 
@@ -122,15 +123,22 @@ zengif/
 ## Dependencies
 
 ### Required
-- `gif` (0.14.x) - Base GIF codec (we wrap/extend, may fork if needed)
-- `gif-dispose` (5.x) - Reference for disposal implementation (may inline)
-- `whereat` - Error tracing
-- `enough` - Cancellation support
-- `imagequant` (4.x) - High-quality color quantization for encoding
+- `gif` (0.14.x) - Base GIF codec, no_std+alloc compatible
+- `whereat` - Error tracing, no_std compatible
+- `enough` - Cancellation support, no_std compatible
 
 ### Optional/Feature-gated
-- `gifski` / `gifski-lite` - Reference for high-quality encoding (study, don't depend)
+- `imagequant` (4.x) - High-quality color quantization (requires std)
+- `quantizr` (1.x) - MIT-licensed quantization (requires std)
+- `color_quant` (1.x) - Fast quantization (requires std)
 - `wide` + `multiversed` - SIMD acceleration (feature = "simd")
+- `rgb` / `imgref` - Ecosystem interop
+
+### no_std Support
+The `std` feature (default on) controls std dependency. Without it:
+- **Available**: types, error, stats, limits, screen, disposal modules
+- **Unavailable**: decode, encode, quantize, heuristics modules (require std::io)
+- **Targets**: verified to compile for `wasm32-unknown-unknown`
 
 ## Reference Implementations to Study
 
@@ -393,6 +401,7 @@ With default 16384x16384 max dimensions, worst-case per-frame CPU time is bounde
 - ✅ 65 passing tests (unit, cancellation, malformed, round-trip)
 - ✅ Basic example in examples/basic.rs
 - ✅ Fallible allocations with try_reserve() throughout
+- ✅ no_std support (core types available without std, decoder/encoder require std)
 
 **NOT DONE (nice to have):**
 - ✅ Pngquant/imagequant frame optimization (P0) - DONE 2026-01-17
