@@ -258,7 +258,11 @@ mod quality_tests {
     use std::path::PathBuf;
 
     fn corpus_path() -> Option<PathBuf> {
-        let path = PathBuf::from(env!("HOME")).join("work/codec-corpus");
+        // Try HOME (Unix) then USERPROFILE (Windows)
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok()?;
+        let path = PathBuf::from(home).join("work/codec-corpus");
         if path.exists() {
             Some(path)
         } else {
