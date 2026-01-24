@@ -53,7 +53,9 @@ color_quant = { version = "1.1", optional = true }
 
 # SIMD acceleration (optional)
 wide = { version = "1.1", optional = true }
-multiversed = { version = "0.1", features = ["x86-64-v4", "aarch64-sve2"], optional = true }
+# x86-64-v3 = AVX2 (Haswell+), x86-64-v4 = AVX-512 (Zen4+/Xeon)
+# aarch64-basic = NEON (Apple Silicon, Cortex-A75+)
+multiversed = { version = "0.1", features = ["x86-64-v3", "x86-64-v4", "aarch64-basic"], optional = true }
 
 # RGB/imgref ecosystem interop (optional)
 rgb = { version = "0.8", optional = true }
