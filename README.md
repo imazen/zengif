@@ -149,9 +149,25 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 
 | Feature | Default | Description |
 |---------|---------|-------------|
+| `std` | ✅ | Enable std library (disable for no_std+alloc) |
 | `simd` | ❌ | SIMD acceleration via wide/multiversed |
 | `rgb-interop` | ❌ | Interop with the `rgb` crate |
 | `imgref-interop` | ❌ | Interop with the `imgref` crate |
+
+### no_std / WASM Support
+
+zengif supports `no_std` environments with `alloc`. Disable the default `std` feature:
+
+```toml
+[dependencies]
+zengif = { version = "0.3", default-features = false }
+```
+
+**With `std` (default):** Full codec - decoder, encoder, quantizers, heuristics.
+
+**Without `std`:** Core types only - `GifError`, `Limits`, `Stats`, `Rgba`, `Palette`, `ComposedFrame`, `Screen`, `Disposal`. Useful for WASM or embedded where you process frames but use a different codec.
+
+Verified targets: `wasm32-unknown-unknown` (144KB release build with decoder).
 
 ### Color Quantization Backends
 
