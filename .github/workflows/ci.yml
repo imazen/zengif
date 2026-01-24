@@ -73,4 +73,9 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --target wasm32-unknown-unknown
+      # Build with std (full codec)
+      - run: cargo build --target wasm32-unknown-unknown --release
+      # Build example that uses decoder
+      - run: cargo build --target wasm32-unknown-unknown --example wasm_decode --release
+      # Build without std (no_std + alloc, core types only)
+      - run: cargo build --target wasm32-unknown-unknown --no-default-features
