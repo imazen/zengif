@@ -62,10 +62,13 @@ imgref = { version = "1.12", optional = true }
 [dev-dependencies]
 # Testing
 almost-enough = "0.3"
+imgref = "1.12"
+
+# Dependencies that don't work on wasm32
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
 # Quality metrics for quantizer comparison tests
 fast-ssim2 = { version = "0.6", features = ["imgref"] }
-imgref = "1.12"
 # PNG decoding for quantizer quality tests
 png = "0.18"
 
