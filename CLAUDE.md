@@ -136,9 +136,10 @@ zengif/
 
 ### no_std Support
 The `std` feature (default on) controls std dependency. Without it:
-- **Available**: types, error, stats, limits, screen, disposal modules
+- **Available**: types, error (with `core::error::Error`), stats, limits, screen, disposal
 - **Unavailable**: decode, encode, quantize, heuristics modules (require std::io)
 - **Targets**: verified to compile for `wasm32-unknown-unknown`
+- **Requires**: Rust 1.81+ (for `core::error::Error`)
 
 ## Reference Implementations to Study
 
