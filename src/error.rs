@@ -307,8 +307,7 @@ impl fmt::Display for GifError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for GifError {}
+impl core::error::Error for GifError {}
 
 // Conversion from std::io::Error
 #[cfg(feature = "std")]
