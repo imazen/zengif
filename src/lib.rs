@@ -119,6 +119,7 @@
 //! [imagequant-license]: https://supso.org/projects/pngquant
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
