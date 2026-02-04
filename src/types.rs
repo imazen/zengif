@@ -282,6 +282,18 @@ impl Palette {
         &self.colors
     }
 
+    /// Get a 256-entry lookup table for unchecked indexing.
+    ///
+    /// All 256 indices are valid - unused slots are `Rgba::TRANSPARENT`.
+    /// This eliminates bounds checks in hot palette lookup loops.
+    #[inline]
+    pub fn lookup_table(&self) -> [Rgba; 256] {
+        let mut table = [Rgba::TRANSPARENT; 256];
+        let len = self.colors.len().min(256);
+        table[..len].copy_from_slice(&self.colors[..len]);
+        table
+    }
+
     /// Convert to RGB bytes (for gif crate).
     pub fn to_rgb_bytes(&self) -> Vec<u8> {
         self.colors.iter().flat_map(|c| [c.r, c.g, c.b]).collect()

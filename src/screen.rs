@@ -294,10 +294,8 @@ impl Screen {
 
     /// Reset the screen to initial state.
     pub fn reset(&mut self, _stats: &Stats) {
-        // Fill with background
-        for pixel in &mut self.pixels {
-            *pixel = self.background;
-        }
+        // Fill with background (slice::fill is faster than per-pixel loop)
+        self.pixels.fill(self.background);
 
         // Clear pending disposal
         self.disposal = Disposal::default();
