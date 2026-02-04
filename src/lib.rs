@@ -17,18 +17,20 @@
 //! ### Decoding
 //!
 //! ```rust,ignore
-//! use zengif::{Decoder, Limits, Stats};
+//! use zengif::{Decoder, Limits};
 //! use enough::Unstoppable;
 //!
 //! let limits = Limits::default();
-//! let stats = Stats::new();
 //!
-//! let mut decoder = Decoder::new(reader, limits, &stats, Unstoppable)?;
+//! let mut decoder = Decoder::new(reader, limits, Unstoppable)?;
 //!
 //! while let Some(frame) = decoder.next_frame()? {
 //!     // frame.pixels is composited RGBA
 //!     // frame.delay is in centiseconds
 //! }
+//!
+//! // Access memory stats after decoding
+//! println!("Memory used: {} bytes", decoder.stats().peak());
 //! ```
 //!
 //! ### Encoding

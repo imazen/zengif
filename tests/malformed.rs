@@ -1,48 +1,44 @@
 //! Tests for handling malformed GIF inputs.
 
 use enough::Unstoppable;
-use zengif::{Decoder, GifError, Limits, Stats};
+use zengif::{Decoder, GifError, Limits};
 
 #[test]
 fn empty_input() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     let cursor = std::io::Cursor::new(Vec::<u8>::new());
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     assert!(result.is_err());
 }
 
 #[test]
 fn truncated_header() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Only "GIF" - truncated header
     let data = b"GIF";
     let cursor = std::io::Cursor::new(data.as_slice());
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     assert!(result.is_err());
 }
 
 #[test]
 fn invalid_magic() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Not a GIF
     let data = b"PNG\x89\x50\x4E\x47";
     let cursor = std::io::Cursor::new(data.as_slice());
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     assert!(result.is_err());
 }
 
 #[test]
 fn header_only_no_frames() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Header followed by trailer but no image data
@@ -58,7 +54,7 @@ fn header_only_no_frames() {
     ];
 
     let cursor = std::io::Cursor::new(data);
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     // A GIF with no image data is malformed - failing is correct
     assert!(result.is_err());
@@ -66,7 +62,6 @@ fn header_only_no_frames() {
 
 #[test]
 fn dimensions_exceed_limits() {
-    let stats = Stats::new();
     let limits = Limits::default().max_dimensions(100, 100);
 
     // 200x200 image (exceeds 100x100 limit)
@@ -80,7 +75,7 @@ fn dimensions_exceed_limits() {
     ];
 
     let cursor = std::io::Cursor::new(data);
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     match result {
         Ok(_) => panic!("Expected DimensionsTooLarge error"),
@@ -90,7 +85,6 @@ fn dimensions_exceed_limits() {
 
 #[test]
 fn total_pixels_exceed_limits() {
-    let stats = Stats::new();
     // Allow up to 100 pixels total
     let limits = Limits::default()
         .max_dimensions(u16::MAX, u16::MAX)
@@ -107,7 +101,7 @@ fn total_pixels_exceed_limits() {
     ];
 
     let cursor = std::io::Cursor::new(data);
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     match result {
         Ok(_) => panic!("Expected TotalPixelsTooLarge error"),
@@ -117,7 +111,6 @@ fn total_pixels_exceed_limits() {
 
 #[test]
 fn zero_dimensions() {
-    let stats = Stats::new();
     let limits = Limits::none(); // No limits, so 0x0 should still be checked
 
     // 0x0 image - technically valid according to limits but may cause issues
@@ -132,7 +125,7 @@ fn zero_dimensions() {
 
     let cursor = std::io::Cursor::new(data);
     // This should either succeed with an empty canvas or fail gracefully
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     // We don't care if it succeeds or fails, just that it doesn't panic
     match result {
@@ -148,7 +141,6 @@ fn zero_dimensions() {
 
 #[test]
 fn truncated_lzw_data() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Valid header, starts a frame, but LZW data is truncated
@@ -169,7 +161,7 @@ fn truncated_lzw_data() {
     ];
 
     let cursor = std::io::Cursor::new(data);
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     // Should fail during decoding
     match result {
@@ -186,14 +178,13 @@ fn truncated_lzw_data() {
 
 #[test]
 fn random_garbage() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Random bytes
     let data: Vec<u8> = (0..100).map(|i| (i * 17) as u8).collect();
 
     let cursor = std::io::Cursor::new(data);
-    let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+    let result = Decoder::new(cursor, limits, Unstoppable);
 
     // Should fail, not panic
     assert!(result.is_err());
@@ -201,7 +192,6 @@ fn random_garbage() {
 
 #[test]
 fn very_large_declared_dimensions() {
-    let stats = Stats::new();
 
     // Declare max dimensions but don't provide data
     let data = vec![
@@ -215,7 +205,7 @@ fn very_large_declared_dimensions() {
 
     let cursor = std::io::Cursor::new(data);
     // This should fail with default limits (16384x16384)
-    let result = Decoder::new(cursor, Limits::default(), &stats, Unstoppable);
+    let result = Decoder::new(cursor, Limits::default(), Unstoppable);
 
     // With default limits (16384x16384), this should fail
     assert!(result.is_err());

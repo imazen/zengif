@@ -59,9 +59,8 @@ fn create_solid_frame(width: u16, height: u16, color: Rgba, delay_cs: u16) -> Fr
 
 /// Decode an animation using the convenience function.
 fn decode_animation(data: &[u8]) {
-    let stats = Stats::new();
-    let (metadata, frames) =
-        decode_gif(data, Limits::default(), &stats, Unstoppable).expect("Failed to decode GIF");
+    let (metadata, frames, stats) =
+        decode_gif(data, Limits::default(), Unstoppable).expect("Failed to decode GIF");
 
     println!("  Dimensions: {}x{}", metadata.width, metadata.height);
     println!("  Frame count: {}", frames.len());
@@ -79,12 +78,11 @@ fn decode_animation(data: &[u8]) {
 
 /// Streaming decode - process frames one at a time.
 fn streaming_decode(data: &[u8]) {
-    let stats = Stats::new();
     let limits = Limits::default();
     let cursor = std::io::Cursor::new(data);
 
     let mut decoder =
-        Decoder::new(cursor, limits, &stats, Unstoppable).expect("Failed to create decoder");
+        Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
 
     println!("  Canvas: {}x{}", decoder.width(), decoder.height());
 
@@ -109,11 +107,10 @@ fn test_limits(data: &[u8]) {
         .max_frame_count(100) // Max 100 frames
         .max_memory(50 * 1024 * 1024); // Max 50MB total
 
-    let stats = Stats::new();
-    let result = decode_gif(data, strict_limits, &stats, Unstoppable);
+    let result = decode_gif(data, strict_limits, Unstoppable);
 
     match result {
-        Ok((metadata, frames)) => {
+        Ok((metadata, frames, _stats)) => {
             println!(
                 "  Passed limits: {}x{}, {} frames",
                 metadata.width,
@@ -129,8 +126,7 @@ fn test_limits(data: &[u8]) {
     // Very restrictive limits (will reject our animation)
     let tiny_limits = Limits::default().max_dimensions(10, 10);
 
-    let stats = Stats::new();
-    let result = decode_gif(data, tiny_limits, &stats, Unstoppable);
+    let result = decode_gif(data, tiny_limits, Unstoppable);
 
     match result {
         Ok(_) => println!("  Unexpectedly passed tiny limits"),
@@ -140,27 +136,22 @@ fn test_limits(data: &[u8]) {
 
 /// Demonstrate memory tracking.
 fn track_memory(data: &[u8]) {
-    let stats = Stats::new();
-    println!("  Initial memory: {} bytes", stats.current());
-
     let cursor = std::io::Cursor::new(data);
     let limits = Limits::default();
 
-    {
-        let mut decoder =
-            Decoder::new(cursor, limits, &stats, Unstoppable).expect("Failed to create decoder");
+    let mut decoder =
+        Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
 
-        println!("  After decoder creation: {} bytes", stats.current());
+    println!("  After decoder creation: {} bytes", decoder.stats().current());
 
-        while let Some(_frame) = decoder.next_frame().expect("Failed to read frame") {
-            println!(
-                "  During decode: current={}, peak={}",
-                stats.current(),
-                stats.peak()
-            );
-        }
+    while let Some(_frame) = decoder.next_frame().expect("Failed to read frame") {
+        println!(
+            "  During decode: current={}, peak={}",
+            decoder.stats().current(),
+            decoder.stats().peak()
+        );
     }
 
-    println!("  Final peak memory: {} bytes", stats.peak());
-    println!("  Total allocations: {}", stats.alloc_count());
+    println!("  Final peak memory: {} bytes", decoder.stats().peak());
+    println!("  Total allocations: {}", decoder.stats().alloc_count());
 }

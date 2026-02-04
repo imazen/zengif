@@ -1,7 +1,7 @@
 //! Tests for cancellation support via the enough crate.
 
 use almost_enough::{Stop, Stopper};
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, GifError, Limits, Rgba, Stats};
+use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, GifError, Limits, Rgba};
 
 /// Create a minimal valid GIF.
 fn minimal_gif() -> Vec<u8> {
@@ -27,7 +27,6 @@ fn minimal_gif() -> Vec<u8> {
 
 #[test]
 fn decode_with_pre_cancelled_stopper() {
-    let stats = Stats::new();
     let limits = Limits::default();
 
     // Pre-cancel the stopper
@@ -35,7 +34,7 @@ fn decode_with_pre_cancelled_stopper() {
     stop.cancel();
 
     let cursor = std::io::Cursor::new(minimal_gif());
-    let result = Decoder::new(cursor, limits, &stats, stop);
+    let result = Decoder::new(cursor, limits, stop);
 
     // Should fail with Cancelled
     match result {
@@ -48,14 +47,13 @@ fn decode_with_pre_cancelled_stopper() {
 fn decode_can_be_cancelled_between_frames() {
     // Create a multi-frame GIF
     // For simplicity, we'll use a stopper that's cancelled after creation
-    let stats = Stats::new();
     let limits = Limits::default();
 
     let stop = Stopper::new();
     let stop_clone = stop.clone();
 
     let cursor = std::io::Cursor::new(minimal_gif());
-    let mut decoder = Decoder::new(cursor, limits, &stats, stop).unwrap();
+    let mut decoder = Decoder::new(cursor, limits, stop).unwrap();
 
     // Read first frame successfully
     let frame = decoder.next_frame().unwrap();

@@ -3,10 +3,13 @@
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
 
+use bytemuck::{Pod, Zeroable};
 use core::fmt;
 
 /// RGBA pixel (4 bytes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Derives `Pod` and `Zeroable` for safe transmutes to/from byte slices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct Rgba {
     /// Red component.
@@ -487,10 +490,7 @@ impl ComposedFrame {
 
     /// Get the pixel data as raw RGBA bytes.
     pub fn as_bytes(&self) -> &[u8] {
-        // Safety: Rgba is repr(C) with 4 u8 fields
-        unsafe {
-            core::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 4)
-        }
+        bytemuck::cast_slice(&self.pixels)
     }
 
     /// Convert to imgref `ImgVec<RGBA8>`.
@@ -506,19 +506,16 @@ impl ComposedFrame {
 
     /// Get an imgref ImgRef view of the pixels.
     ///
-    /// Note: This requires the pixel data to be reinterpreted as RGBA8.
-    /// Since Rgba and rgb::RGBA8 have the same memory layout (repr(C)),
-    /// this is safe.
+    /// Note: This copies the pixel data to convert from Rgba to RGBA8.
+    /// For zero-copy access, use `as_bytes()` instead.
     #[cfg(feature = "imgref-interop")]
-    pub fn as_imgref(&self) -> imgref::ImgRef<'_, rgb::RGBA8> {
-        // Safety: Rgba and rgb::RGBA8 have identical repr(C) layout
-        let rgba8_slice: &[rgb::RGBA8] = unsafe {
-            core::slice::from_raw_parts(
-                self.pixels.as_ptr() as *const rgb::RGBA8,
-                self.pixels.len(),
-            )
-        };
-        imgref::ImgRef::new(rgba8_slice, self.width as usize, self.height as usize)
+    pub fn as_imgref(&self) -> imgref::ImgVec<rgb::RGBA8> {
+        let rgba8_pixels: Vec<rgb::RGBA8> = self
+            .pixels
+            .iter()
+            .map(|p| rgb::RGBA8::new(p.r, p.g, p.b, p.a))
+            .collect();
+        imgref::ImgVec::new(rgba8_pixels, self.width as usize, self.height as usize)
     }
 }
 

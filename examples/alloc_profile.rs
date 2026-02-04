@@ -272,11 +272,10 @@ fn profile_decode(
     }
 
     // Profile decode
-    let stats = Stats::new();
     let start = Instant::now();
 
     let cursor = std::io::Cursor::new(&gif_data);
-    let mut decoder = Decoder::new(cursor, Limits::default(), &stats, Unstoppable).unwrap();
+    let mut decoder = Decoder::new(cursor, Limits::default(), Unstoppable).unwrap();
     let decoded_frames = decoder.decode_all().unwrap();
 
     let elapsed = start.elapsed();
@@ -289,8 +288,8 @@ fn profile_decode(
         frames: frame_count,
         quantizer: "n/a",
         time_us: elapsed.as_micros() as u64,
-        peak_memory: stats.peak(),
-        alloc_count: stats.alloc_count(),
+        peak_memory: decoder.stats().peak(),
+        alloc_count: decoder.stats().alloc_count(),
         output_bytes,
         pixels,
     }
@@ -321,7 +320,6 @@ fn profile_encode_with_quantizer<Q: zengif::QuantizerTrait>(
     let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
 
     // Profile encode
-    let stats = Stats::new();
     let start = Instant::now();
 
     let output = zengif::encode_gif_with_quantizer(

@@ -186,9 +186,8 @@ fn measure_decode(width: u32, height: u32, frame_count: u32, gif_data: &[u8]) ->
     ALLOCATOR.reset();
 
     let start = Instant::now();
-    let stats = zengif::Stats::new();
     let cursor = std::io::Cursor::new(gif_data);
-    let mut decoder = Decoder::new(cursor, Limits::default(), &stats, Unstoppable).unwrap();
+    let mut decoder = Decoder::new(cursor, Limits::default(), Unstoppable).unwrap();
     let _frames = decoder.decode_all().unwrap();
     let elapsed = start.elapsed();
 

@@ -29,12 +29,12 @@ impl ImagequantQuantizer {
         }
     }
 
-    /// Convert Rgba slice to imagequant RGBA slice (zero-copy).
-    fn as_imagequant_rgba(pixels: &[Rgba]) -> &[imagequant::RGBA] {
-        // SAFETY: Rgba and imagequant::RGBA have identical memory layout (4 bytes RGBA)
-        unsafe {
-            core::slice::from_raw_parts(pixels.as_ptr() as *const imagequant::RGBA, pixels.len())
-        }
+    /// Convert Rgba slice to imagequant RGBA vec.
+    fn to_imagequant_rgba(pixels: &[Rgba]) -> Vec<imagequant::RGBA> {
+        pixels
+            .iter()
+            .map(|p| imagequant::RGBA::new(p.r, p.g, p.b, p.a))
+            .collect()
     }
 
     /// Find the most transparent color index in a palette.
@@ -74,7 +74,7 @@ impl QuantizerTrait for ImagequantQuantizer {
             })
         })?;
 
-        let rgba_slice = Self::as_imagequant_rgba(pixels);
+        let rgba_slice = Self::to_imagequant_rgba(pixels);
 
         let mut img = self
             .attr
@@ -89,7 +89,7 @@ impl QuantizerTrait for ImagequantQuantizer {
         if config.use_background {
             if let Some(bg_pixels) = background {
                 if bg_pixels.len() == pixels.len() {
-                    let bg_rgba = Self::as_imagequant_rgba(bg_pixels);
+                    let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
                     let bg_img = self
                         .attr
                         .new_image(bg_rgba, width as usize, height as usize, 0.0)
@@ -165,7 +165,7 @@ impl QuantizerTrait for ImagequantQuantizer {
             stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
             let frame_pixels = frames[idx];
-            let rgba_slice = Self::as_imagequant_rgba(frame_pixels);
+            let rgba_slice = Self::to_imagequant_rgba(frame_pixels);
             let mut img = self
                 .attr
                 .new_image(rgba_slice, width as usize, height as usize, 0.0)
@@ -218,7 +218,7 @@ impl QuantizerTrait for ImagequantQuantizer {
             })
         })?;
 
-        let rgba_slice = Self::as_imagequant_rgba(pixels);
+        let rgba_slice = Self::to_imagequant_rgba(pixels);
 
         let mut img = self
             .attr
@@ -233,7 +233,7 @@ impl QuantizerTrait for ImagequantQuantizer {
         if config.use_background {
             if let Some(bg_pixels) = background {
                 if bg_pixels.len() == pixels.len() {
-                    let bg_rgba = Self::as_imagequant_rgba(bg_pixels);
+                    let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
                     let bg_img = self
                         .attr
                         .new_image(bg_rgba, width as usize, height as usize, 0.0)

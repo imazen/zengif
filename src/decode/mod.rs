@@ -131,8 +131,8 @@ pub struct Decoder<R: Read, S: Stop + Clone> {
     /// Limits configuration.
     limits: Limits,
 
-    /// Reference to stats tracker.
-    stats_ref: StatsRef,
+    /// Memory usage statistics (owned by decoder).
+    stats: Stats,
 
     /// Cancellation checker.
     stop: S,
@@ -150,40 +150,21 @@ pub struct Decoder<R: Read, S: Stop + Clone> {
     bytes_decompressed: u64,
 }
 
-/// Reference to stats for decoder.
-///
-/// We can't store a reference with the same lifetime as the struct,
-/// so we use an enum to handle owned or borrowed stats.
-enum StatsRef {
-    /// Owned stats (decoder manages lifecycle).
-    Owned(Stats),
-    /// Pointer to external stats (caller manages lifecycle).
-    /// Safety: Caller must ensure stats outlives decoder.
-    External(*const Stats),
-}
-
-impl StatsRef {
-    fn get(&self) -> &Stats {
-        match self {
-            StatsRef::Owned(s) => s,
-            StatsRef::External(p) => unsafe { &**p },
-        }
-    }
-}
-
-// Safety: Stats is Sync, so our reference is safe to share
-unsafe impl Send for StatsRef {}
-unsafe impl Sync for StatsRef {}
+// Stats is always owned by the decoder - no unsafe raw pointers.
 
 impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     /// Create a new decoder from a reader.
     ///
+    /// The decoder owns its memory statistics internally. Use `stats()`
+    /// to access memory usage information after decoding.
+    ///
     /// # Arguments
     /// * `reader` - The GIF data source
     /// * `limits` - Size and memory limits
-    /// * `stats` - Memory tracking statistics
     /// * `stop` - Cancellation checker (must be Clone; checked on every read)
-    pub fn new(reader: R, limits: Limits, stats: &Stats, stop: S) -> Result<Self> {
+    pub fn new(reader: R, limits: Limits, stop: S) -> Result<Self> {
+        let stats = Stats::new();
+
         // Check for cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
@@ -230,7 +211,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         };
 
         // Create the compositing screen
-        let screen = ScreenBuilder::from_decoder(&gif_reader).build(stats, &limits)?;
+        let screen = ScreenBuilder::from_decoder(&gif_reader).build(&stats, &limits)?;
 
         // Allocate pixel buffer (fallible)
         let buffer_size = width as usize * height as usize;
@@ -252,7 +233,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
             frame_index: 0,
             pixel_buffer,
             limits,
-            stats_ref: StatsRef::External(stats as *const Stats),
+            stats,
             stop,
             finished: false,
             metadata,
@@ -261,83 +242,10 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         })
     }
 
-    /// Create a decoder with owned stats.
+    /// Deprecated: Use `new()` instead. This is an alias for backwards compatibility.
+    #[deprecated(since = "0.4.0", note = "Use new() instead - decoder always owns its stats now")]
     pub fn with_owned_stats(reader: R, limits: Limits, stop: S) -> Result<Self> {
-        let stats = Stats::new();
-
-        // Check for cancellation
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
-
-        // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
-        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
-
-        // Pre-validate header and check dimensions BEFORE gif crate can allocate
-        let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
-
-        // Chain header bytes back with the rest of the stream
-        let chained = std::io::Cursor::new(header).chain(stop_reader);
-
-        // Configure gif decoder with safety checks
-        let mut options = gif::DecodeOptions::new();
-        options.set_color_output(gif::ColorOutput::Indexed);
-        options.allow_unknown_blocks(true);
-        options.check_frame_consistency(true); // Validate frame bounds against canvas
-
-        // Set memory limit based on our limits (convert pixels to bytes)
-        if let Some(max_pixels) = limits.max_total_pixels {
-            if let Some(limit) = core::num::NonZeroU64::new(max_pixels) {
-                options.set_memory_limit(gif::MemoryLimit::Bytes(limit));
-            }
-        }
-
-        // Parse the GIF (header already validated, dimensions already checked)
-        let gif_reader = options
-            .read_info(chained)
-            .map_err(|e| at!(GifError::from(e)))?;
-
-        // Extract metadata
-        let global_palette = gif_reader.global_palette().map(Palette::from_rgb_bytes);
-        let background_index = gif_reader.bg_color().map(|c| c as u8);
-
-        let metadata = Metadata {
-            width,
-            height,
-            global_palette: global_palette.clone(),
-            background_color_index: background_index,
-            repeat: Repeat::Infinite,
-            frame_count: 0,
-            comments: Vec::new(),
-        };
-
-        // Create the compositing screen
-        let screen = ScreenBuilder::from_decoder(&gif_reader).build(&stats, &limits)?;
-
-        // Allocate pixel buffer (fallible)
-        let buffer_size = width as usize * height as usize;
-        stats.try_alloc(buffer_size, &limits)?;
-
-        let mut pixel_buffer = Vec::new();
-        pixel_buffer.try_reserve(buffer_size).map_err(|_| {
-            stats.track_dealloc(buffer_size); // Undo tracking
-            at!(GifError::AllocationFailed {
-                requested: buffer_size
-            })
-        })?;
-        pixel_buffer.resize(buffer_size, 0u8);
-
-        Ok(Self {
-            reader: gif_reader,
-            screen,
-            frame_index: 0,
-            pixel_buffer,
-            limits,
-            stats_ref: StatsRef::Owned(stats),
-            stop,
-            finished: false,
-            metadata,
-            bytes_read,
-            bytes_decompressed: 0,
-        })
+        Self::new(reader, limits, stop)
     }
 
     /// Get the canvas width.
@@ -368,7 +276,12 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 
     /// Get the stats.
     pub fn stats(&self) -> &Stats {
-        self.stats_ref.get()
+        &self.stats
+    }
+
+    /// Consume the decoder and return the owned stats.
+    pub fn into_stats(self) -> Stats {
+        self.stats
     }
 
     /// Check if decoding is finished.
@@ -388,9 +301,9 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         }
         // Need to grow the buffer
         let additional = needed - self.pixel_buffer.len();
-        self.stats_ref.get().try_alloc(additional, &self.limits)?;
+        self.stats.try_alloc(additional, &self.limits)?;
         self.pixel_buffer.try_reserve(additional).map_err(|_| {
-            self.stats_ref.get().track_dealloc(additional);
+            self.stats.track_dealloc(additional);
             at!(GifError::AllocationFailed {
                 requested: additional
             })
@@ -477,7 +390,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         };
 
         // Compose the frame
-        let stats = self.stats_ref.get();
+        let stats = &self.stats;
         let composed = self.screen.process_frame(&raw_frame, stats, &self.limits)?;
 
         self.frame_index += 1;
@@ -573,7 +486,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         };
 
         // Compose the frame in place (no canvas copy)
-        let stats = self.stats_ref.get();
+        let stats = &self.stats;
         let (index, delay) = self
             .screen
             .process_frame_in_place(&raw_frame, stats, &self.limits)?;
@@ -637,18 +550,20 @@ impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
 }
 
 /// Convenience function to decode a GIF from bytes.
+///
+/// Returns metadata, frames, and memory usage statistics.
 pub fn decode_gif<S: Stop + Clone>(
     data: &[u8],
     limits: Limits,
-    stats: &Stats,
     stop: S,
-) -> Result<(Metadata, Vec<ComposedFrame>)> {
+) -> Result<(Metadata, Vec<ComposedFrame>, Stats)> {
     let cursor = std::io::Cursor::new(data);
-    let mut decoder = Decoder::new(cursor, limits, stats, stop)?;
+    let mut decoder = Decoder::new(cursor, limits, stop)?;
     let frames = decoder.decode_all()?;
     let mut metadata = decoder.metadata().clone();
     metadata.frame_count = frames.len();
-    Ok((metadata, frames))
+    // Return owned stats from decoder
+    Ok((metadata, frames, decoder.into_stats()))
 }
 
 #[cfg(test)]
@@ -679,11 +594,10 @@ mod tests {
 
     #[test]
     fn decode_minimal_gif() {
-        let stats = Stats::new();
         let limits = Limits::default();
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
 
         assert_eq!(decoder.width(), 1);
         assert_eq!(decoder.height(), 1);
@@ -700,22 +614,20 @@ mod tests {
 
     #[test]
     fn decode_with_limits() {
-        let stats = Stats::new();
         let limits = Limits::default().max_dimensions(0, 0); // No images allowed
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let result = Decoder::new(cursor, limits, &stats, Unstoppable);
+        let result = Decoder::new(cursor, limits, Unstoppable);
 
         assert!(result.is_err());
     }
 
     #[test]
     fn frame_iterator() {
-        let stats = Stats::new();
         let limits = Limits::default();
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+        let decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
 
         let frames: Vec<_> = decoder.frames().collect();
         assert_eq!(frames.len(), 1);
@@ -724,10 +636,9 @@ mod tests {
 
     #[test]
     fn decode_all() {
-        let stats = Stats::new();
         let limits = Limits::default();
 
-        let (metadata, frames) = decode_gif(MINIMAL_GIF, limits, &stats, Unstoppable).unwrap();
+        let (metadata, frames, _stats) = decode_gif(MINIMAL_GIF, limits, Unstoppable).unwrap();
 
         assert_eq!(metadata.width, 1);
         assert_eq!(metadata.height, 1);
@@ -736,13 +647,12 @@ mod tests {
 
     #[test]
     fn decompression_ratio_check() {
-        let stats = Stats::new();
         // Set a very low decompression ratio limit (0.1x means compressed must be
         // larger than decompressed, which is impossible for real GIFs)
         let limits = Limits::default().max_decompression_ratio(0.01);
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
 
         // Should fail due to decompression ratio exceeded
         let result = decoder.next_frame();
@@ -755,12 +665,11 @@ mod tests {
 
     #[test]
     fn decompression_ratio_ok() {
-        let stats = Stats::new();
         // Normal ratio limit (1000x) should pass for typical GIFs
         let limits = Limits::default().max_decompression_ratio(1000.0);
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
 
         // Should succeed
         let frame = decoder.next_frame().unwrap();
