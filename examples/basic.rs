@@ -3,9 +3,7 @@
 //! Run with: cargo run --example basic
 
 use enough::Unstoppable;
-use zengif::{
-    decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba,
-};
+use zengif::{decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
 
 fn main() {
     // Example 1: Create and encode a simple animation
@@ -81,8 +79,7 @@ fn streaming_decode(data: &[u8]) {
     let limits = Limits::default();
     let cursor = std::io::Cursor::new(data);
 
-    let mut decoder =
-        Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
+    let mut decoder = Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
 
     println!("  Canvas: {}x{}", decoder.width(), decoder.height());
 
@@ -139,10 +136,12 @@ fn track_memory(data: &[u8]) {
     let cursor = std::io::Cursor::new(data);
     let limits = Limits::default();
 
-    let mut decoder =
-        Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
+    let mut decoder = Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
 
-    println!("  After decoder creation: {} bytes", decoder.stats().current());
+    println!(
+        "  After decoder creation: {} bytes",
+        decoder.stats().current()
+    );
 
     while let Some(_frame) = decoder.next_frame().expect("Failed to read frame") {
         println!(

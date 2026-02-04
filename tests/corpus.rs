@@ -234,8 +234,8 @@ fn corpus_disposal_methods() {
         let data = fs::read(&path).expect("Failed to read file");
         let limits = Limits::default();
 
-        let (metadata, frames, _stats) = decode_gif(&data, limits, Unstoppable)
-            .expect("Should decode disposal test file");
+        let (metadata, frames, _stats) =
+            decode_gif(&data, limits, Unstoppable).expect("Should decode disposal test file");
 
         assert!(
             frames.len() > 1,

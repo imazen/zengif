@@ -192,7 +192,6 @@ fn random_garbage() {
 
 #[test]
 fn very_large_declared_dimensions() {
-
     // Declare max dimensions but don't provide data
     let data = vec![
         0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a

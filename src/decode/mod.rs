@@ -243,7 +243,10 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     }
 
     /// Deprecated: Use `new()` instead. This is an alias for backwards compatibility.
-    #[deprecated(since = "0.4.0", note = "Use new() instead - decoder always owns its stats now")]
+    #[deprecated(
+        since = "0.4.0",
+        note = "Use new() instead - decoder always owns its stats now"
+    )]
     pub fn with_owned_stats(reader: R, limits: Limits, stop: S) -> Result<Self> {
         Self::new(reader, limits, stop)
     }

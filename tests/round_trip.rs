@@ -7,9 +7,7 @@
 //! Round-trip tests: encode -> decode -> verify
 
 use enough::Unstoppable;
-use zengif::{
-    decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba,
-};
+use zengif::{decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
 
 /// Create a solid color frame.
 fn solid_frame(width: u16, height: u16, color: Rgba, delay: u16) -> FrameInput {
@@ -269,9 +267,9 @@ fn round_trip_vflip_with_palette_passthrough() {
     .expect("Initial encode failed");
 
     // Step 2: Decode
-    
-    let (metadata1, frames1, _stats1) = decode_gif(&encoded1, Limits::default(), Unstoppable)
-        .expect("First decode failed");
+
+    let (metadata1, frames1, _stats1) =
+        decode_gif(&encoded1, Limits::default(), Unstoppable).expect("First decode failed");
 
     assert_eq!(frames1.len(), 3);
 
@@ -316,9 +314,9 @@ fn round_trip_vflip_with_palette_passthrough() {
     .expect("Flipped encode failed");
 
     // Step 4: Decode flipped
-    
-    let (_, frames2, _stats2) = decode_gif(&encoded2, Limits::default(), Unstoppable)
-        .expect("Second decode failed");
+
+    let (_, frames2, _stats2) =
+        decode_gif(&encoded2, Limits::default(), Unstoppable).expect("Second decode failed");
 
     assert_eq!(frames2.len(), 3);
 
@@ -347,9 +345,9 @@ fn round_trip_vflip_with_palette_passthrough() {
         .expect("Re-flipped encode failed");
 
     // Step 6: Decode final
-    
-    let (_, frames3, _stats3) = decode_gif(&encoded3, Limits::default(), Unstoppable)
-        .expect("Final decode failed");
+
+    let (_, frames3, _stats3) =
+        decode_gif(&encoded3, Limits::default(), Unstoppable).expect("Final decode failed");
 
     assert_eq!(frames3.len(), 3);
 
