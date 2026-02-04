@@ -39,17 +39,16 @@ The `gif` crate provides excellent low-level GIF parsing with memory limits. `gi
 ### Decoding
 
 ```rust
-use zengif::{Decoder, Limits, Stats};
+use zengif::{Decoder, Limits};
 use enough::Unstoppable;
 
 let limits = Limits::default()
     .max_dimensions(4096, 4096)
     .max_frame_count(1000);
 
-let stats = Stats::new();
 let cursor = std::io::Cursor::new(gif_data);
 
-let mut decoder = Decoder::new(cursor, limits, &stats, Unstoppable)?;
+let mut decoder = Decoder::new(cursor, limits, Unstoppable)?;
 
 while let Some(frame) = decoder.next_frame()? {
     // frame.pixels: Vec<Rgba> - composited RGBA with disposal applied
@@ -57,7 +56,8 @@ while let Some(frame) = decoder.next_frame()? {
     // frame.index: usize - frame number
 }
 
-println!("Peak buffer usage: {} bytes", stats.peak());
+// Memory stats tracked internally by decoder
+println!("Peak buffer usage: {} bytes", decoder.stats().peak());
 ```
 
 ### Encoding
@@ -82,11 +82,10 @@ encoder.finish()?;
 ### Round-Trip with Metadata
 
 ```rust
-use zengif::{Decoder, Encoder, Limits, Stats};
+use zengif::{Decoder, Encoder, FrameInput, Limits};
 use enough::Unstoppable;
 
-let stats = Stats::new();
-let mut decoder = Decoder::new(reader, Limits::default(), &stats, Unstoppable)?;
+let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
 
 let metadata = decoder.metadata().clone();
 let mut encoder = Encoder::from_metadata(writer, &metadata, Limits::default(), Unstoppable)?;
@@ -104,7 +103,7 @@ encoder.finish()?;
 
 ```rust
 use almost_enough::Stopper;
-use zengif::{Decoder, Limits, Stats};
+use zengif::{Decoder, Limits};
 
 let stop = Stopper::new();
 let stop_clone = stop.clone();
@@ -113,8 +112,7 @@ let stop_clone = stop.clone();
 stop_clone.cancel();
 
 // Decoder will return GifError::Cancelled
-let stats = Stats::new();
-let decoder = Decoder::new(reader, Limits::default(), &stats, stop)?;
+let decoder = Decoder::new(reader, Limits::default(), stop)?;
 ```
 
 ## Memory Limits
@@ -160,7 +158,7 @@ zengif supports `no_std` environments with `alloc`. Disable the default `std` fe
 
 ```toml
 [dependencies]
-zengif = { version = "0.3", default-features = false }
+zengif = { version = "0.4", default-features = false }
 ```
 
 **With `std` (default):** Full codec - decoder, encoder, quantizers, heuristics.
