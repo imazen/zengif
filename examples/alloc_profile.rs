@@ -22,7 +22,7 @@ use std::time::Instant;
 use enough::Unstoppable;
 use zengif::{
     heuristics::{estimate_decode, estimate_encode, QuantizerType},
-    Decoder, EncoderConfig, FrameInput, Limits, Rgba, Stats,
+    Decoder, EncoderConfig, FrameInput, Limits, Rgba,
 };
 
 #[cfg(feature = "color_quant")]
@@ -340,8 +340,8 @@ fn profile_encode_with_quantizer<Q: zengif::QuantizerTrait>(
         frames: frame_count,
         quantizer: quantizer_name,
         time_us: elapsed.as_micros() as u64,
-        peak_memory: stats.peak(),
-        alloc_count: stats.alloc_count(),
+        peak_memory: 0, // Encoder doesn't track internal stats
+        alloc_count: 0,
         output_bytes: output.len(),
         pixels,
     }

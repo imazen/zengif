@@ -8,7 +8,7 @@
 
 use enough::Unstoppable;
 use zengif::{
-    decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Stats,
+    decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba,
 };
 
 /// Create a solid color frame.

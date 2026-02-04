@@ -25,7 +25,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use zengif::{Limits, QuantizerBackend, Rgba, Stats, Unstoppable};
+use zengif::{Limits, QuantizerBackend, Rgba, Unstoppable};
 
 /// Decode a PNG file to RGBA pixels.
 fn decode_png(path: &Path) -> Option<(Vec<Rgba>, u32, u32)> {
@@ -134,7 +134,6 @@ fn test_quantizer_on_png(
         };
     }
 
-    let _stats = Stats::new();
     let limits = Limits::default();
 
     // Create encoder config with specific backend
@@ -185,8 +184,7 @@ fn test_quantizer_on_png(
     let output_size = output.len();
 
     // Decode the GIF back
-    let stats2 = Stats::new();
-    let (_, decoded_frames) = match zengif::decode_gif(&output, limits, Unstoppable) {
+    let (_, decoded_frames, _stats) = match zengif::decode_gif(&output, limits, Unstoppable) {
         Ok(r) => r,
         Err(_) => {
             return QuantizerResult {
@@ -320,11 +318,7 @@ mod quality_tests {
         }
 
         fn avg_size(&self, i: usize) -> Option<usize> {
-            if self.counts[i] > 0 {
-                Some(self.size_sum[i] / self.counts[i])
-            } else {
-                None
-            }
+            self.size_sum[i].checked_div(self.counts[i])
         }
 
         fn avg_time_ms(&self, i: usize) -> Option<f64> {
@@ -718,8 +712,7 @@ mod quality_tests {
             }
 
             // Decode and measure quality
-            let stats = Stats::new();
-            let (_, decoded_frames) =
+            let (_, decoded_frames, _stats) =
                 zengif::decode_gif(&output, limits, Unstoppable).expect("decode failed");
 
             let ssim2 = if !decoded_frames.is_empty() {
