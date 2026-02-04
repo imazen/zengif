@@ -16,8 +16,6 @@ default = ["std"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
 std = ["gif/std", "enough/std", "whereat/std"]
-# SIMD acceleration (opt-in)
-simd = ["wide", "multiversed"]
 
 # Color quantization backends (choose one or more)
 # quantizr: Best quality, fast, MIT licensed (RECOMMENDED)
@@ -53,12 +51,6 @@ imagequant = { version = "4.4", optional = true }
 quantizr = { version = "1.4", optional = true }
 exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
-
-# SIMD acceleration (optional)
-wide = { version = "1.1", optional = true }
-# x86-64-v3 = AVX2 (Haswell+), x86-64-v4 = AVX-512 (Zen4+/Xeon)
-# aarch64-basic = NEON (Apple Silicon, Cortex-A75+)
-multiversed = { version = "0.1", features = ["x86-64-v3", "x86-64-v4", "aarch64-basic"], optional = true }
 
 # RGB/imgref ecosystem interop (optional)
 rgb = { version = "0.8", optional = true }

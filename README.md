@@ -148,7 +148,6 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `std` | ✅ | Enable std library (disable for no_std+alloc) |
-| `simd` | ❌ | SIMD acceleration via wide/multiversed |
 | `rgb-interop` | ❌ | Interop with the `rgb` crate |
 | `imgref-interop` | ❌ | Interop with the `imgref` crate |
 

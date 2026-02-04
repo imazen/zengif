@@ -81,7 +81,6 @@
 //! ## Feature Flags
 //!
 //! - **`std`** (default): Enables `std::error::Error` impl and std I/O
-//! - **`simd`**: SIMD acceleration via wide/multiversed
 //! - **`rgb-interop`**: Interop with the `rgb` crate
 //! - **`imgref-interop`**: Interop with the `imgref` crate
 //!
