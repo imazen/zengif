@@ -156,42 +156,57 @@ impl Screen {
 
         // 5. Blit the frame onto the canvas
         if width > 0 && height > 0 && !frame.pixels.is_empty() {
-            // Calculate the offset into frame pixels if we clipped
+            // Pre-compute offsets
             let frame_x_offset = (left - frame.left) as usize;
             let frame_y_offset = (top - frame.top) as usize;
+            let canvas_stride = self.width as usize;
+            let frame_stride = frame.width as usize;
+            let row_width = width as usize;
 
-            // Blit row by row, handling clipping
-            for y in 0..height as usize {
-                let canvas_y = top as usize + y;
-                let canvas_row_start = canvas_y * self.width as usize;
+            // Choose fast path based on transparency
+            if let Some(transparent_idx) = frame.transparent {
+                // Slow path: need to check transparency for each pixel
+                for y in 0..height as usize {
+                    let canvas_row_start = (top as usize + y) * canvas_stride + left as usize;
+                    let frame_row_start = (frame_y_offset + y) * frame_stride + frame_x_offset;
 
-                let frame_y = frame_y_offset + y;
-                let frame_row_start = frame_y * frame.width as usize;
-
-                for x in 0..width as usize {
-                    let frame_x = frame_x_offset + x;
-                    let frame_idx = frame_row_start + frame_x;
-
-                    if frame_idx >= frame.pixels.len() {
+                    // Get row slices (bounds-check once per row)
+                    let frame_row_end = (frame_row_start + row_width).min(frame.pixels.len());
+                    if frame_row_start >= frame.pixels.len() {
                         continue;
                     }
+                    let frame_row = &frame.pixels[frame_row_start..frame_row_end];
+                    let canvas_row = &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    let color_index = frame.pixels[frame_idx];
+                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                        if color_index != transparent_idx {
+                            *canvas_pixel = palette
+                                .get(color_index as usize)
+                                .copied()
+                                .unwrap_or(Rgba::TRANSPARENT);
+                        }
+                    }
+                }
+            } else {
+                // Fast path: no transparency check needed
+                for y in 0..height as usize {
+                    let canvas_row_start = (top as usize + y) * canvas_stride + left as usize;
+                    let frame_row_start = (frame_y_offset + y) * frame_stride + frame_x_offset;
 
-                    // Skip transparent pixels
-                    if Some(color_index) == frame.transparent {
+                    // Get row slices
+                    let frame_row_end = (frame_row_start + row_width).min(frame.pixels.len());
+                    if frame_row_start >= frame.pixels.len() {
                         continue;
                     }
+                    let frame_row = &frame.pixels[frame_row_start..frame_row_end];
+                    let canvas_row = &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    // Get color from palette
-                    let color = palette
-                        .get(color_index as usize)
-                        .copied()
-                        .unwrap_or(Rgba::TRANSPARENT);
-
-                    let canvas_x = left as usize + x;
-                    let canvas_idx = canvas_row_start + canvas_x;
-                    self.pixels[canvas_idx] = color;
+                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                        *canvas_pixel = palette
+                            .get(color_index as usize)
+                            .copied()
+                            .unwrap_or(Rgba::TRANSPARENT);
+                    }
                 }
             }
         }

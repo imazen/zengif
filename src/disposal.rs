@@ -128,12 +128,19 @@ impl Disposal {
             }
             DisposalMethod::Background => {
                 // Fill the region with background color
-                for y in 0..self.height as usize {
-                    let canvas_y = self.top as usize + y;
-                    let row_start = canvas_y * canvas_width as usize + self.left as usize;
-                    let row_end = row_start + self.width as usize;
-                    for pixel in &mut canvas[row_start..row_end] {
-                        *pixel = background;
+                let canvas_stride = canvas_width as usize;
+                let row_width = self.width as usize;
+
+                // Optimize: single fill if region spans full canvas width
+                if self.left == 0 && self.width == canvas_width {
+                    let start = self.top as usize * canvas_stride;
+                    let end = start + self.height as usize * canvas_stride;
+                    canvas[start..end].fill(background);
+                } else {
+                    // Row-by-row fill for partial-width regions
+                    for y in 0..self.height as usize {
+                        let row_start = (self.top as usize + y) * canvas_stride + self.left as usize;
+                        canvas[row_start..row_start + row_width].fill(background);
                     }
                 }
             }
@@ -203,28 +210,43 @@ pub fn blit_indexed(
     palette: &[Rgba],
     transparent_index: Option<u8>,
 ) {
-    for y in 0..frame_height as usize {
-        let canvas_y = frame_top as usize + y;
-        let canvas_row_start = canvas_y * canvas_width as usize;
+    let canvas_stride = canvas_width as usize;
+    let frame_stride = frame_width as usize;
+    let row_width = frame_width as usize;
 
-        for x in 0..frame_width as usize {
-            let frame_idx = y * frame_width as usize + x;
-            let color_index = frame_pixels[frame_idx];
+    if let Some(trans_idx) = transparent_index {
+        // Slow path: need to check transparency
+        for y in 0..frame_height as usize {
+            let canvas_row_start = (frame_top as usize + y) * canvas_stride + frame_left as usize;
+            let frame_row_start = y * frame_stride;
 
-            // Skip transparent pixels
-            if Some(color_index) == transparent_index {
-                continue;
+            let frame_row = &frame_pixels[frame_row_start..frame_row_start + row_width];
+            let canvas_row = &mut canvas[canvas_row_start..canvas_row_start + row_width];
+
+            for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                if color_index != trans_idx {
+                    *canvas_pixel = palette
+                        .get(color_index as usize)
+                        .copied()
+                        .unwrap_or(Rgba::TRANSPARENT);
+                }
             }
+        }
+    } else {
+        // Fast path: no transparency check
+        for y in 0..frame_height as usize {
+            let canvas_row_start = (frame_top as usize + y) * canvas_stride + frame_left as usize;
+            let frame_row_start = y * frame_stride;
 
-            // Get color from palette
-            let color = palette
-                .get(color_index as usize)
-                .copied()
-                .unwrap_or(Rgba::TRANSPARENT);
+            let frame_row = &frame_pixels[frame_row_start..frame_row_start + row_width];
+            let canvas_row = &mut canvas[canvas_row_start..canvas_row_start + row_width];
 
-            let canvas_x = frame_left as usize + x;
-            let canvas_idx = canvas_row_start + canvas_x;
-            canvas[canvas_idx] = color;
+            for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                *canvas_pixel = palette
+                    .get(color_index as usize)
+                    .copied()
+                    .unwrap_or(Rgba::TRANSPARENT);
+            }
         }
     }
 }
