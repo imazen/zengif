@@ -9,6 +9,21 @@ use whereat::at;
 /// Configuration for decode/encode limits.
 ///
 /// All limits are optional; `None` means unlimited.
+///
+/// # Example
+///
+/// ```rust
+/// use zengif::Limits;
+///
+/// // Start with defaults and customize
+/// let limits = Limits::default()
+///     .max_dimensions(4096, 4096)
+///     .max_frame_count(100)
+///     .max_memory(256 * 1024 * 1024);  // 256 MB
+///
+/// // Or start with no limits for trusted inputs
+/// let unlimited = Limits::none();
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Limits {

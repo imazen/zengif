@@ -53,14 +53,24 @@
 //!
 //! ## Memory Tracking
 //!
-//! zengif tracks its own buffer allocations (canvas, pixel buffers) through a `Stats` object.
-//! Note: This does not include allocations made internally by the gif crate or quantizers.
+//! The decoder tracks buffer allocations internally. Access stats via `decoder.stats()`:
 //!
 //! ```rust,ignore
-//! let stats = Stats::new();
-//! // ... use decoder/encoder ...
-//! println!("Peak zengif buffer usage: {} bytes", stats.peak());
+//! let mut decoder = Decoder::new(reader, limits, Unstoppable)?;
+//!
+//! while let Some(frame) = decoder.next_frame()? {
+//!     // Check memory usage during decode
+//!     if decoder.stats().peak() > 100_000_000 {
+//!         break; // Stop if using too much memory
+//!     }
+//!     process(frame);
+//! }
+//!
+//! println!("Peak buffer usage: {} bytes", decoder.stats().peak());
 //! ```
+//!
+//! Note: Stats tracks zengif's own allocations (canvas, pixel buffers), not allocations
+//! made internally by the gif crate or quantizers.
 //!
 //! ## Cancellation
 //!

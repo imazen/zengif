@@ -6,133 +6,128 @@
 [![codecov](https://codecov.io/gh/imazen/zengif/branch/main/graph/badge.svg)](https://codecov.io/gh/imazen/zengif)
 [![License](https://img.shields.io/crates/l/zengif.svg)](LICENSE-MIT)
 
-Server-side GIF codec with zero-trust design, memory bounds, streaming, and full animation transparency support.
+A GIF codec built for servers: streaming, memory-safe, and production-ready.
+
+## Getting Started
+
+```bash
+cargo add zengif
+```
+
+### Decode a GIF
+
+```rust
+use zengif::{Decoder, Limits, Unstoppable};
+use std::fs::File;
+use std::io::BufReader;
+
+fn main() -> zengif::Result<()> {
+    let file = File::open("animation.gif")?;
+    let reader = BufReader::new(file);
+
+    let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
+
+    println!("{}x{}, {} frames",
+        decoder.metadata().width,
+        decoder.metadata().height,
+        decoder.metadata().frame_count_hint.unwrap_or(0));
+
+    while let Some(frame) = decoder.next_frame()? {
+        // frame.pixels: Vec<Rgba> - fully composited with transparency
+        // frame.delay: u16 - delay in centiseconds (100ths of a second)
+        println!("Frame {}: {}ms delay", frame.index, frame.delay as u32 * 10);
+    }
+
+    Ok(())
+}
+```
+
+### Encode a GIF
+
+```rust
+use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+
+fn main() -> zengif::Result<()> {
+    let width = 100;
+    let height = 100;
+
+    // Create 3 frames of solid colors
+    let red: Vec<Rgba> = (0..width*height).map(|_| Rgba::rgb(255, 0, 0)).collect();
+    let green: Vec<Rgba> = (0..width*height).map(|_| Rgba::rgb(0, 255, 0)).collect();
+    let blue: Vec<Rgba> = (0..width*height).map(|_| Rgba::rgb(0, 0, 255)).collect();
+
+    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+
+    let mut output = Vec::new();
+    let mut encoder = Encoder::new(&mut output, config, Limits::default(), Unstoppable)?;
+
+    encoder.add_frame(FrameInput::new(width, height, 50, red))?;   // 500ms
+    encoder.add_frame(FrameInput::new(width, height, 50, green))?; // 500ms
+    encoder.add_frame(FrameInput::new(width, height, 50, blue))?;  // 500ms
+
+    encoder.finish()?;
+
+    std::fs::write("output.gif", &output)?;
+    Ok(())
+}
+```
 
 ## Why zengif?
 
-zengif combines streaming GIF codec capabilities with server-side production features:
+If you're building a server that handles untrusted GIF uploads, you need:
 
-| Feature | gif + gif-dispose | zengif |
-|---------|-------------------|--------|
+- **Memory limits** - Reject oversized images before allocating
+- **Cancellation** - Stop processing if the request is cancelled
+- **Error context** - Know exactly where parsing failed
+- **Correct compositing** - Handle all disposal methods and transparency
+
+zengif builds on the excellent [`gif`](https://crates.io/crates/gif) crate, adding these production features:
+
+| Feature | gif crate | zengif |
+|---------|-----------|--------|
 | Streaming decode | ✅ | ✅ |
-| Disposal + transparency | ✅ | ✅ |
 | Memory limits | ✅ | ✅ |
-| **Cooperative cancellation** | ❌ | ✅ |
-| **Error tracing (file:line)** | ❌ | ✅ |
-| **Round-trip metadata** | ❌ | ✅ |
-| **High-quality encode** | ❌ | ✅ |
+| Frame compositing | ❌ (use gif-dispose) | ✅ built-in |
+| Cooperative cancellation | ❌ | ✅ |
+| Error tracing (file:line) | ❌ | ✅ |
+| High-quality encoding | ❌ | ✅ (optional) |
 
-The `gif` crate provides excellent low-level GIF parsing with memory limits. `gif-dispose` adds disposal method handling. zengif wraps these and adds: cancellation support, error tracing with file:line info, and a unified API for encode/decode with metadata preservation.
+## Memory Protection
 
-## Features
-
-- **Streaming decode/encode** - Process GIFs without loading entire file into memory
-- **Complete animation support** - All disposal methods (Keep, Background, Previous) + transparency working together
-- **Memory bounded** - Configurable limits, reject oversized inputs before allocating
-- **Production ready** - Error tracing via [`whereat`](https://crates.io/crates/whereat), cancellation via [`enough`](https://crates.io/crates/enough)
-- **Zero-trust design** - Validate headers, bounds-check frames, limit decompression ratio
-- **Round-trip fidelity** - Frame timing, loop count, palette, and disposal methods preserved
-- **High-quality encoding** - Optional imagequant integration for small file sizes
-
-## Quick Start
-
-### Decoding
+Protect your server from malicious inputs:
 
 ```rust
-use zengif::{Decoder, Limits};
-use enough::Unstoppable;
+use zengif::Limits;
 
 let limits = Limits::default()
-    .max_dimensions(4096, 4096)
-    .max_frame_count(1000);
-
-let cursor = std::io::Cursor::new(gif_data);
-
-let mut decoder = Decoder::new(cursor, limits, Unstoppable)?;
-
-while let Some(frame) = decoder.next_frame()? {
-    // frame.pixels: Vec<Rgba> - composited RGBA with disposal applied
-    // frame.delay: u16 - delay in centiseconds
-    // frame.index: usize - frame number
-}
-
-// Memory stats tracked internally by decoder
-println!("Peak buffer usage: {} bytes", decoder.stats().peak());
+    .max_dimensions(4096, 4096)       // Reject huge canvases
+    .max_frame_count(1000)            // Limit animation length
+    .max_memory(256 * 1024 * 1024);   // 256 MB peak memory
 ```
 
-### Encoding
+The decoder will return an error before allocating if limits would be exceeded.
 
-```rust
-use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
-use enough::Unstoppable;
+## Cancellation
 
-let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-let limits = Limits::default();
-
-let mut output = Vec::new();
-let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable)?;
-
-for frame in source_frames {
-    encoder.add_frame(frame)?;
-}
-
-encoder.finish()?;
-```
-
-### Round-Trip with Metadata
-
-```rust
-use zengif::{Decoder, Encoder, FrameInput, Limits};
-use enough::Unstoppable;
-
-let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
-
-let metadata = decoder.metadata().clone();
-let mut encoder = Encoder::from_metadata(writer, &metadata, Limits::default(), Unstoppable)?;
-
-while let Some(frame) = decoder.next_frame()? {
-    // Re-encode the composed frame
-    let input = FrameInput::new(frame.width, frame.height, frame.delay, frame.pixels);
-    encoder.add_frame(input)?;
-}
-
-encoder.finish()?;
-```
-
-### With Cancellation
+For web servers, you often need to stop processing if the client disconnects:
 
 ```rust
 use almost_enough::Stopper;
 use zengif::{Decoder, Limits};
 
 let stop = Stopper::new();
-let stop_clone = stop.clone();
+let stop_for_handler = stop.clone();
 
-// In another thread/task:
-stop_clone.cancel();
+// In your request handler, if client disconnects:
+stop_for_handler.cancel();
 
-// Decoder will return GifError::Cancelled
-let decoder = Decoder::new(reader, Limits::default(), stop)?;
+// The decoder will return GifError::Cancelled at the next check point
+let mut decoder = Decoder::new(reader, Limits::default(), stop)?;
 ```
 
-## Memory Limits
+## Error Diagnostics
 
-Protect against malicious inputs:
-
-```rust
-use zengif::Limits;
-
-let limits = Limits::default()
-    .max_dimensions(8192, 8192)           // Max canvas size
-    .max_total_pixels(67_108_864)         // Max 64M pixels per frame
-    .max_frame_count(10_000)              // Max frames
-    .max_file_size(500 * 1024 * 1024)     // 500 MB
-    .max_memory(1024 * 1024 * 1024);      // 1 GB peak memory
-```
-
-## Error Handling
-
-Errors include location and context for debugging:
+When something goes wrong, you get the full story:
 
 ```
 Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
@@ -143,47 +138,46 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
       ╰─ in decode_frame
 ```
 
-## Feature Flags
+## High-Quality Encoding
 
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `std` | ✅ | Enable std library (disable for no_std+alloc) |
-| `rgb-interop` | ❌ | Interop with the `rgb` crate |
-| `imgref-interop` | ❌ | Interop with the `imgref` crate |
+For the smallest file sizes, enable the `imagequant` feature:
 
-### no_std / WASM Support
+```bash
+cargo add zengif --features imagequant
+```
 
-zengif supports `no_std` environments with `alloc`. Disable the default `std` feature:
+```rust
+use zengif::{EncoderConfig, Quantizer};
+
+let config = EncoderConfig::new(width, height)
+    .quantizer(Quantizer::imagequant());  // Best quality, smallest files
+```
+
+### Quantizer Options
+
+| Feature | License | Quality | Speed |
+|---------|---------|---------|-------|
+| `imagequant` | AGPL-3.0* | Best | Medium |
+| `quantizr` | MIT | Good | Fast |
+| `color_quant` | MIT | Good | Fastest |
+
+*[Commercial license available](https://supso.org/projects/pngquant) for closed-source projects.
+
+**Without any quantizer feature, zengif is MIT/Apache-2.0 licensed.**
+
+## no_std / WASM
+
+For WASM or embedded, disable the default `std` feature:
 
 ```toml
-[dependencies]
 zengif = { version = "0.4", default-features = false }
 ```
 
-**With `std` (default):** Full codec - decoder, encoder, quantizers, heuristics.
-
-**Without `std`:** Core types only - `GifError`, `Limits`, `Stats`, `Rgba`, `Palette`, `ComposedFrame`, `Screen`, `Disposal`. Useful for WASM or embedded where you process frames but use a different codec.
-
-Verified targets: `wasm32-unknown-unknown` (144KB release build with decoder).
-
-### Color Quantization Backends
-
-Choose one or more quantization backends for high-quality GIF encoding:
-
-| Feature | License | Quality | Speed | Notes |
-|---------|---------|---------|-------|-------|
-| `imagequant` | AGPL-3.0 | **Best** | Medium | **Recommended** - best quality AND smallest files (LZW-aware dithering), [commercial license][imagequant-license] |
-| `quantizr` | MIT | Good | Fast | Best MIT-licensed option |
-| `color_quant` | MIT | Good | **Fastest** | High-throughput servers |
-| `exoquant-deprecated` | MIT | Good | Slow | **Deprecated** - use quantizr instead |
-
-**Without any quantization feature, zengif is purely MIT/Apache-2.0 licensed.**
-
-[imagequant-license]: https://supso.org/projects/pngquant
+You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec. Useful when you need to share types between WASM and native code.
 
 ## Performance
 
-Benchmarks on AMD Ryzen 9 5900X:
+On AMD Ryzen 9 5900X:
 
 | Operation | Throughput |
 |-----------|------------|
@@ -191,23 +185,12 @@ Benchmarks on AMD Ryzen 9 5900X:
 | Encode (quantized) | ~40 MB/s |
 | Encode (pre-indexed) | ~200 MB/s |
 
-## AI-Generated Code Notice
-
-Developed with Claude (Anthropic). Not all code manually reviewed. Review critical paths before production use.
-
 ## License
 
-Licensed under either of:
+MIT or Apache-2.0, at your option.
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) (AGPL-3.0). Use `quantizr` or `color_quant` for fully permissive licensing.
 
-at your option.
+---
 
-### Dependency Licensing: imagequant (AGPL)
-
-The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) by [Kornel Lesiński](https://kornel.ski/), which is licensed under **AGPL-3.0**. For closed-source projects, please [purchase a commercial license](https://supso.org/projects/pngquant) — it's reasonably priced and supports continued development of excellent image optimization tools.
-
-**Alternative MIT-licensed quantizers:** `quantizr` or `color_quant` for fully permissive licensing (slightly lower quality).
-
-**Without any quantization feature** (the default), zengif has no AGPL dependencies and is purely MIT/Apache-2.0 licensed.
+**100% safe Rust** - `#![forbid(unsafe_code)]`

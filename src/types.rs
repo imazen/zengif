@@ -412,7 +412,29 @@ impl RawFrame {
 /// Composited frame with RGBA pixels.
 ///
 /// This is the result of applying disposal methods and transparency
-/// to produce the actual visible frame.
+/// to produce the actual visible frame. Each frame is the full canvas
+/// size with all previous frames' effects applied.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// while let Some(frame) = decoder.next_frame()? {
+///     println!("Frame {}: {}x{}, {}ms delay",
+///         frame.index,
+///         frame.width,
+///         frame.height,
+///         frame.delay as u32 * 10);
+///
+///     // Access pixel at (x, y)
+///     if let Some(pixel) = frame.get_pixel(0, 0) {
+///         println!("Top-left: rgba({}, {}, {}, {})",
+///             pixel.r, pixel.g, pixel.b, pixel.a);
+///     }
+///
+///     // Get raw bytes for image libraries
+///     let bytes: &[u8] = frame.as_bytes();
+/// }
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ComposedFrame {
@@ -583,6 +605,26 @@ impl Metadata {
 }
 
 /// Frame input for encoding.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+///
+/// let width = 100;
+/// let height = 100;
+///
+/// // Create a red frame (500ms delay = 50 centiseconds)
+/// let red_pixels: Vec<Rgba> = (0..width*height)
+///     .map(|_| Rgba::rgb(255, 0, 0))
+///     .collect();
+///
+/// let frame = FrameInput::new(width, height, 50, red_pixels);
+///
+/// // Or from raw bytes
+/// let bytes = vec![255, 0, 0, 255; (width * height) as usize]; // RGBA
+/// let frame = FrameInput::from_bytes(width, height, 50, &bytes);
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct FrameInput {
