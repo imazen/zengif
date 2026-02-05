@@ -95,6 +95,20 @@ struct ScratchBuffer {
     frame_pixels: Vec<Rgba>,
 }
 
+/// Check if two pixels are similar within a tolerance.
+/// Returns true if all RGBA channels differ by at most `tolerance`.
+#[inline(always)]
+fn pixels_similar(a: Rgba, b: Rgba, tolerance: u8) -> bool {
+    if tolerance == 0 {
+        return a == b;
+    }
+    let dr = (a.r as i16 - b.r as i16).unsigned_abs() as u8;
+    let dg = (a.g as i16 - b.g as i16).unsigned_abs() as u8;
+    let db = (a.b as i16 - b.b as i16).unsigned_abs() as u8;
+    let da = (a.a as i16 - b.a as i16).unsigned_abs() as u8;
+    dr <= tolerance && dg <= tolerance && db <= tolerance && da <= tolerance
+}
+
 /// Compare current frame to previous and find the minimal changed region.
 ///
 /// Returns None if the entire frame has changed (no optimization possible).
@@ -214,6 +228,7 @@ fn compute_frame_diff_pooled(
     previous: &[Rgba],
     width: u16,
     height: u16,
+    tolerance: u8,
     scratch: &mut ScratchBuffer,
 ) -> Option<DiffResult> {
     let w = width as usize;
@@ -228,7 +243,7 @@ fn compute_frame_diff_pooled(
     for y in 0..h {
         for x in 0..w {
             let idx = y * w + x;
-            if current[idx] != previous[idx] {
+            if !pixels_similar(current[idx], previous[idx], tolerance) {
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
@@ -272,8 +287,8 @@ fn compute_frame_diff_pooled(
     for y in min_y..=max_y {
         for x in min_x..=max_x {
             let idx = y * w + x;
-            if current[idx] == previous[idx] {
-                // Unchanged pixel - mark transparent
+            if pixels_similar(current[idx], previous[idx], tolerance) {
+                // Unchanged pixel (within tolerance) - mark transparent
                 scratch.diff_pixels.push(Rgba::TRANSPARENT);
             } else {
                 // Changed pixel - keep as is
@@ -421,6 +436,20 @@ pub struct EncoderConfig {
         feature = "color_quant"
     ))]
     pub palette_error_threshold: Option<f32>,
+
+    /// Lossy frame differencing tolerance per color channel (0-255).
+    ///
+    /// When set, pixels whose RGBA channels are all within `tolerance` of
+    /// the previous frame are considered unchanged. This can significantly
+    /// reduce the dirty region size and improve compression.
+    ///
+    /// - `0`: exact matching only (default, lossless)
+    /// - `2-4`: imperceptible differences, good compression boost
+    /// - `8-16`: visible on close inspection, major compression gains
+    ///
+    /// **Note**: This is lossy - the output won't be pixel-perfect.
+    /// Use 0 for round-trip encoding or when exact reproduction is needed.
+    pub lossy_tolerance: u8,
 }
 
 /// Compute default buffer frame count based on image dimensions.
@@ -525,7 +554,23 @@ impl EncoderConfig {
                 feature = "color_quant"
             ))]
             palette_error_threshold: Some(15.0), // Hybrid: per-frame fallback for outliers
+            lossy_tolerance: 0, // Lossless by default
         }
+    }
+
+    /// Set lossy frame differencing tolerance.
+    ///
+    /// Pixels within `tolerance` of the previous frame are considered unchanged.
+    /// This reduces dirty region size and improves compression at the cost of
+    /// some visual fidelity.
+    ///
+    /// - `0`: exact matching only (default, lossless)
+    /// - `2-4`: imperceptible, good compression boost
+    /// - `8-16`: visible on close inspection, major compression gains
+    #[must_use]
+    pub fn lossy_tolerance(mut self, tolerance: u8) -> Self {
+        self.lossy_tolerance = tolerance;
+        self
     }
 
     /// Set the quantizer backend to use.
@@ -982,6 +1027,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 feature = "color_quant"
             ))]
             palette_error_threshold: None, // Round-trip: always use global palette
+            lossy_tolerance: 0, // Lossless for round-trip
         };
 
         Self::new(writer, config, limits, stop)
@@ -1267,6 +1313,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                         prev,
                         input.width,
                         input.height,
+                        self.config.lossy_tolerance,
                         &mut self.scratch,
                     ) {
                         (diff.pixels, diff.left, diff.top, diff.width, diff.height)
@@ -1349,6 +1396,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                         prev,
                         input.width,
                         input.height,
+                        self.config.lossy_tolerance,
                         &mut self.scratch,
                     ) {
                         // Use the optimized diff region
