@@ -275,7 +275,10 @@ mod tests {
 
         // All pixels in each frame should map to the same index (uniform color)
         assert!(red_result.pixels.iter().all(|&p| p == red_result.pixels[0]));
-        assert!(blue_result.pixels.iter().all(|&p| p == blue_result.pixels[0]));
+        assert!(blue_result
+            .pixels
+            .iter()
+            .all(|&p| p == blue_result.pixels[0]));
 
         // Red and blue should map to different palette entries
         assert_ne!(red_result.pixels[0], blue_result.pixels[0]);
@@ -287,11 +290,21 @@ mod tests {
         let blue_color = &palette_bytes[blue_idx * 3..blue_idx * 3 + 3];
 
         // Red entry should be mostly red
-        assert!(red_color[0] > 200 && red_color[1] < 50 && red_color[2] < 50,
-            "expected red, got RGB({}, {}, {})", red_color[0], red_color[1], red_color[2]);
+        assert!(
+            red_color[0] > 200 && red_color[1] < 50 && red_color[2] < 50,
+            "expected red, got RGB({}, {}, {})",
+            red_color[0],
+            red_color[1],
+            red_color[2]
+        );
         // Blue entry should be mostly blue
-        assert!(blue_color[0] < 50 && blue_color[1] < 50 && blue_color[2] > 200,
-            "expected blue, got RGB({}, {}, {})", blue_color[0], blue_color[1], blue_color[2]);
+        assert!(
+            blue_color[0] < 50 && blue_color[1] < 50 && blue_color[2] > 200,
+            "expected blue, got RGB({}, {}, {})",
+            blue_color[0],
+            blue_color[1],
+            blue_color[2]
+        );
     }
 
     #[test]

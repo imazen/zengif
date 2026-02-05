@@ -175,6 +175,40 @@ fn compute_frame_diff(
 /// Uses a scratch buffer to avoid allocations.
 ///
 /// Returns None if the entire frame has changed (no optimization possible).
+/// Compute RGB RMSE between original RGBA pixels and palette-mapped output.
+///
+/// Skips fully transparent pixels (alpha == 0) since they're invisible.
+/// Returns RMSE in 0-255 RGB space (0 = perfect, ~5 = invisible, ~20 = visible).
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+fn compute_remap_rmse(original: &[Rgba], indices: &[u8], palette_rgb: &[u8]) -> f32 {
+    let mut total = 0u64;
+    let mut count = 0u64;
+    for (orig, &idx) in original.iter().zip(indices.iter()) {
+        // Skip transparent pixels — they're invisible
+        if orig.a == 0 {
+            continue;
+        }
+        let base = idx as usize * 3;
+        if base + 2 >= palette_rgb.len() {
+            continue;
+        }
+        let dr = orig.r as i64 - palette_rgb[base] as i64;
+        let dg = orig.g as i64 - palette_rgb[base + 1] as i64;
+        let db = orig.b as i64 - palette_rgb[base + 2] as i64;
+        total += (dr * dr + dg * dg + db * db) as u64;
+        count += 1;
+    }
+    if count == 0 {
+        return 0.0;
+    }
+    ((total as f64) / (count as f64)).sqrt() as f32
+}
+
 fn compute_frame_diff_pooled(
     current: &[Rgba],
     previous: &[Rgba],
@@ -365,6 +399,28 @@ pub struct EncoderConfig {
         feature = "color_quant"
     ))]
     pub quantizer: Option<crate::quantize::Quantizer>,
+
+    /// Per-frame palette error threshold for hybrid palette mode.
+    ///
+    /// When `shared_palette` is true and this is `Some(threshold)`, frames
+    /// whose RMSE (RGB, 0-255 scale) exceeds the threshold get their own
+    /// local color table instead of inheriting the global one.
+    ///
+    /// This gives the best of both worlds: most frames use the global
+    /// palette (no flicker, saves 768 bytes each), but outlier frames
+    /// with very different colors get accurate per-frame palettes.
+    ///
+    /// - `None`: always use the shared palette (no fallback)
+    /// - `Some(15.0)`: barely visible threshold (default)
+    /// - `Some(5.0)`: strict — more frames get per-frame palettes
+    /// - `Some(30.0)`: permissive — only extreme outliers get per-frame palettes
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    pub palette_error_threshold: Option<f32>,
 }
 
 impl EncoderConfig {
@@ -430,6 +486,13 @@ impl EncoderConfig {
                 feature = "color_quant"
             ))]
             quantizer: None, // Use default auto-selection
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant-deprecated",
+                feature = "color_quant"
+            ))]
+            palette_error_threshold: Some(15.0), // Hybrid: per-frame fallback for outliers
         }
     }
 
@@ -591,6 +654,26 @@ impl EncoderConfig {
         self
     }
 
+    /// Set the per-frame palette error threshold for hybrid palette mode.
+    ///
+    /// When `shared_palette` is enabled and a threshold is set, frames
+    /// whose RGB RMSE exceeds this value get their own local color table.
+    /// Set to `None` to always use the shared palette.
+    ///
+    /// Default: `Some(15.0)` — barely visible errors use the shared palette,
+    /// frames with very different colors get per-frame palettes automatically.
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn palette_error_threshold(mut self, threshold: Option<f32>) -> Self {
+        self.palette_error_threshold = threshold;
+        self
+    }
+
     /// Configure for optimal round-trip encoding.
     ///
     /// This sets parameters that minimize bloat when re-encoding a decoded GIF:
@@ -729,9 +812,8 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
                 .unwrap_or_default();
             let has_global = !global_palette_bytes.is_empty();
-            let enc =
-                gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
-                    .map_err(|e| at!(GifError::from(e)))?;
+            let enc = gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
+                .map_err(|e| at!(GifError::from(e)))?;
             (Some(enc), None, has_global)
         };
 
@@ -861,6 +943,13 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 feature = "color_quant"
             ))]
             quantizer: None,
+            #[cfg(any(
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "exoquant-deprecated",
+                feature = "color_quant"
+            ))]
+            palette_error_threshold: None, // Round-trip: always use global palette
         };
 
         Self::new(writer, config, limits, stop)
@@ -893,9 +982,13 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             })
         })?;
         self.has_global_palette = !global_palette.is_empty();
-        let enc =
-            gif::Encoder::new(writer, self.config.width, self.config.height, global_palette)
-                .map_err(|e| at!(GifError::from(e)))?;
+        let enc = gif::Encoder::new(
+            writer,
+            self.config.width,
+            self.config.height,
+            global_palette,
+        )
+        .map_err(|e| at!(GifError::from(e)))?;
         self.encoder = Some(enc);
         Ok(())
     }
@@ -1297,45 +1390,83 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             max_palette_frames: None,
         };
 
-        // Use shared palette if available, otherwise per-frame quantization
-        let (palette_bytes, pixels, transparent_index) = if self.computed_palette.is_some() {
-            // Shared palette mode: use pre-computed palette
-            let background = self.previous_frame.as_deref();
-            let quantized = self.quantizer.quantize_frame_with_palette(
-                &frame_pixels,
-                frame_width,
-                frame_height,
-                background,
-                &quant_config,
-            )?;
-            (
-                quantized.palette,
-                quantized.pixels,
-                quantized.transparent_index,
-            )
-        } else {
-            // Per-frame quantization
-            let background = self.previous_frame.as_deref();
-            let quantized = self.quantizer.quantize_frame(
-                &frame_pixels,
-                frame_width,
-                frame_height,
-                background,
-                &quant_config,
-            )?;
-            (
-                quantized.palette,
-                quantized.pixels,
-                quantized.transparent_index,
-            )
-        };
+        // Use shared palette if available, otherwise per-frame quantization.
+        // With hybrid mode (palette_error_threshold is Some), frames that
+        // don't fit the shared palette well get their own local color table.
+        let (palette_bytes, pixels, transparent_index, use_local_palette) =
+            if self.computed_palette.is_some() {
+                // Shared palette mode: remap with pre-computed palette
+                let background = self.previous_frame.as_deref();
+                let quantized = self.quantizer.quantize_frame_with_palette(
+                    &frame_pixels,
+                    frame_width,
+                    frame_height,
+                    background,
+                    &quant_config,
+                )?;
+
+                // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette
+                if let Some(threshold) = self.config.palette_error_threshold {
+                    let rmse =
+                        compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
+                    if rmse > threshold {
+                        // Shared palette too inaccurate — quantize this frame independently
+                        let background = self.previous_frame.as_deref();
+                        let per_frame = self.quantizer.quantize_frame(
+                            &frame_pixels,
+                            frame_width,
+                            frame_height,
+                            background,
+                            &quant_config,
+                        )?;
+                        (
+                            per_frame.palette,
+                            per_frame.pixels,
+                            per_frame.transparent_index,
+                            true,
+                        )
+                    } else {
+                        // Shared palette is good enough
+                        (
+                            quantized.palette,
+                            quantized.pixels,
+                            quantized.transparent_index,
+                            false,
+                        )
+                    }
+                } else {
+                    // No threshold — always use shared palette
+                    (
+                        quantized.palette,
+                        quantized.pixels,
+                        quantized.transparent_index,
+                        false,
+                    )
+                }
+            } else {
+                // Per-frame quantization (no shared palette)
+                let background = self.previous_frame.as_deref();
+                let quantized = self.quantizer.quantize_frame(
+                    &frame_pixels,
+                    frame_width,
+                    frame_height,
+                    background,
+                    &quant_config,
+                )?;
+                (
+                    quantized.palette,
+                    quantized.pixels,
+                    quantized.transparent_index,
+                    true,
+                )
+            };
 
         // Return buffer to scratch for reuse
         self.scratch.frame_pixels = frame_pixels;
 
-        // If the global color table matches the shared palette, omit the
-        // local color table to save ~768 bytes per frame.
-        let frame_palette = if self.has_global_palette && self.computed_palette.is_some() {
+        // If we're using the global color table and the shared palette was
+        // accurate enough, omit the local color table to save ~768 bytes.
+        let frame_palette = if self.has_global_palette && !use_local_palette {
             None
         } else {
             Some(palette_bytes)
@@ -2132,6 +2263,147 @@ mod tests {
         // Should have produced valid GIF
         assert!(output.len() > 10);
         assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn hybrid_palette_outlier_gets_local_table() {
+        // Create animation: 3 red frames + 1 blue frame.
+        // With hybrid mode, the blue frame should get a local color table
+        // because RMSE vs the shared palette (built from mostly red) is high.
+        let w = 4u16;
+        let h = 4u16;
+        let red_pixels: Vec<Rgba> = (0..16)
+            .map(|i| {
+                // Slight variation so quantizer has something to work with
+                Rgba::rgb(200 + (i % 56) as u8, 10, 10)
+            })
+            .collect();
+        let blue_pixels: Vec<Rgba> = (0..16)
+            .map(|i| Rgba::rgb(10, 10, 200 + (i % 56) as u8))
+            .collect();
+
+        let frames = vec![
+            FrameInput::new(w, h, 10, red_pixels.clone()),
+            FrameInput::new(w, h, 10, red_pixels.clone()),
+            FrameInput::new(w, h, 10, blue_pixels.clone()),
+            FrameInput::new(w, h, 10, red_pixels),
+        ];
+
+        // Encode with hybrid mode (threshold = 5.0 to force fallback for blue)
+        let config = EncoderConfig::new(w, h)
+            .shared_palette(true)
+            .palette_error_threshold(Some(5.0));
+        let mut output = Vec::new();
+        let limits = crate::limits::Limits::none();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+
+        for frame in &frames {
+            encoder.add_frame(frame.clone()).unwrap();
+        }
+        encoder.finish().unwrap();
+
+        // Decode and verify all frames came through
+        let limits = crate::limits::Limits::none();
+        let (meta, decoded_frames, _stats) =
+            crate::decode::decode_gif(&output, limits, Unstoppable).unwrap();
+        assert_eq!(meta.frame_count, 4);
+        assert_eq!(decoded_frames.len(), 4);
+
+        // Verify the blue frame's pixels are actually blue-ish (not mapped to red)
+        let blue_frame = &decoded_frames[2];
+        let avg_b: u32 = blue_frame.pixels.iter().map(|p| p.b as u32).sum::<u32>()
+            / blue_frame.pixels.len() as u32;
+        let avg_r: u32 = blue_frame.pixels.iter().map(|p| p.r as u32).sum::<u32>()
+            / blue_frame.pixels.len() as u32;
+        assert!(
+            avg_b > 150,
+            "blue frame should be blue-ish, got avg B={avg_b}"
+        );
+        assert!(
+            avg_r < 80,
+            "blue frame should not be red-ish, got avg R={avg_r}"
+        );
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn hybrid_palette_none_threshold_always_shared() {
+        // With threshold = None, all frames use shared palette (no fallback)
+        let w = 4u16;
+        let h = 4u16;
+        let red_pixels: Vec<Rgba> = vec![Rgba::rgb(255, 0, 0); 16];
+        let blue_pixels: Vec<Rgba> = vec![Rgba::rgb(0, 0, 255); 16];
+
+        let frames = vec![
+            FrameInput::new(w, h, 10, red_pixels.clone()),
+            FrameInput::new(w, h, 10, blue_pixels),
+        ];
+
+        // No threshold — always shared, even if inaccurate
+        let config = EncoderConfig::new(w, h)
+            .shared_palette(true)
+            .palette_error_threshold(None);
+        let mut output = Vec::new();
+        let limits = crate::limits::Limits::none();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
+
+        for frame in &frames {
+            encoder.add_frame(frame.clone()).unwrap();
+        }
+        encoder.finish().unwrap();
+
+        // Should produce valid GIF (we're just testing it doesn't panic/error)
+        assert!(output.len() > 10);
+        assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn compute_remap_rmse_perfect_match() {
+        let pixels = vec![Rgba::rgb(255, 0, 0), Rgba::rgb(0, 255, 0)];
+        let indices = vec![0u8, 1u8];
+        let palette = vec![255, 0, 0, 0, 255, 0]; // RGB entries
+
+        let rmse = super::compute_remap_rmse(&pixels, &indices, &palette);
+        assert!(rmse < 0.01, "perfect match should have ~0 RMSE, got {rmse}");
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn compute_remap_rmse_skips_transparent() {
+        let pixels = vec![
+            Rgba::rgb(255, 0, 0),
+            Rgba::new(0, 0, 0, 0), // transparent — should be skipped
+        ];
+        let indices = vec![0u8, 0u8];
+        let palette = vec![255, 0, 0]; // One entry, perfect match for opaque pixel
+
+        let rmse = super::compute_remap_rmse(&pixels, &indices, &palette);
+        assert!(
+            rmse < 0.01,
+            "transparent pixels should be skipped, got RMSE={rmse}"
+        );
     }
 
     #[test]
