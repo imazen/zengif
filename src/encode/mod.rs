@@ -423,6 +423,38 @@ pub struct EncoderConfig {
     pub palette_error_threshold: Option<f32>,
 }
 
+/// Compute default buffer frame count based on image dimensions.
+///
+/// Targets ~2 megapixels worth of frames for palette building.
+/// Smaller images get more frames (better palette coverage),
+/// larger images get fewer frames (faster palette refresh for scene changes).
+///
+/// | Dimensions  | Pixels | Buffer Frames |
+/// |-------------|--------|---------------|
+/// | 100×100     | 10K    | 32            |
+/// | 256×256     | 65K    | 30            |
+/// | 512×512     | 262K   | 8             |
+/// | 1920×1080   | 2M     | 4             |
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+fn default_buffer_frames(width: u16, height: u16) -> usize {
+    const TARGET_PIXELS: u64 = 2_000_000; // ~2 megapixels worth of frames
+    const MIN_FRAMES: u64 = 4;
+    const MAX_FRAMES: u64 = 32;
+
+    let pixels_per_frame = width as u64 * height as u64;
+    if pixels_per_frame == 0 {
+        return MAX_FRAMES as usize;
+    }
+
+    let frames = TARGET_PIXELS / pixels_per_frame;
+    frames.clamp(MIN_FRAMES, MAX_FRAMES) as usize
+}
+
 impl EncoderConfig {
     /// Create a new encoder configuration.
     #[allow(deprecated)] // quantizer_backend is deprecated
@@ -464,7 +496,7 @@ impl EncoderConfig {
                 feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
-            max_buffer_frames: 64,
+            max_buffer_frames: default_buffer_frames(width, height),
             #[cfg(any(
                 feature = "imagequant",
                 feature = "quantizr",
@@ -921,7 +953,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
-            max_buffer_frames: 64,
+            max_buffer_frames: default_buffer_frames(metadata.width, metadata.height),
             #[cfg(any(
                 feature = "imagequant",
                 feature = "quantizr",
@@ -2366,6 +2398,46 @@ mod tests {
         // Should produce valid GIF (we're just testing it doesn't panic/error)
         assert!(output.len() > 10);
         assert_eq!(&output[0..6], b"GIF89a");
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn default_buffer_frames_scales_with_dimensions() {
+        // Small images get more frames for better palette coverage
+        assert_eq!(super::default_buffer_frames(100, 100), 32); // 10K pixels → max
+        assert_eq!(super::default_buffer_frames(256, 256), 30); // 65K pixels
+
+        // Medium images get moderate buffering
+        assert_eq!(super::default_buffer_frames(512, 512), 7); // 262K pixels
+
+        // Large images get fewer frames for faster palette refresh
+        assert_eq!(super::default_buffer_frames(1920, 1080), 4); // 2M pixels → min
+        assert_eq!(super::default_buffer_frames(3840, 2160), 4); // 8M pixels → min
+
+        // Edge case: zero dimensions
+        assert_eq!(super::default_buffer_frames(0, 100), 32);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_config_uses_dimension_aware_buffer() {
+        // Small GIF should get more buffer frames
+        let config_small = EncoderConfig::new(100, 100);
+        assert_eq!(config_small.max_buffer_frames, 32);
+
+        // Large video should get fewer buffer frames
+        let config_large = EncoderConfig::new(1920, 1080);
+        assert_eq!(config_large.max_buffer_frames, 4);
     }
 
     #[cfg(any(
