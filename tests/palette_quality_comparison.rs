@@ -63,11 +63,7 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
     // Prepare frame inputs
     let frame_inputs: Vec<FrameInput> = original_frames
         .iter()
-        .enumerate()
-        .map(|(i, pixels)| {
-            // Use delay from original if we can get it, else default
-            FrameInput::new(width, height, 10, pixels.clone())
-        })
+        .map(|pixels| FrameInput::new(width, height, 10, pixels.clone()))
         .collect();
 
     // Encode with shared palette

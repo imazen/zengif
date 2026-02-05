@@ -30,7 +30,7 @@ fn main() {
     let mut entries: Vec<_> = fs::read_dir(test_dir)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "gif"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "gif"))
         .collect();
     entries.sort_by_key(|e| e.path());
 

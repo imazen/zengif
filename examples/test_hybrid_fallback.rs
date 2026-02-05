@@ -3,10 +3,7 @@
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
-
-static LOCAL_PALETTE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn decode_to_frames(data: &[u8]) -> Option<(u16, u16, Vec<Vec<Rgba>>)> {
     let cursor = std::io::Cursor::new(data);
