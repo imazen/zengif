@@ -85,9 +85,20 @@ struct DiffResult {
     pixels: Vec<Rgba>,
 }
 
+/// Reusable scratch buffer for frame operations.
+/// This avoids repeated allocations during encoding.
+#[derive(Debug, Default)]
+struct ScratchBuffer {
+    /// Buffer for diff pixels - reused across frames
+    diff_pixels: Vec<Rgba>,
+    /// Buffer for frame pixels when cloning is needed
+    frame_pixels: Vec<Rgba>,
+}
+
 /// Compare current frame to previous and find the minimal changed region.
 ///
 /// Returns None if the entire frame has changed (no optimization possible).
+#[cfg_attr(not(test), allow(dead_code))]
 fn compute_frame_diff(
     current: &[Rgba],
     previous: &[Rgba],
@@ -157,6 +168,91 @@ fn compute_frame_diff(
         width: diff_width,
         height: diff_height,
         pixels,
+    })
+}
+
+/// Compare current frame to previous and find the minimal changed region.
+/// Uses a scratch buffer to avoid allocations.
+///
+/// Returns None if the entire frame has changed (no optimization possible).
+fn compute_frame_diff_pooled(
+    current: &[Rgba],
+    previous: &[Rgba],
+    width: u16,
+    height: u16,
+    scratch: &mut ScratchBuffer,
+) -> Option<DiffResult> {
+    let w = width as usize;
+    let h = height as usize;
+
+    // Find bounding box of changed pixels
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0;
+    let mut max_y = 0;
+
+    for y in 0..h {
+        for x in 0..w {
+            let idx = y * w + x;
+            if current[idx] != previous[idx] {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    // No changes at all - shouldn't happen in practice but handle gracefully
+    if min_x > max_x || min_y > max_y {
+        // Emit a 1x1 transparent frame at origin
+        scratch.diff_pixels.clear();
+        scratch.diff_pixels.push(Rgba::TRANSPARENT);
+        return Some(DiffResult {
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            pixels: core::mem::take(&mut scratch.diff_pixels),
+        });
+    }
+
+    let diff_width = (max_x - min_x + 1) as u16;
+    let diff_height = (max_y - min_y + 1) as u16;
+
+    // If the changed region is the entire frame, no optimization benefit
+    if diff_width == width && diff_height == height {
+        return None;
+    }
+
+    // Extract the changed region, marking unchanged pixels as transparent
+    // Reuse the scratch buffer
+    scratch.diff_pixels.clear();
+    let region_size = diff_width as usize * diff_height as usize;
+    if scratch.diff_pixels.capacity() < region_size {
+        scratch.diff_pixels.reserve(region_size - scratch.diff_pixels.capacity());
+    }
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let idx = y * w + x;
+            if current[idx] == previous[idx] {
+                // Unchanged pixel - mark transparent
+                scratch.diff_pixels.push(Rgba::TRANSPARENT);
+            } else {
+                // Changed pixel - keep as is
+                scratch.diff_pixels.push(current[idx]);
+            }
+        }
+    }
+
+    // Take ownership of the buffer (will be returned to scratch on next call)
+    Some(DiffResult {
+        left: min_x as u16,
+        top: min_y as u16,
+        width: diff_width,
+        height: diff_height,
+        pixels: core::mem::take(&mut scratch.diff_pixels),
     })
 }
 
@@ -572,6 +668,9 @@ pub struct Encoder<W: Write, S: Stop> {
         feature = "color_quant"
     ))]
     quantizer: Box<dyn crate::quantize::QuantizerTrait>,
+
+    /// Reusable scratch buffer to avoid per-frame allocations.
+    scratch: ScratchBuffer,
 }
 
 impl<W: Write, S: Stop> Encoder<W, S> {
@@ -651,6 +750,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 feature = "color_quant"
             ))]
             quantizer,
+            scratch: ScratchBuffer::default(),
         })
     }
 
@@ -956,21 +1056,56 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
             if self.config.use_transparency {
                 if let Some(ref prev) = self.previous_frame {
-                    if let Some(diff) =
-                        compute_frame_diff(&input.pixels, prev, input.width, input.height)
-                    {
+                    if let Some(diff) = compute_frame_diff_pooled(
+                        &input.pixels,
+                        prev,
+                        input.width,
+                        input.height,
+                        &mut self.scratch,
+                    ) {
                         (diff.pixels, diff.left, diff.top, diff.width, diff.height)
                     } else {
-                        (input.pixels.clone(), 0, 0, input.width, input.height)
+                        // No optimization - reuse frame_pixels buffer
+                        self.scratch.frame_pixels.clear();
+                        self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                        (
+                            core::mem::take(&mut self.scratch.frame_pixels),
+                            0,
+                            0,
+                            input.width,
+                            input.height,
+                        )
                     }
                 } else {
-                    (input.pixels.clone(), 0, 0, input.width, input.height)
+                    // First frame - no diff possible
+                    self.scratch.frame_pixels.clear();
+                    self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                    (
+                        core::mem::take(&mut self.scratch.frame_pixels),
+                        0,
+                        0,
+                        input.width,
+                        input.height,
+                    )
                 }
             } else {
-                (input.pixels.clone(), 0, 0, input.width, input.height)
+                // Transparency disabled
+                self.scratch.frame_pixels.clear();
+                self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                (
+                    core::mem::take(&mut self.scratch.frame_pixels),
+                    0,
+                    0,
+                    input.width,
+                    input.height,
+                )
             };
 
         let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
+
+        // Return the frame_pixels buffer to scratch for reuse
+        self.scratch.frame_pixels = frame_pixels;
+
         let palette_bytes = palette.to_rgb_bytes();
 
         let frame = gif::Frame {
@@ -1003,27 +1138,59 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
             if self.config.use_transparency {
                 if let Some(ref prev) = self.previous_frame {
-                    if let Some(diff) =
-                        compute_frame_diff(&input.pixels, prev, input.width, input.height)
-                    {
+                    if let Some(diff) = compute_frame_diff_pooled(
+                        &input.pixels,
+                        prev,
+                        input.width,
+                        input.height,
+                        &mut self.scratch,
+                    ) {
                         // Use the optimized diff region
                         (diff.pixels, diff.left, diff.top, diff.width, diff.height)
                     } else {
-                        // No optimization possible, use full frame
-                        (input.pixels.clone(), 0, 0, input.width, input.height)
+                        // No optimization possible, use full frame with pooled buffer
+                        self.scratch.frame_pixels.clear();
+                        self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                        (
+                            core::mem::take(&mut self.scratch.frame_pixels),
+                            0,
+                            0,
+                            input.width,
+                            input.height,
+                        )
                     }
                 } else {
-                    // First frame, no diff possible
-                    (input.pixels.clone(), 0, 0, input.width, input.height)
+                    // First frame, no diff possible - use pooled buffer
+                    self.scratch.frame_pixels.clear();
+                    self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                    (
+                        core::mem::take(&mut self.scratch.frame_pixels),
+                        0,
+                        0,
+                        input.width,
+                        input.height,
+                    )
                 }
             } else {
-                // Transparency optimization disabled
-                (input.pixels.clone(), 0, 0, input.width, input.height)
+                // Transparency optimization disabled - use pooled buffer
+                self.scratch.frame_pixels.clear();
+                self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+                (
+                    core::mem::take(&mut self.scratch.frame_pixels),
+                    0,
+                    0,
+                    input.width,
+                    input.height,
+                )
             };
 
         // If frame has a palette, use it directly (pass-through mode)
         if let Some(ref palette) = input.palette {
             let (pixels, transparent_index) = palette.map_pixels(&frame_pixels);
+
+            // Return buffer to scratch for reuse
+            self.scratch.frame_pixels = frame_pixels;
+
             let palette_bytes = palette.to_rgb_bytes();
 
             let frame = gif::Frame {
@@ -1081,6 +1248,9 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 quantized.transparent_index,
             )
         };
+
+        // Return buffer to scratch for reuse
+        self.scratch.frame_pixels = frame_pixels;
 
         let frame = gif::Frame {
             left: frame_left,
