@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-04
+
+### Fixed
+
+- **Critical**: Fixed transparent pixel handling in shared palette mode. Frame differencing marks unchanged pixels as transparent, but the shared palette (built from original frames) had no transparent entry. This caused the quantizer to map transparent pixels to nearest color (usually dark gray), creating severe visual artifacts on playback. Quality improved from SSIM ~40 to ~100 on affected GIFs.
+- **Correctness**: Fixed `QuantizeResult` reuse in quantizr backend. Previously, each frame was re-quantized independently even in shared palette mode, which was both slower and could produce incorrect palette indices.
+
+### Added
+
+- **Hybrid palette mode**: New `palette_error_threshold` option enables automatic per-frame palette fallback when a frame's RMSE exceeds the threshold. This catches outlier frames that don't fit the shared palette while keeping most frames on the global palette (no flicker, better compression).
+- **Lossy frame differencing**: New `lossy_tolerance` option treats pixels within tolerance of the previous frame as unchanged, reducing dirty region size and improving compression at slight quality cost.
+- **RMSE analysis examples**: `rmse_analysis.rs` and `size_analysis.rs` for testing palette quality.
+
+### Changed
+
+- **Default `shared_palette` is now `true`**: Most animations benefit from shared palettes (reduced flicker, smaller files). Use `.shared_palette(false)` for the old behavior.
+- **Default `palette_error_threshold` lowered to 5.0**: Testing revealed threshold 15 was too permissive; frames with noticeable color distortion (RMSE 5-10) weren't triggering fallback. The new default catches problematic frames while not over-triggering.
+- **Dimension-aware buffer frames**: Default `max_buffer_frames` now scales based on frame dimensions (smaller frames = more frames buffered for better palette sampling).
+
+### Performance
+
+- Shared palette mode is now ~4x faster for multi-frame remapping due to `QuantizeResult` reuse.
+- `Screen::reset()` uses `slice::fill()` instead of per-pixel loop.
+- Memory pooling for encoder scratch buffers.
+
 ## [0.4.0] - 2025-02-04
 
 ### Changed
@@ -115,6 +140,7 @@ println!("Peak: {}", decoder.stats().peak());
 - Encode (pre-indexed): ~200 MB/s.
 - Encode (quantized): ~40 MB/s.
 
+[0.5.0]: https://github.com/imazen/zengif/releases/tag/v0.5.0
 [0.4.0]: https://github.com/imazen/zengif/releases/tag/v0.4.0
 [0.3.0]: https://github.com/imazen/zengif/releases/tag/v0.3.0
 [0.2.1]: https://github.com/imazen/zengif/releases/tag/v0.2.1
