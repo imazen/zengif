@@ -391,13 +391,17 @@ impl EncoderConfig {
                 feature = "color_quant"
             ))]
             dithering: 0.5, // Lower default for better compression
+            // Default to shared palette for new encodes:
+            // - Multi-frame: eliminates palette flicker, better LZW compression
+            // - Single-frame: negligible overhead (histogram from 1 image)
+            // Round-trip encoding (from_metadata) overrides this to false.
             #[cfg(any(
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
-            shared_palette: false,
+            shared_palette: true,
             #[cfg(any(
                 feature = "imagequant",
                 feature = "quantizr",
