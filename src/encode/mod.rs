@@ -425,10 +425,16 @@ pub struct EncoderConfig {
     /// palette (no flicker, saves 768 bytes each), but outlier frames
     /// with very different colors get accurate per-frame palettes.
     ///
+    /// RMSE guidelines (0-255 RGB scale):
+    /// - < 2: imperceptible difference
+    /// - 2-5: slight difference, visible on close inspection
+    /// - 5-10: noticeable difference in color accuracy
+    /// - > 10: obvious color distortion
+    ///
     /// - `None`: always use the shared palette (no fallback)
-    /// - `Some(15.0)`: barely visible threshold (default)
-    /// - `Some(5.0)`: strict — more frames get per-frame palettes
-    /// - `Some(30.0)`: permissive — only extreme outliers get per-frame palettes
+    /// - `Some(5.0)`: catches most problematic frames (default)
+    /// - `Some(2.0)`: strict — more frames get per-frame palettes
+    /// - `Some(15.0)`: permissive — only severe outliers get per-frame palettes
     #[cfg(any(
         feature = "imagequant",
         feature = "quantizr",
@@ -553,7 +559,7 @@ impl EncoderConfig {
                 feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
-            palette_error_threshold: Some(15.0), // Hybrid: per-frame fallback for outliers
+            palette_error_threshold: Some(5.0), // Hybrid: per-frame fallback when RMSE > 5
             lossy_tolerance: 0, // Lossless by default
         }
     }
