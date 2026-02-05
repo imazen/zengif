@@ -2,16 +2,18 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable};
+use zengif::{
+    Decoder, Encoder, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable,
+};
 
 /// Simple 4-color palette for benchmarking.
 fn benchmark_palette() -> Palette {
     Palette::from_rgba(vec![
-        Rgba::rgb(255, 0, 0),      // Red
-        Rgba::rgb(0, 255, 0),      // Green
-        Rgba::rgb(0, 0, 255),      // Blue
-        Rgba::rgb(255, 255, 0),    // Yellow
-        Rgba::TRANSPARENT,        // Transparent
+        Rgba::rgb(255, 0, 0),   // Red
+        Rgba::rgb(0, 255, 0),   // Green
+        Rgba::rgb(0, 0, 255),   // Blue
+        Rgba::rgb(255, 255, 0), // Yellow
+        Rgba::TRANSPARENT,      // Transparent
     ])
 }
 
@@ -85,8 +87,7 @@ fn decode_benchmark(c: &mut Criterion) {
             |b, data| {
                 b.iter(|| {
                     let cursor = std::io::Cursor::new(data);
-                    let mut decoder =
-                        Decoder::new(cursor, Limits::none(), Unstoppable).unwrap();
+                    let mut decoder = Decoder::new(cursor, Limits::none(), Unstoppable).unwrap();
                     while let Some(frame) = decoder.next_frame().unwrap() {
                         black_box(frame);
                     }
@@ -311,23 +312,19 @@ fn animation_stress_benchmark(c: &mut Criterion) {
             }
 
             group.throughput(Throughput::Bytes(bytes_per_frame * frame_count as u64));
-            group.bench_with_input(
-                BenchmarkId::new("encode", &label),
-                &frames,
-                |b, frames| {
-                    b.iter(|| {
-                        let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-                        let mut output = Vec::with_capacity(4 * 1024 * 1024);
-                        let mut encoder =
-                            Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
-                        for frame in frames {
-                            encoder.add_frame(frame.clone()).unwrap();
-                        }
-                        encoder.finish().unwrap();
-                        black_box(output)
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("encode", &label), &frames, |b, frames| {
+                b.iter(|| {
+                    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                    let mut output = Vec::with_capacity(4 * 1024 * 1024);
+                    let mut encoder =
+                        Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                    for frame in frames {
+                        encoder.add_frame(frame.clone()).unwrap();
+                    }
+                    encoder.finish().unwrap();
+                    black_box(output)
+                });
+            });
         }
 
         // Benchmark decode

@@ -176,9 +176,11 @@ impl Screen {
                         continue;
                     }
                     let frame_row = &frame.pixels[frame_row_start..frame_row_end];
-                    let canvas_row = &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
+                    let canvas_row =
+                        &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
+                    {
                         if color_index != transparent_idx {
                             *canvas_pixel = palette
                                 .get(color_index as usize)
@@ -199,9 +201,11 @@ impl Screen {
                         continue;
                     }
                     let frame_row = &frame.pixels[frame_row_start..frame_row_end];
-                    let canvas_row = &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
+                    let canvas_row =
+                        &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter()) {
+                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
+                    {
                         *canvas_pixel = palette
                             .get(color_index as usize)
                             .copied()

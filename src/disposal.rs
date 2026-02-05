@@ -139,7 +139,8 @@ impl Disposal {
                 } else {
                     // Row-by-row fill for partial-width regions
                     for y in 0..self.height as usize {
-                        let row_start = (self.top as usize + y) * canvas_stride + self.left as usize;
+                        let row_start =
+                            (self.top as usize + y) * canvas_stride + self.left as usize;
                         canvas[row_start..row_start + row_width].fill(background);
                     }
                 }

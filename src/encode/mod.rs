@@ -230,7 +230,9 @@ fn compute_frame_diff_pooled(
     scratch.diff_pixels.clear();
     let region_size = diff_width as usize * diff_height as usize;
     if scratch.diff_pixels.capacity() < region_size {
-        scratch.diff_pixels.reserve(region_size - scratch.diff_pixels.capacity());
+        scratch
+            .diff_pixels
+            .reserve(region_size - scratch.diff_pixels.capacity());
     }
 
     for y in min_y..=max_y {
