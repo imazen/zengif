@@ -208,11 +208,39 @@ impl QuantizerTrait for QuantizrQuantizer {
         })?;
 
         let palette = result.get_palette();
+        let transparent_index = Self::find_transparent_index(palette);
+
+        // Fix for shared palette + frame differencing:
+        // The shared palette is built from original frames (no transparent pixels),
+        // so it may not have a transparent entry. Frame-diffed pixels mark unchanged
+        // areas as Rgba::TRANSPARENT. Without this fix, the remapper maps them to
+        // the nearest color (usually black/dark gray) instead of keeping them
+        // transparent, causing visual artifacts on playback.
+        //
+        // Solution: Post-process indexed pixels - any input pixel with alpha=0
+        // must use the transparent index. If no transparent index exists in the
+        // palette, we use index 255 and mark it as transparent in the frame.
+        let actual_transparent_index = transparent_index.unwrap_or(255);
+        let mut has_transparent_pixels = false;
+
+        for (i, p) in pixels.iter().enumerate() {
+            if p.a == 0 {
+                indexed[i] = actual_transparent_index;
+                has_transparent_pixels = true;
+            }
+        }
+
+        // Return transparent index if we have transparent pixels
+        let final_transparent_index = if has_transparent_pixels {
+            Some(actual_transparent_index)
+        } else {
+            transparent_index
+        };
 
         Ok(QuantizedFrame {
             palette: palette_bytes,
             pixels: indexed,
-            transparent_index: Self::find_transparent_index(palette),
+            transparent_index: final_transparent_index,
         })
     }
 
