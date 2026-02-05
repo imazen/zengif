@@ -613,8 +613,18 @@ impl EncoderConfig {
 /// Encodes RGBA frames into a GIF animation with proper
 /// transparency and optimization.
 pub struct Encoder<W: Write, S: Stop> {
-    /// Underlying gif encoder.
-    encoder: gif::Encoder<W>,
+    /// Underlying gif encoder (created lazily when shared_palette is true).
+    /// In shared palette mode, encoder creation is deferred until the palette
+    /// is computed so it can be set as the global color table, saving ~768
+    /// bytes per frame (local color tables are omitted).
+    encoder: Option<gif::Encoder<W>>,
+
+    /// Writer stored until the gif encoder is created.
+    pending_writer: Option<W>,
+
+    /// Whether the encoder was created with a non-empty global color table.
+    /// When true, frames with the same palette can use `palette: None`.
+    has_global_palette: bool,
 
     /// Configuration.
     config: EncoderConfig,
@@ -690,15 +700,40 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         let stats = Stats::new();
 
-        // Create gif encoder
-        let global_palette_bytes: Vec<u8> = config
-            .global_palette
-            .as_ref()
-            .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
-            .unwrap_or_default();
+        // Determine if we should defer encoder creation.
+        // When shared_palette is enabled and no global palette is provided,
+        // we wait until the shared palette is computed so we can set it as
+        // the global color table. This saves ~768 bytes per frame (no local
+        // color tables needed).
+        #[cfg(any(
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        ))]
+        let defer_encoder = config.shared_palette && config.global_palette.is_none();
+        #[cfg(not(any(
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        )))]
+        let defer_encoder = false;
 
-        let encoder = gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
-            .map_err(|e| at!(GifError::from(e)))?;
+        let (encoder, pending_writer, has_global_palette) = if defer_encoder {
+            (None, Some(writer), false)
+        } else {
+            let global_palette_bytes: Vec<u8> = config
+                .global_palette
+                .as_ref()
+                .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
+                .unwrap_or_default();
+            let has_global = !global_palette_bytes.is_empty();
+            let enc =
+                gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
+                    .map_err(|e| at!(GifError::from(e)))?;
+            (Some(enc), None, has_global)
+        };
 
         // Create quantizer from config.quantizer or fall back to quantizer_backend
         #[cfg(any(
@@ -721,6 +756,8 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         Ok(Self {
             encoder,
+            pending_writer,
+            has_global_palette,
             config,
             previous_frame: None,
             frame_index: 0,
@@ -844,6 +881,40 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         self.frame_index
     }
 
+    /// Ensure the gif encoder is created, using the given palette as global color table.
+    /// If the encoder already exists, this is a no-op.
+    fn ensure_encoder_created(&mut self, global_palette: &[u8]) -> Result<()> {
+        if self.encoder.is_some() {
+            return Ok(());
+        }
+        let writer = self.pending_writer.take().ok_or_else(|| {
+            at!(GifError::QuantizationFailed {
+                message: "encoder already consumed"
+            })
+        })?;
+        self.has_global_palette = !global_palette.is_empty();
+        let enc =
+            gif::Encoder::new(writer, self.config.width, self.config.height, global_palette)
+                .map_err(|e| at!(GifError::from(e)))?;
+        self.encoder = Some(enc);
+        Ok(())
+    }
+
+    /// Get a mutable reference to the gif encoder, creating it if needed.
+    fn encoder_mut(&mut self) -> Result<&mut gif::Encoder<W>> {
+        if self.encoder.is_none() {
+            // Non-deferred path: create with config's global palette or empty
+            let global_palette_bytes: Vec<u8> = self
+                .config
+                .global_palette
+                .as_ref()
+                .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
+                .unwrap_or_default();
+            self.ensure_encoder_created(&global_palette_bytes)?;
+        }
+        Ok(self.encoder.as_mut().unwrap())
+    }
+
     /// Write the repeat extension if needed.
     fn ensure_repeat_written(&mut self) -> Result<()> {
         if self.repeat_written {
@@ -856,7 +927,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             Repeat::Count(n) => gif::Repeat::Finite(n),
         };
 
-        self.encoder
+        self.encoder_mut()?
             .write_extension(gif::ExtensionData::Repetitions(repeat))
             .map_err(|e| at!(GifError::from(e)))?;
 
@@ -981,6 +1052,10 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             &self.stop,
         )?;
 
+        // Create the gif encoder with the shared palette as global color table.
+        // This avoids writing redundant local color tables on every frame.
+        self.ensure_encoder_created(&palette_bytes)?;
+
         self.computed_palette = Some(palette_bytes);
 
         // Take ownership of buffered frames
@@ -1003,7 +1078,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         // Quantize and encode the frame
         let frame = self.prepare_frame(&input)?;
 
-        self.encoder
+        self.encoder_mut()?
             .write_frame(&frame)
             .map_err(|e| at!(GifError::from(e)))?;
 
@@ -1258,6 +1333,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         // Return buffer to scratch for reuse
         self.scratch.frame_pixels = frame_pixels;
 
+        // If the global color table matches the shared palette, omit the
+        // local color table to save ~768 bytes per frame.
+        let frame_palette = if self.has_global_palette && self.computed_palette.is_some() {
+            None
+        } else {
+            Some(palette_bytes)
+        };
+
         let frame = gif::Frame {
             left: frame_left,
             top: frame_top,
@@ -1266,7 +1349,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             delay: input.delay,
             dispose: gif::DisposalMethod::Keep,
             transparent: transparent_index,
-            palette: Some(palette_bytes),
+            palette: frame_palette,
             buffer: Cow::Owned(pixels),
             ..Default::default()
         };
@@ -1289,8 +1372,15 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         ))]
         self.flush_buffer()?;
 
+        // If encoder was never created (0 frames with deferred creation),
+        // return the pending writer directly.
+        if let Some(writer) = self.pending_writer {
+            return Ok(writer);
+        }
+
         let writer = self
             .encoder
+            .expect("encoder should exist after flush")
             .into_inner()
             .map_err(|e| at!(GifError::from(e)))?;
         Ok(writer)
@@ -1824,7 +1914,8 @@ mod tests {
             .dithering(0.0);
         let config_perframe = EncoderConfig::new(width, height)
             .repeat(Repeat::Once)
-            .dithering(0.0);
+            .dithering(0.0)
+            .shared_palette(false); // Explicitly per-frame
 
         let limits = Limits::default();
 
