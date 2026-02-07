@@ -1,10 +1,11 @@
 //! Test different RMSE thresholds for hybrid mode
-use zengif::EncodeRequest;
 
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{
+    Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+};
 
 fn decode_to_frames(data: &[u8]) -> Option<(u16, u16, Vec<Vec<Rgba>>)> {
     let cursor = std::io::Cursor::new(data);
@@ -47,8 +48,7 @@ fn test_gif(path: &Path, thresholds: &[f32]) {
     );
 
     for &threshold in thresholds {
-        let mut output = Vec::new();
-        {
+        let output = {
             let mut config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true);
@@ -57,13 +57,17 @@ fn test_gif(path: &Path, thresholds: &[f32]) {
             } else {
                 config = config.palette_error_threshold(None);
             }
-            let mut enc =
-                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+            let limits = Limits::none();
+            let mut enc = EncodeRequest::new(&config, 4, 4)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
-            enc.finish().unwrap();
-        }
+            enc.finish().unwrap()
+        };
 
         let (_, _, enc_frames) = decode_to_frames(&output).unwrap_or((0, 0, vec![]));
         let ww = w as usize;
