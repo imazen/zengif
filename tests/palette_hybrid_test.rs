@@ -1,4 +1,5 @@
 //! Test hybrid palette mode (shared with per-frame fallback)
+use zengif::EncodeRequest;
 #![cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -81,15 +82,12 @@ fn test_hybrid_palette_quality() {
                 } else if shared {
                     config = config.palette_error_threshold(None); // Disable fallback
                 }
-                let mut encoder = Encoder::new(
-                    &mut output,
-                    width,
-                    height,
-                    config,
-                    Limits::none(),
-                    Unstoppable,
-                )
-                .unwrap();
+                let limits = Limits::none();
+                let mut encoder = EncodeRequest::new(&config, width, height)
+                    .limits(&limits)
+                    .stop(&Unstoppable)
+                    .build()
+                    .unwrap();
                 for frame in &frame_inputs {
                     encoder.add_frame(frame.clone()).unwrap();
                 }

@@ -143,19 +143,17 @@ fn test_quantizer_on_png(
     let mut output = Vec::new();
     let start = Instant::now();
 
-    let mut encoder = match zengif::Encoder::new(
-        &mut output,
-        width.try_into().unwrap(),
-        height.try_into().unwrap(),
-        config,
-        limits.clone(),
-        Unstoppable,
-    ) {
-        Ok(e) => e,
+    let mut encoder = match zengif::EncodeRequest::new(&config, width, height)
+        .limits(&limits)
+        .stop(&zengif::Unstoppable)
+        .build()
+    {
+        Ok(enc) => enc,
         Err(_) => {
-            return QuantizerResult {
-                backend,
-                available: true,
+            // Quantizer not available (feature not enabled)
+            return Ok(());
+        }
+    };
                 ssim2_score: None,
                 mse_score: None,
                 output_size: None,
@@ -705,8 +703,7 @@ mod quality_tests {
                 .dithering(dither);
 
             let mut output = Vec::new();
-            let mut encoder = zengif::Encoder::new(
-                &mut output,
+            let mut encoder = zengif::EncodeRequest::new(&config,
                 width.try_into().unwrap(),
                 height.try_into().unwrap(),
                 config,

@@ -158,7 +158,7 @@ mod types;
 #[cfg(feature = "std")]
 pub use decode::{decode_gif, Decoder, FrameIterator};
 #[cfg(feature = "std")]
-pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
+pub use encode::{encode_gif, EncodeRequest, Encoder, EncoderConfig, PaletteStrategy};
 #[cfg(all(
     feature = "std",
     any(

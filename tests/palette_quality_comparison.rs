@@ -1,4 +1,5 @@
 //! Test shared vs per-frame palette quality using SSIMULACRA2
+use zengif::EncodeRequest;
 #![cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -72,8 +73,7 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder = Encoder::new(
-            &mut output_shared,
+        let mut encoder = EncodeRequest::new(&config,
             width,
             height,
             config,
@@ -93,8 +93,7 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder = Encoder::new(
-            &mut output_perframe,
+        let mut encoder = EncodeRequest::new(&config,
             width,
             height,
             config,

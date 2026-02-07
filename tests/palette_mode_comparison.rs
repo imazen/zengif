@@ -1,4 +1,5 @@
 //! Test shared vs per-frame palette on real GIFs
+use zengif::EncodeRequest;
 #![allow(dead_code)]
 
 use std::fs;
@@ -53,8 +54,7 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder = Encoder::new(
-            &mut output_shared,
+        let mut encoder = EncodeRequest::new(&config,
             width,
             height,
             config,
@@ -76,8 +76,7 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder = Encoder::new(
-            &mut output_perframe,
+        let mut encoder = EncodeRequest::new(&config,
             width,
             height,
             config,

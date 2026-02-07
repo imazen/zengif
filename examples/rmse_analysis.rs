@@ -63,7 +63,7 @@ fn main() {
                 .shared_palette(true)
                 .palette_error_threshold(None);
             let mut enc =
-                Encoder::new(&mut output, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
             for inp in &inputs {
                 enc.add_frame(inp.clone()).unwrap();
             }

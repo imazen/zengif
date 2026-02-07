@@ -1703,7 +1703,8 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
     /// # use enough::Unstoppable;
     /// let mut buf = Vec::new();
     /// let config = EncoderConfig::new();
-    /// let encoder = Encoder::new(Vec::new(), 100, 100, config, Limits::default(), Unstoppable)?;
+    /// let req = EncodeRequest::new(&config, 100, 100).limits(&Limits::default()).stop(&Unstoppable);
+    /// let encoder = req.build()?;
     /// // ... add frames ...
     /// encoder.finish_into(&mut buf)?;
     /// # Ok::<(), whereat::At<GifError>>(())
@@ -1935,11 +1936,11 @@ mod tests {
 
         let frame = make_red_frame(2, 2, 10);
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         encoder.add_frame(frame).unwrap();
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should have produced valid GIF
         assert!(output.len() > 10);
@@ -1957,15 +1958,15 @@ mod tests {
         let config = EncoderConfig::new().repeat(Repeat::Infinite);
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         for _ in 0..3 {
             let frame = make_red_frame(2, 2, 10);
             encoder.add_frame(frame).unwrap();
         }
 
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         assert!(output.len() > 50);
     }
@@ -1975,8 +1976,8 @@ mod tests {
         let config = EncoderConfig::new();
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         // Wrong dimensions
         let frame = make_red_frame(2, 2, 10);
@@ -2015,8 +2016,8 @@ mod tests {
         let config = EncoderConfig::new();
         let limits = Limits::default().max_frame_count(1);
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         // First frame OK
         encoder.add_frame(make_red_frame(2, 2, 10)).unwrap();
@@ -2142,31 +2143,27 @@ mod tests {
         let frame2 = make_red_frame(100, 100, 10);
 
         let output_with_diff = {
-            let mut output = Vec::new();
-            let mut encoder = Encoder::new(
-                &mut output,
-                100,
-                100,
-                config.clone(),
-                limits.clone(),
-                Unstoppable,
-            )
-            .unwrap();
+            // output will be returned from encoder.finish()
+            let mut encoder = EncodeRequest::new(&config, 100, 100)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             encoder.add_frame(frame1.clone()).unwrap();
             encoder.add_frame(frame2.clone()).unwrap();
-            encoder.finish().unwrap();
+            let output = encoder.finish().unwrap();
             output
         };
 
         // Encode without transparency optimization
         let config_no_opt = config.use_transparency(false);
         let output_without_diff = {
-            let mut output = Vec::new();
+            // output will be returned from encoder.finish()
             let mut encoder =
-                Encoder::new(&mut output, 100, 100, config_no_opt, limits, Unstoppable).unwrap();
+                EncodeRequest::new(&config_no_opt, 100, 100).limits(&limits).stop(&Unstoppable).build().unwrap();
             encoder.add_frame(frame1).unwrap();
             encoder.add_frame(frame2).unwrap();
-            encoder.finish().unwrap();
+            let output = encoder.finish().unwrap();
             output
         };
 
@@ -2366,8 +2363,8 @@ mod tests {
 
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         // Add 5 frames - should buffer first 3, then flush and encode
         for i in 0..5 {
@@ -2377,7 +2374,7 @@ mod tests {
             encoder.add_frame(frame).unwrap();
         }
 
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should have produced valid GIF
         assert!(output.len() > 50, "Should produce valid GIF output");
@@ -2400,8 +2397,8 @@ mod tests {
 
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         // Add only 2 frames - less than buffer limit
         for _ in 0..2 {
@@ -2410,7 +2407,7 @@ mod tests {
         }
 
         // finish() should flush the buffer
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should have produced valid GIF with content
         assert!(output.len() > 50, "Should produce valid GIF output");
@@ -2434,8 +2431,8 @@ mod tests {
 
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        // output will be returned from encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         // Add 5 frames - should trigger memory limit flush
         for _ in 0..5 {
@@ -2443,7 +2440,7 @@ mod tests {
             encoder.add_frame(frame).unwrap();
         }
 
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should have produced valid GIF
         assert!(output.len() > 50);
@@ -2476,10 +2473,10 @@ mod tests {
         let config = EncoderConfig::new().repeat(Repeat::Once);
         let limits = Limits::default();
 
-        let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        // output created by encoder.finish()
+        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
         encoder.add_frame(frame).unwrap();
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should have produced valid GIF
         assert!(output.len() > 10);
@@ -2520,14 +2517,14 @@ mod tests {
         let config = EncoderConfig::new()
             .shared_palette(true)
             .palette_error_threshold(Some(5.0));
-        let mut output = Vec::new();
+        // output will be returned from encoder.finish()
         let limits = crate::limits::Limits::none();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
         }
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Decode and verify all frames came through
         let limits = crate::limits::Limits::none();
@@ -2575,14 +2572,14 @@ mod tests {
         let config = EncoderConfig::new()
             .shared_palette(true)
             .palette_error_threshold(None);
-        let mut output = Vec::new();
+        // output created by encoder.finish()
         let limits = crate::limits::Limits::none();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
         }
-        encoder.finish().unwrap();
+        let output = encoder.finish().unwrap();
 
         // Should produce valid GIF (we're just testing it doesn't panic/error)
         assert!(output.len() > 10);
