@@ -9,7 +9,7 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 | **Recommended** for quality |
+//! | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later | **Recommended** for quality |
 //! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //!
@@ -122,7 +122,7 @@ impl QuantizeConfig {
 ///
 /// | Feature | Quality | Speed | File Size | License |
 /// |---------|---------|-------|-----------|---------|
-/// | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 |
+/// | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later |
 /// | `quantizr` | Good | Fast | Medium | MIT |
 /// | `color_quant` | Good | **Fastest** | Large | MIT |
 ///
@@ -135,7 +135,7 @@ impl QuantizeConfig {
 /// let config = EncoderConfig::new(100, 100)
 ///     .quantizer(Quantizer::quantizr());
 ///
-/// // Smallest files (AGPL license)
+/// // Smallest files (GPL license)
 /// let config = EncoderConfig::new(100, 100)
 ///     .quantizer(Quantizer::imagequant());
 ///
@@ -164,11 +164,11 @@ pub enum Quantizer {
         dithering: f32,
     },
 
-    /// Imagequant (libimagequant): Best quality AND compression, AGPL-3.0 licensed.
+    /// Imagequant (libimagequant): Best quality AND compression, GPL-3.0-or-later licensed.
     ///
     /// **Recommended** - produces the best quality and smallest files thanks to
     /// LZW-aware dithering that compresses exceptionally well.
-    /// **Requires AGPL-3.0 compliance** (source disclosure).
+    /// **Requires GPL-3.0-or-later compliance** (source disclosure).
     /// Commercial license available at <https://pngquant.org>.
     #[cfg(feature = "imagequant")]
     Imagequant {
@@ -239,7 +239,7 @@ impl Quantizer {
 
     /// Create an Imagequant quantizer with default settings.
     ///
-    /// **Note**: Imagequant is AGPL-3.0 licensed. See <https://pngquant.org> for commercial licensing.
+    /// **Note**: Imagequant is GPL-3.0-or-later licensed. See <https://pngquant.org> for commercial licensing.
     #[cfg(feature = "imagequant")]
     #[must_use]
     pub fn imagequant() -> Self {
@@ -461,7 +461,7 @@ pub trait QuantizerTrait: Send {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum QuantizerBackend {
-    /// Use imagequant (highest quality, AGPL licensed).
+    /// Use imagequant (highest quality, GPL licensed).
     /// Requires `imagequant` feature.
     #[default]
     Imagequant,

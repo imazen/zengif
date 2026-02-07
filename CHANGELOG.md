@@ -102,7 +102,7 @@ println!("Peak: {}", decoder.stats().peak());
 ### Added
 
 - **Multiple quantization backends**: Choose from different color quantizers:
-  - `imagequant`: Highest quality, smallest files (AGPL-3.0, commercial license available).
+  - `imagequant`: Highest quality, smallest files (GPL-3.0-or-later, commercial license available).
   - `quantizr`: Fast, good quality (MIT).
   - `color_quant`: NEUQUANT algorithm, fastest (MIT).
   - `exoquant-deprecated`: K-Means quantizer (MIT, use quantizr instead).

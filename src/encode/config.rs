@@ -303,7 +303,7 @@ impl EncoderConfig {
     /// let config = EncoderConfig::new()
     ///     .quantizer(Quantizer::quantizr_with_dithering(0.3));
     ///
-    /// // Use imagequant (AGPL) for smallest files
+    /// // Use imagequant (GPL) for smallest files
     /// let config = EncoderConfig::new()
     ///     .quantizer(Quantizer::imagequant());
     /// ```

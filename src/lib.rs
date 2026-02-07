@@ -100,7 +100,7 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `imagequant` | **Best** | Medium | **Smallest** | AGPL-3.0 | **Recommended** - LZW-aware dithering |
+//! | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later | **Recommended** - LZW-aware dithering |
 //! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //! | `exoquant-deprecated` | Good | Slow | Medium | MIT | Legacy compatibility only |
