@@ -54,18 +54,17 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder = EncodeRequest::new(&config,
-            width,
-            height,
-            config,
-            Limits::none(),
-            Unstoppable,
-        )
-        .ok()?;
+        let mut encoder = {
+        let limits = Limits::none();
+        EncodeRequest::new(&config, width, height)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build().ok()?
+    };
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        encoder.finish().ok()?;
+        let _output = encoder.finish().ok()?;
     }
     let time_shared = start.elapsed();
 
@@ -76,18 +75,17 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder = EncodeRequest::new(&config,
-            width,
-            height,
-            config,
-            Limits::none(),
-            Unstoppable,
-        )
-        .ok()?;
+        let mut encoder = {
+        let limits = Limits::none();
+        EncodeRequest::new(&config, width, height)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build().ok()?
+    };
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        encoder.finish().ok()?;
+        let _output = encoder.finish().ok()?;
     }
     let time_perframe = start.elapsed();
 
