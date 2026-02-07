@@ -780,3 +780,51 @@ src/encode/
 ```
 
 This would make the refactoring much more manageable.
+
+## Migration Completed (2026-02-06)
+
+### EncodeRequest API Migration: ✅ COMPLETE
+
+Successfully migrated all 9 test files and examples to the new three-layer API:
+- EncoderConfig → EncodeRequest<'a> → Encoder<'a>
+- All 130 tests passing (83 lib + 47 integration)
+- Zero compilation errors
+- All examples compile clean
+
+**Files migrated:**
+1. tests/palette_quality_comparison.rs
+2. tests/palette_mode_comparison.rs
+3. examples/test_hybrid_fallback.rs
+4. examples/test_thresholds.rs
+5. tests/cancellation.rs
+6. examples/rmse_analysis.rs
+7. examples/size_analysis.rs
+8. tests/quantizer_quality.rs
+9. tests/palette_hybrid_test.rs
+
+**Migration pattern:**
+```rust
+// Bind limits to variable for lifetime
+let limits = Limits::none();
+
+// Build encoder with builder pattern
+let mut encoder = EncodeRequest::new(&config, width, height)
+    .limits(&limits)
+    .stop(&Unstoppable)
+    .build()?;
+
+// Add frames and capture output
+encoder.add_frame(frame)?;
+let output = encoder.finish()?;  // Returns Vec<u8>
+```
+
+**Common issues fixed:**
+- Lifetime errors from temporary `Limits::none()` - bind to variable first
+- Output not captured from `finish()` - it now returns `Vec<u8>`
+- Inner attribute placement errors - `#![cfg(...)]` must come before any use statements
+- Duplicate imports - EncodeRequest added to wrong location
+
+**Modularization status:**
+- Task #2 marked as pending - ready to split src/encode/mod.rs (2674 lines)
+- Proposed structure: palette.rs, config.rs, request.rs, encoder.rs, mod.rs
+
