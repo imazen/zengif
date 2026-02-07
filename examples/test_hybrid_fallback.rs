@@ -1,10 +1,11 @@
 //! Test if hybrid palette mode triggers per-frame fallback on diverse GIFs
-use zengif::EncodeRequest;
 
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{
+    Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+};
 
 fn decode_to_frames(data: &[u8]) -> Option<(u16, u16, Vec<Vec<Rgba>>)> {
     let cursor = std::io::Cursor::new(data);
@@ -64,48 +65,57 @@ fn main() {
             .collect();
 
         // Shared only (no fallback)
-        let mut out_shared = Vec::new();
-        {
+        let out_shared = {
             let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true)
                 .palette_error_threshold(None); // Disable fallback
-            let mut enc =
-                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+            let limits = Limits::none();
+            let mut enc = EncodeRequest::new(&config, 4, 4)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
-            enc.finish().unwrap();
-        }
+            enc.finish().unwrap()
+        };
 
         // Hybrid mode (with fallback at threshold=15)
-        let mut out_hybrid = Vec::new();
-        {
+        let out_hybrid = {
             let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true)
                 .palette_error_threshold(Some(15.0));
-            let mut enc =
-                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+            let limits = Limits::none();
+            let mut enc = EncodeRequest::new(&config, 4, 4)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
-            enc.finish().unwrap();
-        }
+            enc.finish().unwrap()
+        };
 
         // Per-frame only
-        let mut out_perframe = Vec::new();
-        {
+        let out_perframe = {
             let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(false);
-            let mut enc =
-                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+            let limits = Limits::none();
+            let mut enc = EncodeRequest::new(&config, 4, 4)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
-            enc.finish().unwrap();
-        }
+            enc.finish().unwrap()
+        };
 
         // Compute quality for shared and hybrid
         let (_, _, sh_frames) = decode_to_frames(&out_shared).unwrap_or((0, 0, vec![]));
