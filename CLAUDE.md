@@ -565,20 +565,160 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 
 **Three-layer pattern: EncoderConfig → EncodeRequest<'a> → Encoder (streaming only)**
 
-Done:
+### Completed (2026-02-06)
+
 - [x] Dimensions out of config ✓
 - [x] `EncodeError`/`DecodeError` aliases ✓
 - [x] `At<>` error wrapping ✓
 - [x] `Limits` struct ✓
 - [x] `u16` dimensions (GIF format limit, compile-time enforcement) ✓
 - [x] `finish()`/`finish_into()` on streaming encoder ✓
+- [x] `Limits` fields: standardize to `Option<u64>` ✓ (max_frame_count, max_memory now u64; width/height stay u16 per GIF format)
 
-Remaining:
-- [ ] Add `EncodeRequest<'a>` intermediate layer
-- [ ] Drop `S: Stop` generic → `&dyn Stop` on request
-- [ ] Drop `W: Write` generic → output method on finish
-- [ ] Add one-shot `request.encode()` convenience
-- [ ] Rename `GifError` → `EncodeError`/`DecodeError` as primary types (not just aliases)
-- [ ] `Limits` fields: standardize to `Option<u64>` (currently mixed `u16`/`usize`)
-- [ ] Same pattern for decoder: `DecodeRequest<'a>` + `Decoder`
+### Remaining Work
+
+#### Phase 1: Add Request Layers (NEXT)
+
+**EncodeRequest<'a>:**
+```rust
+pub struct EncodeRequest<'a> {
+    config: &'a EncoderConfig,
+    width: u16,
+    height: u16,
+    limits: &'a Limits,
+    stop: &'a dyn Stop,
+}
+
+impl<'a> EncodeRequest<'a> {
+    pub fn new(config: &'a EncoderConfig, width: u16, height: u16) -> Self;
+    pub fn limits(self, limits: &'a Limits) -> Self;
+    pub fn stop(self, stop: &'a dyn Stop) -> Self;
+
+    // One-shot
+    pub fn encode(self, frames: Vec<FrameInput>) -> Result<Vec<u8>>;
+    pub fn encode_into(self, frames: Vec<FrameInput>, out: &mut Vec<u8>) -> Result<()>;
+    pub fn encode_to<W: Write>(self, frames: Vec<FrameInput>, dest: W) -> Result<()>;
+
+    // Streaming
+    pub fn build(self) -> Result<Encoder<'a>>;
+}
+```
+
+**Encoder<'a>** (no generics!):
+```rust
+pub struct Encoder<'a> {
+    encoder: Option<gif::Encoder<Vec<u8>>>,  // Writes to Vec<u8> internally
+    buffer: Vec<u8>,
+    config: &'a EncoderConfig,
+    limits: &'a Limits,
+    stop: &'a dyn Stop,
+    // ... other fields
+}
+
+impl<'a> Encoder<'a> {
+    pub fn add_frame(&mut self, frame: FrameInput) -> Result<()>;
+
+    pub fn finish(self) -> Result<Vec<u8>>;  // Use gif::Encoder::into_inner()
+    pub fn finish_into(self, out: &mut Vec<u8>) -> Result<()>;
+    pub fn finish_to<W: Write>(self, dest: W) -> Result<()>;
+
+    pub fn stats(&self) -> &Stats;
+}
+```
+
+**Implementation steps:**
+1. Add `EncodeRequest<'a>` struct and impl to src/encode/mod.rs
+2. Refactor current `Encoder<W, S>` → `Encoder<'a>`:
+   - Replace generics with borrows
+   - Change internal gif::Encoder to use `Vec<u8>`
+   - Update finish() to use `into_inner()` and return Vec<u8>
+3. Update convenience function `encode_gif()` to use new API internally
+4. Update all tests in src/encode/mod.rs
+5. Update examples that use Encoder directly
+
+**DecodeRequest<'a>:**
+```rust
+pub struct DecodeRequest<'a> {
+    config: &'a DecoderConfig,  // Add DecoderConfig if needed
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: &'a dyn Stop,
+}
+
+impl<'a> DecodeRequest<'a> {
+    pub fn new(data: &'a [u8]) -> Self;
+    pub fn limits(self, limits: &'a Limits) -> Self;
+    pub fn stop(self, stop: &'a dyn Stop) -> Self;
+
+    // One-shot
+    pub fn decode(self) -> Result<(Metadata, Vec<ComposedFrame>)>;
+    pub fn decode_all(self) -> Result<(Metadata, Vec<ComposedFrame>, Stats)>;
+
+    // Streaming
+    pub fn build(self) -> Result<Decoder<'a>>;
+}
+```
+
+**Decoder<'a>** (no generics!):
+```rust
+pub struct Decoder<'a> {
+    // Takes ownership of data via Cursor<&[u8]> or similar
+    reader: gif::Decoder<impl Read>,
+    limits: &'a Limits,
+    stop: &'a dyn Stop,
+    // ... other fields
+}
+
+impl<'a> Decoder<'a> {
+    pub fn next_frame(&mut self) -> Result<Option<ComposedFrame>>;
+    pub fn metadata(&self) -> &Metadata;
+    pub fn stats(&self) -> &Stats;
+}
+```
+
+#### Phase 2: Error Type Split (OPTIONAL, lower priority)
+
+Currently `EncodeError = GifError` and `DecodeError = GifError` are just aliases.
+Could split into distinct types:
+```rust
+pub enum EncodeError {
+    // Encode-specific variants
+    FrameDimensionMismatch { ... },
+    QuantizationFailed { ... },
+    // Shared variants
+    Cancelled,
+    AllocationFailed { ... },
+    LimitExceeded { ... },
+}
+
+pub enum DecodeError {
+    // Decode-specific variants
+    InvalidHeader,
+    MalformedLzw { ... },
+    // Shared variants (could use a Common enum)
+    Cancelled,
+    AllocationFailed { ... },
+    LimitExceeded { ... },
+}
+```
+
+But this adds complexity. The unified `GifError` works fine for now.
+
+### Migration Path
+
+1. Implement EncodeRequest + new Encoder (keep old Encoder<W, S> temporarily)
+2. Migrate convenience functions to use new API
+3. Migrate tests file by file
+4. Migrate examples
+5. Remove old Encoder<W, S> once everything is migrated
+6. Same for decode side
+7. Update README.md examples
+
+### Testing Strategy
+
+After each phase:
+- `cargo test --all-features` must pass (all 116 tests)
+- `cargo run --example basic --all-features` must work
+- `cargo clippy --all-features` must pass clean
+- Commit incremental progress
 
