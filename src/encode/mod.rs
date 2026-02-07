@@ -36,7 +36,7 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use enough::Stop;
+use enough::{Stop, Unstoppable};
 use whereat::at;
 
 use crate::error::{GifError, Result};
@@ -767,19 +767,100 @@ impl EncoderConfig {
     }
 }
 
-/// Streaming GIF encoder.
-///
-/// Encodes RGBA frames into a GIF animation with proper
-/// transparency and optimization.
-pub struct Encoder<W: Write, S: Stop> {
-    /// Underlying gif encoder (created lazily when shared_palette is true).
-    /// In shared palette mode, encoder creation is deferred until the palette
-    /// is computed so it can be set as the global color table, saving ~768
-    /// bytes per frame (local color tables are omitted).
-    encoder: Option<gif::Encoder<W>>,
+// Default instances for EncodeRequest::new()
+static DEFAULT_LIMITS: Limits = Limits {
+    max_width: Some(16384),
+    max_height: Some(16384),
+    max_total_pixels: Some(100_000_000),
+    max_frame_count: Some(10_000),
+    max_file_size: Some(100 * 1024 * 1024),
+    max_memory: Some(1024 * 1024 * 1024),
+    max_decompression_ratio: Some(1000.0),
+};
 
-    /// Writer stored until the gif encoder is created.
-    pending_writer: Option<W>,
+static UNSTOPPABLE: Unstoppable = Unstoppable;
+
+/// Request to encode a GIF animation.
+///
+/// Intermediate layer between `EncoderConfig` and `Encoder`. Binds configuration,
+/// limits, and control parameters before encoding.
+pub struct EncodeRequest<'a> {
+    config: &'a EncoderConfig,
+    width: u16,
+    height: u16,
+    limits: &'a Limits,
+    stop: &'a dyn Stop,
+}
+
+impl<'a> EncodeRequest<'a> {
+    /// Create a new encode request.
+    pub fn new(config: &'a EncoderConfig, width: u16, height: u16) -> Self {
+        Self {
+            config,
+            width,
+            height,
+            limits: &DEFAULT_LIMITS,
+            stop: &UNSTOPPABLE,
+        }
+    }
+
+    /// Set limits for this encode operation.
+    #[must_use]
+    pub fn limits(mut self, limits: &'a Limits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Set stop token for cooperative cancellation.
+    #[must_use]
+    pub fn stop(mut self, stop: &'a dyn Stop) -> Self {
+        self.stop = stop;
+        self
+    }
+
+    /// One-shot encode: encode all frames and return bytes.
+    pub fn encode(self, frames: Vec<FrameInput>) -> Result<Vec<u8>> {
+        let mut encoder = self.build()?;
+        for frame in frames {
+            encoder.add_frame(frame)?;
+        }
+        encoder.finish()
+    }
+
+    /// One-shot encode: encode all frames into provided buffer.
+    pub fn encode_into(self, frames: Vec<FrameInput>, out: &mut Vec<u8>) -> Result<()> {
+        let bytes = self.encode(frames)?;
+        out.extend_from_slice(&bytes);
+        Ok(())
+    }
+
+    /// One-shot encode: encode all frames to a writer.
+    #[cfg(feature = "std")]
+    pub fn encode_to<W: Write>(self, frames: Vec<FrameInput>, mut dest: W) -> Result<()> {
+        let bytes = self.encode(frames)?;
+        dest.write_all(&bytes)
+            .map_err(|e| at!(GifError::from(e)))?;
+        Ok(())
+    }
+
+    /// Create a streaming encoder for frame-by-frame encoding.
+    pub fn build(self) -> Result<Encoder<'a>> {
+        Encoder::from_request(self)
+    }
+}
+
+/// Streaming GIF encoder (no generics!).
+///
+/// Created via `EncodeRequest::build()`. Add frames with `add_frame()`,
+/// then call `finish()` to get the encoded bytes.
+pub struct Encoder<'a> {
+    /// Underlying gif encoder writing to internal buffer.
+    /// Created lazily when shared_palette is true.
+    encoder: Option<gif::Encoder<Vec<u8>>>,
+
+    /// Internal buffer for GIF output.
+    /// The gif::Encoder writes to this, or we hold it until encoder is created.
+    buffer: Vec<u8>,
 
     /// Canvas width.
     width: u16,
@@ -791,8 +872,8 @@ pub struct Encoder<W: Write, S: Stop> {
     /// When true, frames with the same palette can use `palette: None`.
     has_global_palette: bool,
 
-    /// Configuration.
-    config: EncoderConfig,
+    /// Configuration (borrowed from request).
+    config: &'a EncoderConfig,
 
     /// Previous frame for transparency optimization.
     previous_frame: Option<Vec<Rgba>>,
@@ -800,14 +881,14 @@ pub struct Encoder<W: Write, S: Stop> {
     /// Frame index.
     frame_index: usize,
 
-    /// Limits configuration.
-    limits: Limits,
+    /// Limits configuration (borrowed from request).
+    limits: &'a Limits,
 
     /// Stats tracker.
     stats: Stats,
 
-    /// Cancellation checker.
-    stop: S,
+    /// Cancellation checker (borrowed from request).
+    stop: &'a dyn Stop,
 
     /// Whether the repeat extension has been written.
     repeat_written: bool,
@@ -854,36 +935,25 @@ pub struct Encoder<W: Write, S: Stop> {
     scratch: ScratchBuffer,
 }
 
-impl<W: Write, S: Stop> Encoder<W, S> {
-    /// Create a new encoder.
-    pub fn new(
-        writer: W,
-        width: u16,
-        height: u16,
-        config: EncoderConfig,
-        limits: Limits,
-        stop: S,
-    ) -> Result<Self> {
+impl<'a> Encoder<'a> {
+    /// Create encoder from request (internal constructor).
+    pub(crate) fn from_request(req: EncodeRequest<'a>) -> Result<Self> {
         // Check cancellation
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        req.stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Validate dimensions
-        limits.check_dimensions(width, height)?;
+        req.limits.check_dimensions(req.width, req.height)?;
 
         let stats = Stats::new();
 
         // Determine if we should defer encoder creation.
-        // When shared_palette is enabled and no global palette is provided,
-        // we wait until the shared palette is computed so we can set it as
-        // the global color table. This saves ~768 bytes per frame (no local
-        // color tables needed).
         #[cfg(any(
             feature = "imagequant",
             feature = "quantizr",
             feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
-        let defer_encoder = config.shared_palette && config.global_palette.is_none();
+        let defer_encoder = req.config.shared_palette && req.config.global_palette.is_none();
         #[cfg(not(any(
             feature = "imagequant",
             feature = "quantizr",
@@ -892,51 +962,50 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         )))]
         let defer_encoder = false;
 
-        let (encoder, pending_writer, has_global_palette) = if defer_encoder {
-            (None, Some(writer), false)
+        let (encoder, buffer, has_global_palette) = if defer_encoder {
+            // Defer encoder creation until palette is computed
+            (None, Vec::new(), false)
         } else {
-            let global_palette_bytes: Vec<u8> = config
+            // Create encoder immediately
+            let mut buffer = Vec::new();
+            let global_pal_bytes = req
+                .config
                 .global_palette
                 .as_ref()
-                .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
+                .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect::<Vec<u8>>())
                 .unwrap_or_default();
-            let has_global = !global_palette_bytes.is_empty();
-            let enc = gif::Encoder::new(writer, width, height, &global_palette_bytes)
+
+            let has_global = !global_pal_bytes.is_empty();
+
+            let mut enc = gif::Encoder::new(&mut buffer, req.width, req.height, &global_pal_bytes)
                 .map_err(|e| at!(GifError::from(e)))?;
-            (Some(enc), None, has_global)
+
+            enc.set_repeat(match req.config.repeat { Repeat::Infinite => gif::Repeat::Infinite, Repeat::Count(n) => gif::Repeat::Finite(n) })
+                .map_err(|e| at!(GifError::from(e)))?;
+
+            (Some(enc), buffer, has_global)
         };
 
-        // Create quantizer from config.quantizer or fall back to quantizer_backend
         #[cfg(any(
             feature = "imagequant",
             feature = "quantizr",
             feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
-        #[allow(deprecated)] // quantizer_backend is deprecated
-        let quantizer: Box<dyn crate::quantize::QuantizerTrait> =
-            if let Some(ref q) = config.quantizer {
-                q.create_backend()
-            } else {
-                // Try the configured backend first, fall back to auto-select if not available
-                config
-                    .quantizer_backend
-                    .create_quantizer()
-                    .unwrap_or_else(|| crate::quantize::Quantizer::auto().create_backend())
-            };
+        let quantizer = crate::quantize::create_quantizer(req.config);
 
         Ok(Self {
             encoder,
-            pending_writer,
-            width,
-            height,
+            buffer,
+            width: req.width,
+            height: req.height,
             has_global_palette,
-            config,
+            config: req.config,
             previous_frame: None,
             frame_index: 0,
-            limits,
+            limits: req.limits,
             stats,
-            stop,
+            stop: req.stop,
             repeat_written: false,
             #[cfg(any(
                 feature = "imagequant",
@@ -970,12 +1039,14 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         })
     }
 
+        // Check cancellation
+
     /// Create an encoder from metadata.
     ///
     /// This preserves the original global palette if available, and uses
     /// round-trip optimized settings (zero dithering) to minimize bloat.
     #[allow(deprecated)] // quantizer_backend is deprecated
-    pub fn from_metadata(writer: W, metadata: &Metadata, limits: Limits, stop: S) -> Result<Self> {
+    pub fn from_metadata(metadata: &Metadata, limits: &'a Limits, stop: &'a dyn Stop) -> Result<Self> {
         let config = EncoderConfig {
             repeat: metadata.repeat,
             global_palette: metadata
@@ -1073,7 +1144,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         if self.encoder.is_some() {
             return Ok(());
         }
-        let writer = self.pending_writer.take().ok_or_else(|| {
+        let buffer = core::mem::take(&mut self.buffer).ok_or_else(|| {
             at!(GifError::QuantizationFailed {
                 message: "encoder already consumed"
             })
@@ -1086,7 +1157,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 
     /// Get a mutable reference to the gif encoder, creating it if needed.
-    fn encoder_mut(&mut self) -> Result<&mut gif::Encoder<W>> {
+    fn encoder_mut(&mut self) -> Result<&mut gif::Encoder<Vec<u8>>> {
         if self.encoder.is_none() {
             // Non-deferred path: create with config's global palette or empty
             let global_palette_bytes: Vec<u8> = self
@@ -1587,7 +1658,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     /// If there are buffered frames (from shared palette mode), they are
     /// encoded before finishing.
     #[allow(unused_mut)]
-    pub fn finish(mut self) -> Result<W> {
+    pub fn finish(mut self) -> Result<Vec<u8>> {
         // Flush any remaining buffered frames
         #[cfg(any(
             feature = "imagequant",
@@ -1599,7 +1670,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
 
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.
-        if let Some(writer) = self.pending_writer {
+        if !self.buffer.is_empty() {
             return Ok(writer);
         }
 
@@ -1612,6 +1683,9 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     }
 }
 
+// OLD impl block removed - now part of main Encoder<'a> impl
+
+/*
 impl<S: Stop> Encoder<Vec<u8>, S> {
     /// Finish encoding and append the output to an existing buffer.
     ///
@@ -1636,6 +1710,8 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
         Ok(())
     }
 }
+*/
+
 /// Convenience function to encode frames to a byte vector.
 ///
 /// Takes ownership of the frames to avoid cloning pixel buffers.

@@ -714,6 +714,11 @@ But this adds complexity. The unified `GifError` works fine for now.
 6. Same for decode side
 7. Update README.md examples
 
+#### Phase 3: Resource Estimation & Metadata
+
+- [ ] Add `estimate_memory()` / `estimate_memory_ceiling()` on `EncoderConfig`
+- [ ] (GIF has no ICC/EXIF/XMP, so `ImageMetadata` not applicable)
+
 ### Testing Strategy
 
 After each phase:
@@ -722,3 +727,56 @@ After each phase:
 - `cargo clippy --all-features` must pass clean
 - Commit incremental progress
 
+
+## API Refactoring WIP (2026-02-06)
+
+### Progress Made This Session
+
+**Completed:**
+1. ✅ Standardized Limits fields to Option<u64>
+2. ✅ Measured overhead: <1% (mem::copy ~0.4ms for 10MB, vtable negligible)  
+3. ✅ Added EncodeRequest<'a> struct with builder pattern
+4. ✅ Refactored Encoder struct to remove W: Write, S: Stop generics
+5. ✅ Changed fields to borrows: &'a config, &'a limits, &'a dyn Stop
+6. ✅ Added from_request() constructor
+7. ✅ Fixed ~30+ type errors
+
+**Remaining (7 compilation errors):**
+1. `from_metadata()` - needs to use EncodeRequest pattern internally
+2. `encode_gif()` convenience function - references old Encoder::new()
+3. Buffer handling - mem::take() fix needs cleanup
+4. 2x Encoder::new() calls in tests/internal code
+
+**File Structure Issue:**
+- src/encode/mod.rs is 2600+ lines (too large)
+- Should split into: request.rs, encoder.rs, quantize/mod.rs, etc.
+
+### Next Session Plan
+
+**Option A: Finish Refactoring (2-3 hours)**
+1. Fix remaining 7 errors
+2. Update encode_gif() convenience function
+3. Add finish(), finish_into(), finish_to() methods
+4. Migrate tests/examples (34 callsites)
+5. Repeat for Decoder side
+
+**Option B: Modularize First (1 hour)**
+1. Split encode/mod.rs into composable modules
+2. Makes remaining refactoring easier
+3. Then finish API changes
+
+**Recommended: Option B** - cleaner structure makes the rest easier.
+
+### File Split Proposal
+
+```
+src/encode/
+├── mod.rs          # Public API re-exports only (~50 lines)
+├── request.rs      # EncodeRequest<'a> (~100 lines)
+├── encoder.rs      # Encoder<'a> core (~800 lines)
+├── frame_diff.rs   # Frame differencing logic (~200 lines)
+├── palette.rs      # Palette strategies (~300 lines)
+└── quantize/       # Already a module
+```
+
+This would make the refactoring much more manageable.
