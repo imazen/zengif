@@ -1,7 +1,9 @@
 //! Tests for cancellation support via the enough crate.
 
 use almost_enough::{Stop, Stopper};
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, GifError, Limits, Rgba};
+use zengif::{
+    Decoder, EncodeRequest, EncoderConfig, FrameInput, GifError, Limits, Rgba,
+};
 
 /// Create a minimal valid GIF.
 fn minimal_gif() -> Vec<u8> {
@@ -78,8 +80,10 @@ fn encode_with_pre_cancelled_stopper() {
     let stop = Stopper::new();
     stop.cancel();
 
-    let mut output = Vec::new();
-    let result = EncodeRequest::new(&config, width, height, config, limits, stop);
+    let result = EncodeRequest::new(&config, width, height)
+        .limits(&limits)
+        .stop(&stop)
+        .build();
 
     // Should fail with Cancelled
     match result {
@@ -104,8 +108,11 @@ fn encode_can_be_cancelled_between_frames() {
     let stop = Stopper::new();
     let stop_clone = stop.clone();
 
-    let mut output = Vec::new();
-    let mut encoder = EncodeRequest::new(&config, width, height, config, limits, stop).unwrap();
+    let mut encoder = EncodeRequest::new(&config, width, height)
+        .limits(&limits)
+        .stop(&stop)
+        .build()
+        .unwrap();
 
     // Add first frame successfully
     let frame = FrameInput::new(2, 2, 10, vec![Rgba::rgb(255, 0, 0); 4]);
