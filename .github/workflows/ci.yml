@@ -59,18 +59,20 @@ jobs:
         run: cross test --all-features --target ${{ matrix.target }}
 
   # ==========================================================================
-  # WASM compatibility check
+  # WASM compatibility check (with SIMD128)
   # ==========================================================================
   wasm:
     name: WASM Build
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+simd128"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      # Build with std (full codec)
+      # Build with std (full codec) + simd128
       - run: cargo build --target wasm32-unknown-unknown --release
       # Build example that uses decoder
       - run: cargo build --target wasm32-unknown-unknown --example wasm_decode --release
@@ -117,6 +119,22 @@ jobs:
       - run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -Dwarnings
+
+  # ==========================================================================
+  # Fuzz Smoke Test
+  # ==========================================================================
+  fuzz:
+    name: Fuzz Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time=30
+          done
 
   # ==========================================================================
   # Code Coverage
