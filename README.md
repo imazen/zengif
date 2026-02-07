@@ -164,7 +164,9 @@ let config = EncoderConfig::new()
 | `quantizr` | MIT | Good | Fast |
 | `color_quant` | MIT | Good | Fastest |
 
-*imagequant is AGPL-3.0. [Commercial license available from upstream](https://supso.org/projects/pngquant).
+*[imagequant](https://github.com/ImageOptim/libimagequant) is AGPL-3.0. [Commercial license available from upstream](https://supso.org/projects/pngquant).
+
+**Why imagequant produces smaller files:** imagequant's superior quality comes from more compressible dithering and quantization patterns. The resulting palettes compress dramatically better in the LZW stage, producing smaller final GIF files compared to other quantizers at the same visual quality.
 
 **Without any quantizer feature, zengif is MIT/Apache-2.0 licensed.**
 

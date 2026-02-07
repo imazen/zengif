@@ -569,6 +569,8 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 
 **Builder convention**: `with_` prefix for consuming builder setters, bare-name for getters.
 
+**Licensing**: AGPL v3 / Commercial dual license. Cargo.toml uses `license = "AGPL-3.0-or-later"`. README must include the standard licensing text (see codec-design README).
+
 **Project standards**: `#![forbid(unsafe_code)]` with default features. no_std+alloc (minimum: wasm32). CI with codecov. README with badges and usage examples. As of Rust 1.92, almost everything is in `core::` (including `Error`) — don't assume `std` is needed. Use `wasmtimer` crate for timing on wasm. Fuzz targets required (decode, roundtrip, limits, streaming). Codecs must be safe for malicious input on real-time image proxies — no amplification, bound memory/CPU, periodic DoS/security audits.
 
 ### Completed (2026-02-06)
