@@ -99,9 +99,9 @@ pub enum GifError {
     /// Too many frames in animation.
     TooManyFrames {
         /// Actual frame count.
-        count: usize,
+        count: u64,
         /// Maximum allowed.
-        max: usize,
+        max: u64,
     },
 
     /// File size exceeds limit.
@@ -115,15 +115,15 @@ pub enum GifError {
     /// Memory limit exceeded during operation.
     MemoryLimitExceeded {
         /// Current memory usage in bytes.
-        current: usize,
+        current: u64,
         /// Configured limit in bytes.
-        limit: usize,
+        limit: u64,
     },
 
     /// Allocation failed.
     AllocationFailed {
         /// Requested size in bytes.
-        requested: usize,
+        requested: u64,
     },
 
     /// Decompression ratio exceeded (potential zip bomb).

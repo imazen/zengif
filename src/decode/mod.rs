@@ -222,7 +222,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         pixel_buffer.try_reserve(buffer_size).map_err(|_| {
             stats.track_dealloc(buffer_bytes); // Undo tracking
             at!(GifError::AllocationFailed {
-                requested: buffer_bytes
+                requested: buffer_bytes as u64
             })
         })?;
         pixel_buffer.resize(buffer_size, 0u8);
@@ -308,7 +308,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         self.pixel_buffer.try_reserve(additional).map_err(|_| {
             self.stats.track_dealloc(additional);
             at!(GifError::AllocationFailed {
-                requested: additional
+                requested: additional as u64
             })
         })?;
         self.pixel_buffer.resize(needed, 0);
@@ -327,7 +327,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Check frame count limit
-        self.limits.check_frame_count(self.frame_index)?;
+        self.limits.check_frame_count(self.frame_index as u64)?;
 
         // Try to read the next frame info
         let frame_info = match self.reader.next_frame_info() {
@@ -369,7 +369,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         let mut pixels = Vec::new();
         pixels.try_reserve(buffer_slice.len()).map_err(|_| {
             at!(GifError::AllocationFailed {
-                requested: buffer_slice.len()
+                requested: buffer_slice.len() as u64
             })
         })?;
         pixels.extend_from_slice(buffer_slice);
@@ -431,7 +431,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Check frame count limit
-        self.limits.check_frame_count(self.frame_index)?;
+        self.limits.check_frame_count(self.frame_index as u64)?;
 
         // Try to read the next frame info
         let frame_info = match self.reader.next_frame_info() {
@@ -465,7 +465,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         let mut pixels = Vec::new();
         pixels.try_reserve(buffer_slice.len()).map_err(|_| {
             at!(GifError::AllocationFailed {
-                requested: buffer_slice.len()
+                requested: buffer_slice.len() as u64
             })
         })?;
         pixels.extend_from_slice(buffer_slice);
@@ -521,7 +521,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
             // Fallible push
             frames.try_reserve(1).map_err(|_| {
                 at!(GifError::AllocationFailed {
-                    requested: core::mem::size_of::<ComposedFrame>()
+                    requested: core::mem::size_of::<ComposedFrame>() as u64
                 })
             })?;
             frames.push(frame);

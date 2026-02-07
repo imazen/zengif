@@ -137,8 +137,8 @@ impl Stats {
     /// Returns error if limit would be exceeded, otherwise tracks the allocation.
     pub fn try_alloc(&self, bytes: usize, limits: &Limits) -> Result<()> {
         if let Some(max_memory) = limits.max_memory {
-            let current = self.current();
-            let new_total = current.saturating_add(bytes);
+            let current = self.current() as u64;
+            let new_total = current.saturating_add(bytes as u64);
             if new_total > max_memory {
                 return Err(at!(GifError::MemoryLimitExceeded {
                     current: new_total,
@@ -255,7 +255,9 @@ pub fn tracked_vec_with_capacity<T>(
     let mut vec = Vec::new();
     if vec.try_reserve(capacity).is_err() {
         stats.track_dealloc(bytes); // Undo the tracking
-        return Err(at!(GifError::AllocationFailed { requested: bytes }));
+        return Err(at!(GifError::AllocationFailed {
+            requested: bytes as u64,
+        }));
     }
 
     Ok(vec)

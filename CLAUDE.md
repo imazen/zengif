@@ -563,9 +563,22 @@ This maintains the memory tracking invariants while handling variable-size frame
 
 See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec comparison.
 
-- [x] Move dimensions out of `EncoderConfig` into `Encoder::new()` — config is now reusable across sizes
-- [x] Add `EncodeError`/`DecodeError` type aliases — added for API clarity
-- [x] Dimension types: keep `u16` — GIF format limit is 65535×65535, so `u16` gives compile-time enforcement
-- [x] Standardize output method names: `finish()` already correct, added `finish_into()` variant
-- [x] Already good: `S: Stop` generic, `At<>` error wrapping, `Limits` struct — these are the reference patterns
+**Three-layer pattern: EncoderConfig → EncodeRequest<'a> → Encoder (streaming only)**
+
+Done:
+- [x] Dimensions out of config ✓
+- [x] `EncodeError`/`DecodeError` aliases ✓
+- [x] `At<>` error wrapping ✓
+- [x] `Limits` struct ✓
+- [x] `u16` dimensions (GIF format limit, compile-time enforcement) ✓
+- [x] `finish()`/`finish_into()` on streaming encoder ✓
+
+Remaining:
+- [ ] Add `EncodeRequest<'a>` intermediate layer
+- [ ] Drop `S: Stop` generic → `&dyn Stop` on request
+- [ ] Drop `W: Write` generic → output method on finish
+- [ ] Add one-shot `request.encode()` convenience
+- [ ] Rename `GifError` → `EncodeError`/`DecodeError` as primary types (not just aliases)
+- [ ] `Limits` fields: standardize to `Option<u64>` (currently mixed `u16`/`usize`)
+- [ ] Same pattern for decoder: `DecodeRequest<'a>` + `Decoder`
 

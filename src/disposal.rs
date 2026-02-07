@@ -73,7 +73,7 @@ impl Disposal {
             saved.try_reserve(region_size).map_err(|_| {
                 stats.track_dealloc(byte_size); // Undo tracking
                 whereat::at!(crate::error::GifError::AllocationFailed {
-                    requested: byte_size
+                    requested: byte_size as u64
                 })
             })?;
 

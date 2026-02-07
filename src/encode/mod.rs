@@ -1157,7 +1157,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             feature = "color_quant"
         )))]
         let total_frames = self.frame_index;
-        self.limits.check_frame_count(total_frames)?;
+        self.limits.check_frame_count(total_frames as u64)?;
 
         // Handle shared palette buffering mode
         #[cfg(any(
@@ -1655,7 +1655,7 @@ pub fn encode_gif<S: Stop>(
     let mut output = Vec::new();
     output.try_reserve(estimated_size).map_err(|_| {
         at!(GifError::AllocationFailed {
-            requested: estimated_size
+            requested: estimated_size as u64
         })
     })?;
 
@@ -1766,7 +1766,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
     let mut output = Vec::new();
     output.try_reserve(estimated_size).map_err(|_| {
         at!(GifError::AllocationFailed {
-            requested: estimated_size
+            requested: estimated_size as u64
         })
     })?;
 
@@ -1791,7 +1791,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
 
     for (frame_index, frame) in frames.into_iter().enumerate() {
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
-        limits.check_frame_count(frame_index)?;
+        limits.check_frame_count(frame_index as u64)?;
 
         // Quantize frame with previous frame as background
         // imagequant's set_background() will make matching pixels transparent

@@ -38,14 +38,14 @@ pub struct Limits {
     pub max_total_pixels: Option<u64>,
 
     /// Maximum number of frames in an animation.
-    pub max_frame_count: Option<usize>,
+    pub max_frame_count: Option<u64>,
 
     /// Maximum input file size in bytes.
     pub max_file_size: Option<u64>,
 
     /// Maximum memory usage in bytes.
     /// Checked during allocation via Stats.
-    pub max_memory: Option<usize>,
+    pub max_memory: Option<u64>,
 
     /// Maximum decompression ratio (decompressed / compressed).
     /// Protection against zip bombs.
@@ -107,7 +107,7 @@ impl Limits {
 
     /// Set maximum frame count.
     #[must_use]
-    pub fn max_frame_count(mut self, count: usize) -> Self {
+    pub fn max_frame_count(mut self, count: u64) -> Self {
         self.max_frame_count = Some(count);
         self
     }
@@ -121,7 +121,7 @@ impl Limits {
 
     /// Set maximum memory usage in bytes.
     #[must_use]
-    pub fn max_memory(mut self, bytes: usize) -> Self {
+    pub fn max_memory(mut self, bytes: u64) -> Self {
         self.max_memory = Some(bytes);
         self
     }
@@ -174,7 +174,7 @@ impl Limits {
     ///
     /// `count` is the 0-based index of the frame about to be added.
     /// So if max_frame_count is 1, we reject frame index 1 (the second frame).
-    pub fn check_frame_count(&self, count: usize) -> Result<()> {
+    pub fn check_frame_count(&self, count: u64) -> Result<()> {
         if let Some(max) = self.max_frame_count {
             if count >= max {
                 return Err(at!(GifError::TooManyFrames { count, max }));
@@ -258,7 +258,7 @@ mod tests {
     fn no_limits() {
         let limits = Limits::none();
         assert!(limits.check_dimensions(u16::MAX, u16::MAX).is_ok());
-        assert!(limits.check_frame_count(usize::MAX).is_ok());
+        assert!(limits.check_frame_count(u64::MAX).is_ok());
     }
 
     #[test]

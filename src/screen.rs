@@ -71,7 +71,7 @@ impl Screen {
         pixels.try_reserve(pixel_count).map_err(|_| {
             stats.track_dealloc(canvas_bytes); // Undo tracking
             whereat::at!(crate::error::GifError::AllocationFailed {
-                requested: canvas_bytes
+                requested: canvas_bytes as u64
             })
         })?;
         pixels.resize(pixel_count, background);
@@ -245,7 +245,7 @@ impl Screen {
             .map_err(|_| {
                 stats.track_dealloc(composed_bytes); // Undo tracking
                 whereat::at!(crate::error::GifError::AllocationFailed {
-                    requested: composed_bytes
+                    requested: composed_bytes as u64
                 })
             })?;
         composed_pixels.extend_from_slice(&self.pixels);
