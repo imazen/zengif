@@ -333,7 +333,7 @@ impl<'a> Encoder<'a> {
 
     /// Get the encoder configuration.
     pub fn config(&self) -> &EncoderConfig {
-        &self.config
+        self.config
     }
 
     /// Get the stats.
