@@ -1,10 +1,6 @@
 //! Encoder configuration.
 
-use crate::types::{FrameInput, Repeat, Rgba};
-use crate::limits::Limits;
-use crate::stats::Stats;
-use enough::{Stop, Unstoppable};
-use std::io::Write;
+use crate::types::{Repeat, Rgba};
 
 /// Encoder configuration.
 #[derive(Debug, Clone)]

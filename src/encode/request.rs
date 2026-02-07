@@ -1,6 +1,6 @@
 //! Encode request builder.
 
-use crate::{types::FrameInput, GifError, Limits, Result, Stats};
+use crate::{types::FrameInput, GifError, Limits, Result};
 use super::{Encoder, EncoderConfig};
 use enough::{Stop, Unstoppable};
 use std::io::Write;

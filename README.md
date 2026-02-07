@@ -160,11 +160,11 @@ let config = EncoderConfig::new()
 
 | Feature | License | Quality | Speed |
 |---------|---------|---------|-------|
-| `imagequant` | AGPL-3.0* | Best | Medium |
+| `imagequant` | GPL-3.0* | Best | Medium |
 | `quantizr` | MIT | Good | Fast |
 | `color_quant` | MIT | Good | Fastest |
 
-*[imagequant](https://github.com/ImageOptim/libimagequant) is AGPL-3.0. [Commercial license available from upstream](https://supso.org/projects/pngquant).
+*[imagequant](https://github.com/ImageOptim/libimagequant) is GPL-3.0-or-later. [Commercial license available from upstream](https://supso.org/projects/pngquant).
 
 **Why imagequant produces smaller files:** imagequant's superior quality comes from more compressible dithering and quantization patterns. The resulting palettes compress dramatically better in the LZW stage, producing smaller final GIF files compared to other quantizers at the same visual quality.
 
@@ -194,7 +194,7 @@ On AMD Ryzen 9 5900X:
 
 MIT or Apache-2.0, at your option.
 
-The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) (AGPL-3.0). A [commercial license is available from the upstream author](https://supso.org/projects/pngquant) for closed-source use. Alternatively, use `quantizr` or `color_quant` for fully permissive licensing.
+The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) (GPL-3.0-or-later). A [commercial license is available from the upstream author](https://supso.org/projects/pngquant) for closed-source use. Alternatively, use `quantizr` or `color_quant` for fully permissive licensing.
 
 ---
 

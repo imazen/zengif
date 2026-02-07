@@ -1,12 +1,12 @@
 //! Streaming GIF encoder.
 
 use crate::{
-    types::{ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, Repeat, Rgba},
+    types::{FrameInput, Metadata, Repeat, Rgba},
     GifError, Limits, Result, Stats,
 };
 use super::config::default_buffer_frames;
-use super::{EncodeRequest, EncoderConfig, PaletteStrategy};
-use super::palette::{compute_frame_diff, compute_frame_diff_pooled, ScratchBuffer};
+use super::{EncodeRequest, EncoderConfig};
+use super::palette::{compute_frame_diff_pooled, ScratchBuffer};
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -14,10 +14,8 @@ use super::palette::{compute_frame_diff, compute_frame_diff_pooled, ScratchBuffe
     feature = "color_quant"
 ))]
 use super::palette::compute_remap_rmse;
-use crate::quantize::QuantizerTrait;
 use enough::Stop;
 use std::borrow::Cow;
-use std::io::Write;
 use whereat::at;
 
 /// Streaming GIF encoder.

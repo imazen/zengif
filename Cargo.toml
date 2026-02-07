@@ -20,8 +20,8 @@ std = ["gif/std", "enough/std", "whereat/std"]
 # Color quantization backends (choose one or more)
 # quantizr: Best quality, fast, MIT licensed (RECOMMENDED)
 quantizr = ["dep:quantizr"]
-# imagequant: Best compression (smallest files), AGPL-3.0 licensed
-# Note: AGPL requires source disclosure. Commercial license: https://pngquant.org
+# imagequant: Best compression (smallest files), GPL-3.0-or-later licensed
+# Note: GPL requires source disclosure. Commercial license: https://pngquant.org
 imagequant = ["dep:imagequant"]
 # color_quant: Fastest encoder, MIT licensed (good for high-throughput)
 color_quant = ["dep:color_quant"]

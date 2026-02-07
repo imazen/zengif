@@ -34,15 +34,13 @@
 //! implemented. This is an advanced feature that would require explicit opt-in.
 
 use std::borrow::Cow;
-use std::io::Write;
 
-use enough::{Stop, Unstoppable};
+use enough::Stop;
 use whereat::at;
 
 use crate::error::{GifError, Result};
 use crate::limits::Limits;
-use crate::stats::Stats;
-use crate::types::{FrameInput, Metadata, Repeat, Rgba};
+use crate::types::{FrameInput, Repeat, Rgba};
 
 // Module declarations
 mod palette;
