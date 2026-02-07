@@ -967,7 +967,6 @@ impl<'a> Encoder<'a> {
             (None, Vec::new(), false)
         } else {
             // Create encoder immediately
-            let mut buffer = Vec::new();
             let global_pal_bytes = req
                 .config
                 .global_palette
@@ -977,13 +976,13 @@ impl<'a> Encoder<'a> {
 
             let has_global = !global_pal_bytes.is_empty();
 
-            let mut enc = gif::Encoder::new(&mut buffer, req.width, req.height, &global_pal_bytes)
+            let mut enc = gif::Encoder::new(Vec::new(), req.width, req.height, &global_pal_bytes)
                 .map_err(|e| at!(GifError::from(e)))?;
 
-            enc.set_repeat(match req.config.repeat { Repeat::Infinite => gif::Repeat::Infinite, Repeat::Count(n) => gif::Repeat::Finite(n) })
+            enc.set_repeat(match req.config.repeat { Repeat::Once => gif::Repeat::Finite(0), Repeat::Infinite => gif::Repeat::Infinite, Repeat::Count(n) => gif::Repeat::Finite(n) })
                 .map_err(|e| at!(GifError::from(e)))?;
 
-            (Some(enc), buffer, has_global)
+            (Some(enc), Vec::new(), has_global)
         };
 
         #[cfg(any(
@@ -992,7 +991,7 @@ impl<'a> Encoder<'a> {
             feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
-        let quantizer = crate::quantize::create_quantizer(req.config);
+        let quantizer = req.config.quantizer.as_ref().map(|q| q.create_backend()).unwrap_or_else(|| req.config.quantizer_backend.create_quantizer().expect("quantizer feature should be enabled"));
 
         Ok(Self {
             encoder,
@@ -1110,18 +1109,26 @@ impl<'a> Encoder<'a> {
                 feature = "color_quant"
             ))]
             palette_error_threshold: None, // Round-trip: always use global palette
+
             lossy_tolerance: 0, // Lossless for round-trip
+
         };
 
-        Self::new(
-            writer,
-            metadata.width,
-            metadata.height,
-            config,
-            limits,
-            stop,
-        )
+        // Box and leak the config to satisfy the 'a lifetime requirement.
+        // This is acceptable for from_metadata as it's used for round-tripping,
+        // which is typically done once per GIF, not in a loop.
+        let config: &'a EncoderConfig = Box::leak(Box::new(config));
+
+        let req = EncodeRequest::new(config, metadata.width, metadata.height)
+            .limits(limits)
+            .stop(stop);
+        Self::from_request(req)
     }
+
+
+
+
+
 
     /// Get the encoder configuration.
     pub fn config(&self) -> &EncoderConfig {
@@ -1144,13 +1151,10 @@ impl<'a> Encoder<'a> {
         if self.encoder.is_some() {
             return Ok(());
         }
-        let buffer = core::mem::take(&mut self.buffer).ok_or_else(|| {
-            at!(GifError::QuantizationFailed {
-                message: "encoder already consumed"
-            })
-        })?;
+        let buffer = core::mem::take(&mut self.buffer);
+
         self.has_global_palette = !global_palette.is_empty();
-        let enc = gif::Encoder::new(writer, self.width, self.height, global_palette)
+        let enc = gif::Encoder::new(buffer, self.width, self.height, global_palette)
             .map_err(|e| at!(GifError::from(e)))?;
         self.encoder = Some(enc);
         Ok(())
@@ -1671,7 +1675,7 @@ impl<'a> Encoder<'a> {
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.
         if !self.buffer.is_empty() {
-            return Ok(writer);
+            return Ok(self.buffer);
         }
 
         let writer = self
@@ -1728,14 +1732,16 @@ pub fn encode_gif<S: Stop>(
     // This is a conservative estimate to reduce reallocations
     let estimated_size = 1024 + frames.len() * 512;
 
-    let mut output = Vec::new();
+    let mut output: Vec<u8> = Vec::new();
     output.try_reserve(estimated_size).map_err(|_| {
         at!(GifError::AllocationFailed {
             requested: estimated_size as u64
         })
     })?;
-
-    let mut encoder = Encoder::new(output, width, height, config, limits, stop)?;
+    let req = EncodeRequest::new(&config, width, height)
+        .limits(&limits)
+        .stop(&stop);
+    let mut encoder = Encoder::from_request(req)?;
 
     for frame in frames {
         encoder.add_frame(frame)?;
