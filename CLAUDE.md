@@ -568,6 +568,6 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 - [x] Dimension types: keep `u16` — GIF format limit is 65535×65535, so `u16` gives compile-time enforcement
 - [ ] Streaming uses `finish()`/`finish_into()`/`finish_to()` (already correct); add one-shot `encode()` convenience
 - [ ] `finish_to()`/`encode_to()` std-only (IO abstraction, not file IO)
-- [ ] `Limits` should be optional (not required to encode), add `max_pixels: u64` field
+- [ ] `Limits` fields should be `Option<u64>` (default None = no limit): `max_width`, `max_height`, `max_pixels`, `max_memory_bytes`
 - [ ] Cancellation: switch from `S: Stop` generic to `&dyn Stop` (less type pollution, negligible vtable cost)
 - [x] Already good: `At<>` error wrapping, `Limits` struct concept

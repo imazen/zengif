@@ -27,9 +27,17 @@ fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Vec<u8> {
     ];
     let palette = benchmark_palette();
 
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
     let mut output = Vec::new();
-    let mut encoder = Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+    let mut encoder = Encoder::new(
+        &mut output,
+        width,
+        height,
+        config,
+        Limits::none(),
+        Unstoppable,
+    )
+    .unwrap();
 
     for i in 0..frame_count {
         let color = colors[i % colors.len()];
@@ -46,9 +54,17 @@ fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Vec<u8> {
 /// Create a GIF with transparency (checkerboard pattern).
 fn create_transparent_gif(width: u16, height: u16, frame_count: usize) -> Vec<u8> {
     let palette = benchmark_palette();
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
     let mut output = Vec::new();
-    let mut encoder = Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+    let mut encoder = Encoder::new(
+        &mut output,
+        width,
+        height,
+        config,
+        Limits::none(),
+        Unstoppable,
+    )
+    .unwrap();
 
     for frame_idx in 0..frame_count {
         let pixels: Vec<Rgba> = (0..width as usize * height as usize)
@@ -146,10 +162,17 @@ fn encode_benchmark(c: &mut Criterion) {
             &frames,
             |b, frames| {
                 b.iter(|| {
-                    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                    let config = EncoderConfig::new().repeat(Repeat::Infinite);
                     let mut output = Vec::with_capacity(1024 * 1024);
-                    let mut encoder =
-                        Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                    let mut encoder = Encoder::new(
+                        &mut output,
+                        width,
+                        height,
+                        config,
+                        Limits::none(),
+                        Unstoppable,
+                    )
+                    .unwrap();
                     for frame in frames {
                         encoder.add_frame(frame.clone()).unwrap();
                     }
@@ -192,9 +215,17 @@ fn create_noisy_animation(
             .collect(),
     );
 
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
     let mut output = Vec::new();
-    let mut encoder = Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+    let mut encoder = Encoder::new(
+        &mut output,
+        width,
+        height,
+        config,
+        Limits::none(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Create base frame with noise
     let mut base_pixels: Vec<Rgba> = (0..width as usize * height as usize)
@@ -314,10 +345,17 @@ fn animation_stress_benchmark(c: &mut Criterion) {
             group.throughput(Throughput::Bytes(bytes_per_frame * frame_count as u64));
             group.bench_with_input(BenchmarkId::new("encode", &label), &frames, |b, frames| {
                 b.iter(|| {
-                    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                    let config = EncoderConfig::new().repeat(Repeat::Infinite);
                     let mut output = Vec::with_capacity(4 * 1024 * 1024);
-                    let mut encoder =
-                        Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                    let mut encoder = Encoder::new(
+                        &mut output,
+                        width,
+                        height,
+                        config,
+                        Limits::none(),
+                        Unstoppable,
+                    )
+                    .unwrap();
                     for frame in frames {
                         encoder.add_frame(frame.clone()).unwrap();
                     }
@@ -380,10 +418,17 @@ fn memory_allocation_benchmark(c: &mut Criterion) {
         &frames,
         |b, frames| {
             b.iter(|| {
-                let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                let config = EncoderConfig::new().repeat(Repeat::Infinite);
                 let mut output = Vec::new(); // No pre-allocation
-                let mut encoder =
-                    Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                let mut encoder = Encoder::new(
+                    &mut output,
+                    width,
+                    height,
+                    config,
+                    Limits::none(),
+                    Unstoppable,
+                )
+                .unwrap();
                 for frame in frames {
                     encoder.add_frame(frame.clone()).unwrap();
                 }
@@ -399,10 +444,17 @@ fn memory_allocation_benchmark(c: &mut Criterion) {
         &frames,
         |b, frames| {
             b.iter(|| {
-                let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                let config = EncoderConfig::new().repeat(Repeat::Infinite);
                 let mut output = Vec::with_capacity(2 * 1024 * 1024); // Pre-allocate 2MB
-                let mut encoder =
-                    Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                let mut encoder = Encoder::new(
+                    &mut output,
+                    width,
+                    height,
+                    config,
+                    Limits::none(),
+                    Unstoppable,
+                )
+                .unwrap();
                 for frame in frames {
                     encoder.add_frame(frame.clone()).unwrap();
                 }
