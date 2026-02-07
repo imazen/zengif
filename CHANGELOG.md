@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-06
+
+### Changed - BREAKING
+
+- **API Refactoring**: Three-layer encoding API for better ergonomics and lifetime management
+  - `EncoderConfig` no longer takes dimensions (now configuration-only)
+  - New `EncodeRequest` builder pattern: `EncodeRequest::new(&config, width, height).limits(&limits).stop(&stop).build()`
+  - `Encoder` now uses lifetime-bound references instead of generics (`Encoder<'a>` instead of `Encoder<W, S>`)
+  - `Encoder::finish()` now returns `Vec<u8>` instead of writing to a mutable buffer
+  - Migration: `Encoder::new(&mut buf, w, h, cfg, lim, stop)` → `EncodeRequest::new(&cfg, w, h).limits(&lim).stop(&stop).build()`
+
+### Internal
+
+- Modularized encode module: Split 2674-line file into focused modules (palette, config, request, encoder)
+- Improved code organization and maintainability
+
+
 ## [0.5.0] - 2026-02-04
 
 ### Fixed

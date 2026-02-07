@@ -45,7 +45,7 @@ fn main() -> zengif::Result<()> {
 ### Encode a GIF
 
 ```rust
-use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
 
 fn main() -> zengif::Result<()> {
     let width = 100;
@@ -56,16 +56,19 @@ fn main() -> zengif::Result<()> {
     let green: Vec<Rgba> = (0..width*height).map(|_| Rgba::rgb(0, 255, 0)).collect();
     let blue: Vec<Rgba> = (0..width*height).map(|_| Rgba::rgb(0, 0, 255)).collect();
 
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
+    let limits = Limits::default();
 
-    let mut output = Vec::new();
-    let mut encoder = Encoder::new(&mut output, config, Limits::default(), Unstoppable)?;
+    let mut encoder = EncodeRequest::new(&config, width, height)
+        .limits(&limits)
+        .stop(&Unstoppable)
+        .build()?;
 
     encoder.add_frame(FrameInput::new(width, height, 50, red))?;   // 500ms
     encoder.add_frame(FrameInput::new(width, height, 50, green))?; // 500ms
     encoder.add_frame(FrameInput::new(width, height, 50, blue))?;  // 500ms
 
-    encoder.finish()?;
+    let output = encoder.finish()?;
 
     std::fs::write("output.gif", &output)?;
     Ok(())
@@ -149,7 +152,7 @@ cargo add zengif --features imagequant
 ```rust
 use zengif::{EncoderConfig, Quantizer};
 
-let config = EncoderConfig::new(width, height)
+let config = EncoderConfig::new()
     .quantizer(Quantizer::imagequant());  // Best quality, smallest files
 ```
 

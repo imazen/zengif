@@ -21,6 +21,30 @@ static DEFAULT_LIMITS: Limits = Limits {
 static UNSTOPPABLE: Unstoppable = Unstoppable;
 
 
+/// Request to encode a GIF animation.
+///
+/// Intermediate builder layer between [`EncoderConfig`] and [`Encoder`].
+/// Binds configuration, dimensions, limits, and cancellation before building the encoder.
+///
+/// # Example
+///
+/// ```no_run
+/// use zengif::{EncodeRequest, EncoderConfig, FrameInput, Limits, Rgba};
+/// use enough::Unstoppable;
+///
+/// let config = EncoderConfig::new();
+/// let limits = Limits::default();
+///
+/// let mut encoder = EncodeRequest::new(&config, 100, 100)
+///     .limits(&limits)
+///     .stop(&Unstoppable)
+///     .build()?;
+///
+/// let frame = FrameInput::new(100, 100, 50, vec![Rgba::rgb(255, 0, 0); 10000]);
+/// encoder.add_frame(frame)?;
+/// let output = encoder.finish()?;
+/// # Ok::<(), whereat::At<zengif::GifError>>(())
+/// ```
 pub struct EncodeRequest<'a> {
     pub(crate) config: &'a EncoderConfig,
     pub(crate) width: u16,

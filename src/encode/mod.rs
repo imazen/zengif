@@ -56,6 +56,22 @@ pub use config::EncoderConfig;
 pub use request::EncodeRequest;
 pub use encoder::Encoder;
 
+/// Convenience function to encode frames to a GIF byte vector.
+///
+/// For more control over encoding options, use [`EncodeRequest`] and [`Encoder`].
+///
+/// # Example
+///
+/// ```no_run
+/// use zengif::{encode_gif, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
+/// use enough::Unstoppable;
+///
+/// let frames = vec![
+///     FrameInput::new(100, 100, 50, vec![Rgba::rgb(255, 0, 0); 10000]),
+/// ];
+/// let output = encode_gif(frames, 100, 100, EncoderConfig::new(), Limits::default(), Unstoppable)?;
+/// # Ok::<(), whereat::At<zengif::GifError>>(())
+/// ```
 pub fn encode_gif<S: Stop>(
     frames: Vec<FrameInput>,
     width: u16,

@@ -565,7 +565,7 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 
 **Three-layer pattern: EncoderConfig → EncodeRequest<'a> → Encoder (streaming only)**
 
-**No backwards compatibility required** — we have no external users. Just bump the 0.x major version for breaking changes. No deprecation shims or legacy aliases — delete old APIs. Prefer one obvious way to do things — no duplicate entry points. Minimize API surface for forwards compatibility.
+**No backwards compatibility required** — we have no external users. Just bump the 0.x major version for breaking changes. No deprecation shims or legacy aliases — delete old APIs. Prefer one obvious way to do things — no duplicate entry points. Minimize API surface for forwards compatibility. Avoid free functions — use methods on types (Config, Request, Decoder) instead.
 
 **Builder convention**: `with_` prefix for consuming builder setters, bare-name for getters.
 

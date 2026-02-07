@@ -20,6 +20,41 @@ use std::borrow::Cow;
 use std::io::Write;
 use whereat::at;
 
+/// Streaming GIF encoder.
+///
+/// Created via [`EncodeRequest::build()`]. Add frames progressively with [`add_frame()`](Self::add_frame),
+/// then call [`finish()`](Self::finish) to get the encoded GIF bytes.
+///
+/// The encoder handles:
+/// - Progressive frame encoding (no need to buffer all frames)
+/// - Memory tracking and limits
+/// - Cancellation support
+/// - Frame differencing for smaller output
+/// - Optional shared palette computation
+///
+/// # Example
+///
+/// ```no_run
+/// use zengif::{EncodeRequest, EncoderConfig, FrameInput, Limits, Rgba};
+/// use enough::Unstoppable;
+///
+/// let config = EncoderConfig::new();
+/// let limits = Limits::default();
+///
+/// let mut encoder = EncodeRequest::new(&config, 100, 100)
+///     .limits(&limits)
+///     .stop(&Unstoppable)
+///     .build()?;
+///
+/// // Add frames one at a time
+/// for i in 0..10 {
+///     let pixels = vec![Rgba::rgb((i * 25) as u8, 0, 0); 10000];
+///     encoder.add_frame(FrameInput::new(100, 100, 10, pixels))?;
+/// }
+///
+/// let output = encoder.finish()?;
+/// # Ok::<(), whereat::At<zengif::GifError>>(())
+/// ```
 pub struct Encoder<'a> {
     /// Underlying gif encoder writing to internal buffer.
     /// Created lazily when shared_palette is true.
@@ -158,6 +193,7 @@ impl<'a> Encoder<'a> {
             feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
+        #[allow(deprecated)] // quantizer_backend fallback for backward compat
         let quantizer = req.config.quantizer.as_ref().map(|q| q.create_backend()).unwrap_or_else(|| req.config.quantizer_backend.create_quantizer().expect("quantizer feature should be enabled"));
 
         Ok(Self {
