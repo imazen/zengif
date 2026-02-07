@@ -25,7 +25,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use zengif::{Limits, QuantizerBackend, Rgba, Unstoppable};
+use zengif::{EncodeRequest, Limits, QuantizerBackend, Rgba, Unstoppable};
 
 /// Decode a PNG file to RGBA pixels.
 fn decode_png(path: &Path) -> Option<(Vec<Rgba>, u32, u32)> {
@@ -140,20 +140,22 @@ fn test_quantizer_on_png(
     let config = zengif::EncoderConfig::new().quantizer_backend(backend);
 
     // Encode to GIF with timing
-    let mut output = Vec::new();
     let start = Instant::now();
 
-    let mut encoder = match zengif::EncodeRequest::new(&config, width, height)
-        .limits(&limits)
-        .stop(&zengif::Unstoppable)
-        .build()
+    let mut encoder = match EncodeRequest::new(
+        &config,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
+    )
+    .limits(&limits)
+    .stop(&Unstoppable)
+    .build()
     {
-        Ok(enc) => enc,
+        Ok(e) => e,
         Err(_) => {
-            // Quantizer not available (feature not enabled)
-            return Ok(());
-        }
-    };
+            return QuantizerResult {
+                backend,
+                available: true,
                 ssim2_score: None,
                 mse_score: None,
                 output_size: None,
@@ -174,16 +176,19 @@ fn test_quantizer_on_png(
         };
     }
 
-    if encoder.finish().is_err() {
-        return QuantizerResult {
-            backend,
-            available: true,
-            ssim2_score: None,
-            mse_score: None,
-            output_size: None,
-            encode_time: None,
-        };
-    }
+    let output = match encoder.finish() {
+        Ok(out) => out,
+        Err(_) => {
+            return QuantizerResult {
+                backend,
+                available: true,
+                ssim2_score: None,
+                mse_score: None,
+                output_size: None,
+                encode_time: None,
+            };
+        }
+    };
 
     let encode_time = start.elapsed();
     let output_size = output.len();
@@ -702,19 +707,19 @@ mod quality_tests {
                 .quantizer_backend(QuantizerBackend::Quantizr)
                 .dithering(dither);
 
-            let mut output = Vec::new();
-            let mut encoder = zengif::EncodeRequest::new(&config,
+            let mut encoder = EncodeRequest::new(
+                &config,
                 width.try_into().unwrap(),
                 height.try_into().unwrap(),
-                config,
-                limits.clone(),
-                Unstoppable,
             )
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
             .expect("encoder creation failed");
 
             let input = zengif::FrameInput::new(width as u16, height as u16, 100, pixels.clone());
             encoder.add_frame(input).expect("add_frame failed");
-            encoder.finish().expect("finish failed");
+            let output = encoder.finish().expect("finish failed");
 
             let output_size = output.len();
             if dither == 1.0 {
