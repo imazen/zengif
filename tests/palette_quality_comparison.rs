@@ -1,5 +1,4 @@
 //! Test shared vs per-frame palette quality using SSIMULACRA2
-use zengif::EncodeRequest;
 #![cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -11,7 +10,7 @@ use zengif::EncodeRequest;
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{Decoder, EncodeRequest, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
 
 struct QualityResult {
     name: String,
@@ -68,42 +67,39 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
         .collect();
 
     // Encode with shared palette
-    let mut output_shared = Vec::new();
-    {
+    // Encode with shared palette
+    let output_shared = {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder = {
         let limits = Limits::none();
-        EncodeRequest::new(&config, width, height)
+        let mut encoder = EncodeRequest::new(&config, width, height)
             .limits(&limits)
             .stop(&Unstoppable)
-            .build().ok()?
-    };
+            .build()
+            .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        let _output = encoder.finish().ok()?;
-    }
+        encoder.finish().ok()?  
+    };
 
     // Encode with per-frame palette
-    let mut output_perframe = Vec::new();
-    {
+    let output_perframe = {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder = {
         let limits = Limits::none();
-        EncodeRequest::new(&config, width, height)
+        let mut encoder = EncodeRequest::new(&config, width, height)
             .limits(&limits)
             .stop(&Unstoppable)
-            .build().ok()?
-    };
+            .build()
+            .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        let _output = encoder.finish().ok()?;
-    }
+        encoder.finish().ok()?  
+    };
 
     // Decode both outputs
     let (_, _, shared_frames) = decode_to_frames(&output_shared)?;
