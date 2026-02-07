@@ -1,5 +1,4 @@
 //! Test hybrid palette mode (shared with per-frame fallback)
-use zengif::EncodeRequest;
 #![cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -10,7 +9,9 @@ use zengif::EncodeRequest;
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{
+    Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+};
 
 fn decode_to_frames(data: &[u8]) -> Option<(u16, u16, Vec<Vec<Rgba>>)> {
     let cursor = std::io::Cursor::new(data);
@@ -73,8 +74,7 @@ fn test_hybrid_palette_quality() {
             ("Hybrid (threshold=10)", true, Some(10.0)),
             ("Hybrid (threshold=5)", true, Some(5.0)),
         ] {
-            let mut output = Vec::new();
-            {
+            let output = {
                 let mut config = EncoderConfig::new().repeat(Repeat::Infinite);
                 config = config.shared_palette(shared);
                 if let Some(t) = threshold {
@@ -91,8 +91,8 @@ fn test_hybrid_palette_quality() {
                 for frame in &frame_inputs {
                     encoder.add_frame(frame.clone()).unwrap();
                 }
-                encoder.finish().unwrap();
-            }
+                encoder.finish().unwrap()
+            };
 
             // Decode and measure quality
             let (_, _, encoded_frames) = decode_to_frames(&output).unwrap();
