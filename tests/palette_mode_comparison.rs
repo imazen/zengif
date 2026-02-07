@@ -1,11 +1,10 @@
 //! Test shared vs per-frame palette on real GIFs
-use zengif::EncodeRequest;
 #![allow(dead_code)]
 
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
-use zengif::{Decoder, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
+use zengif::{Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
 
 struct PaletteTestResult {
     name: String,
@@ -47,46 +46,42 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         .map(|f| FrameInput::new(width, height, f.delay, f.pixels.clone()))
         .collect();
 
-    // Test 1: Shared palette (default)
+    // Test 1: Shared palette
     let start = Instant::now();
-    let mut output_shared = Vec::new();
-    {
+    let output_shared = {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder = {
         let limits = Limits::none();
-        EncodeRequest::new(&config, width, height)
+        let mut encoder = EncodeRequest::new(&config, width, height)
             .limits(&limits)
             .stop(&Unstoppable)
-            .build().ok()?
-    };
+            .build()
+            .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        let _output = encoder.finish().ok()?;
-    }
+        encoder.finish().ok()?
+    };
     let time_shared = start.elapsed();
 
     // Test 2: Per-frame palette
     let start = Instant::now();
-    let mut output_perframe = Vec::new();
-    {
+    let output_perframe = {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder = {
         let limits = Limits::none();
-        EncodeRequest::new(&config, width, height)
+        let mut encoder = EncodeRequest::new(&config, width, height)
             .limits(&limits)
             .stop(&Unstoppable)
-            .build().ok()?
-    };
+            .build()
+            .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        let _output = encoder.finish().ok()?;
-    }
+        encoder.finish().ok()?
+    };
     let time_perframe = start.elapsed();
 
     Some(PaletteTestResult {
