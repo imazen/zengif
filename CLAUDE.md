@@ -565,6 +565,12 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 
 **Three-layer pattern: EncoderConfig → EncodeRequest<'a> → Encoder (streaming only)**
 
+**No backwards compatibility required** — we have no external users. Just bump the 0.x major version for breaking changes. No deprecation shims or legacy aliases — delete old APIs. Prefer one obvious way to do things — no duplicate entry points. Minimize API surface for forwards compatibility.
+
+**Builder convention**: `with_` prefix for consuming builder setters, bare-name for getters.
+
+**Project standards**: `#![forbid(unsafe_code)]` with default features. no_std+alloc (minimum: wasm32). CI with codecov. README with badges and usage examples. As of Rust 1.92, almost everything is in `core::` (including `Error`) — don't assume `std` is needed. Use `wasmtimer` crate for timing on wasm. Fuzz targets required (decode, roundtrip, limits, streaming). Codecs must be safe for malicious input on real-time image proxies — no amplification, bound memory/CPU, periodic DoS/security audits.
+
 ### Completed (2026-02-06)
 
 - [x] Dimensions out of config ✓
@@ -827,4 +833,36 @@ let output = encoder.finish()?;  // Returns Vec<u8>
 **Modularization status:**
 - Task #2 marked as pending - ready to split src/encode/mod.rs (2674 lines)
 - Proposed structure: palette.rs, config.rs, request.rs, encoder.rs, mod.rs
+
+
+## Modularization Completed (2026-02-06)
+
+### ✅ COMPLETE: Encode Module Restructured
+
+Successfully split `src/encode/mod.rs` (2674 lines) into 5 focused modules:
+
+**New structure:**
+```
+src/encode/
+├── palette.rs   (266 lines) - PaletteStrategy + frame diff helpers
+├── config.rs    (467 lines) - EncoderConfig + builder methods
+├── request.rs   (88 lines)  - EncodeRequest builder layer
+├── encoder.rs   (857 lines) - Core Encoder implementation
+├── mod.rs       (1020 lines) - Re-exports + convenience fns + tests
+└── quantize/    (existing)   - Quantizer backends
+```
+
+**Benefits:**
+- Each file has a single, clear responsibility
+- Easier navigation and maintenance
+- Reduced cognitive load (files under 900 lines)
+- Clean module boundaries with pub(super) visibility
+- All 130 tests still passing
+
+**Technical notes:**
+- Internal types (DiffResult, ScratchBuffer) use pub(super) for cross-module access
+- compute_remap_rmse feature-gated for quantizer backends
+- DEFAULT_LIMITS and UNSTOPPABLE moved to request.rs (where used)
+- Test module imports updated for relocated functions
+- Maintained backward compatibility - public API unchanged
 
