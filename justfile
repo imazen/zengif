@@ -38,6 +38,17 @@ bench-group GROUP:
 build-release:
     cargo build --release --all-features
 
+# Cross-compile and test for i686 (32-bit x86)
+test-i686:
+    cross test --all-features --target i686-unknown-linux-gnu
+
+# Cross-compile and test for armv7 (32-bit ARM)
+test-armv7:
+    cross test --all-features --target armv7-unknown-linux-gnueabihf
+
+# Run all cross-compiled tests
+test-cross: test-i686 test-armv7
+
 # Clean build artifacts
 clean:
     cargo clean
