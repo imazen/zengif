@@ -1,7 +1,9 @@
 //! Analyze file size impact of different thresholds.
 
 use std::fs;
-use zengif::{decode_gif, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
+use zengif::{
+    decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable,
+};
 
 fn encode_with_threshold(orig_data: &[u8], threshold: Option<f32>) -> (usize, String) {
     let (meta, orig_frames, _) = decode_gif(orig_data, Limits::none(), Unstoppable).unwrap();
@@ -10,18 +12,22 @@ fn encode_with_threshold(orig_data: &[u8], threshold: Option<f32>) -> (usize, St
         .map(|f| FrameInput::new(meta.width, meta.height, 10, f.pixels.clone()))
         .collect();
 
-    let mut output = Vec::new();
-    {
+    let output = {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true)
             .palette_error_threshold(threshold);
-        let mut enc = EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+        let limits = Limits::none();
+        let mut enc = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
         for inp in &inputs {
             enc.add_frame(inp.clone()).unwrap();
         }
-        enc.finish().unwrap();
-    }
+        enc.finish().unwrap()
+    };
 
     let label = threshold.map_or("∞".to_string(), |t| format!("{}", t as i32));
     (output.len(), label)
