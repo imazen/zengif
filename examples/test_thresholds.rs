@@ -48,7 +48,7 @@ fn test_gif(path: &Path, thresholds: &[f32]) {
     for &threshold in thresholds {
         let mut output = Vec::new();
         {
-            let mut config = EncoderConfig::new(w, h)
+            let mut config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true);
             if threshold > 0.0 {

@@ -69,7 +69,7 @@ fn decode_can_be_cancelled_between_frames() {
 
 #[test]
 fn encode_with_pre_cancelled_stopper() {
-    let config = EncoderConfig::new(2, 2);
+    let config = EncoderConfig::new();
     let limits = Limits::default();
 
     // Pre-cancel the stopper
@@ -77,7 +77,7 @@ fn encode_with_pre_cancelled_stopper() {
     stop.cancel();
 
     let mut output = Vec::new();
-    let result = Encoder::new(&mut output, config, limits, stop);
+    let result = Encoder::new(&mut output, width, height, config, limits, stop);
 
     // Should fail with Cancelled
     match result {
@@ -94,14 +94,14 @@ fn encode_with_pre_cancelled_stopper() {
     feature = "color_quant"
 ))]
 fn encode_can_be_cancelled_between_frames() {
-    let config = EncoderConfig::new(2, 2);
+    let config = EncoderConfig::new();
     let limits = Limits::default();
 
     let stop = Stopper::new();
     let stop_clone = stop.clone();
 
     let mut output = Vec::new();
-    let mut encoder = Encoder::new(&mut output, config, limits, stop).unwrap();
+    let mut encoder = Encoder::new(&mut output, width, height, config, limits, stop).unwrap();
 
     // Add first frame successfully
     let frame = FrameInput::new(2, 2, 10, vec![Rgba::rgb(255, 0, 0); 4]);

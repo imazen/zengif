@@ -143,7 +143,14 @@ fn test_quantizer_on_png(
     let mut output = Vec::new();
     let start = Instant::now();
 
-    let mut encoder = match zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable) {
+    let mut encoder = match zengif::Encoder::new(
+        &mut output,
+        width,
+        height,
+        config,
+        limits.clone(),
+        Unstoppable,
+    ) {
         Ok(e) => e,
         Err(_) => {
             return QuantizerResult {
@@ -698,9 +705,15 @@ mod quality_tests {
                 .dithering(dither);
 
             let mut output = Vec::new();
-            let mut encoder =
-                zengif::Encoder::new(&mut output, config, limits.clone(), Unstoppable)
-                    .expect("encoder creation failed");
+            let mut encoder = zengif::Encoder::new(
+                &mut output,
+                width,
+                height,
+                config,
+                limits.clone(),
+                Unstoppable,
+            )
+            .expect("encoder creation failed");
 
             let input = zengif::FrameInput::new(width as u16, height as u16, 100, pixels.clone());
             encoder.add_frame(input).expect("add_frame failed");

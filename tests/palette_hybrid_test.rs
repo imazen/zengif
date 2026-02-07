@@ -74,7 +74,7 @@ fn test_hybrid_palette_quality() {
         ] {
             let mut output = Vec::new();
             {
-                let mut config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+                let mut config = EncoderConfig::new().repeat(Repeat::Infinite);
                 config = config.shared_palette(shared);
                 if let Some(t) = threshold {
                     config = config.palette_error_threshold(Some(t));

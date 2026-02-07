@@ -10,6 +10,12 @@ use whereat::At;
 /// Result type alias using `At<GifError>` for automatic location tracking.
 pub type Result<T> = core::result::Result<T, At<GifError>>;
 
+/// Type alias for encoding errors (for API clarity).
+pub type EncodeError = GifError;
+
+/// Type alias for decoding errors (for API clarity).
+pub type DecodeError = GifError;
+
 /// All possible errors in zengif operations.
 #[derive(Debug)]
 #[non_exhaustive]

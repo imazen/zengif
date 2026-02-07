@@ -311,6 +311,12 @@ fn compute_frame_diff_pooled(
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct EncoderConfig {
+    /// Canvas width.
+    pub width: u16,
+
+    /// Canvas height.
+    pub height: u16,
+
     /// Loop behavior.
     pub repeat: Repeat,
 
@@ -398,7 +404,7 @@ pub struct EncoderConfig {
     /// ```ignore
     /// use zengif::{EncoderConfig, Quantizer};
     ///
-    /// let config = EncoderConfig::new()
+    /// let config = EncoderConfig::new(100, 100)
     ///     .quantizer(Quantizer::quantizr());
     /// ```
     #[cfg(any(
@@ -487,8 +493,10 @@ fn default_buffer_frames(width: u16, height: u16) -> usize {
 impl EncoderConfig {
     /// Create a new encoder configuration.
     #[allow(deprecated)] // quantizer_backend is deprecated
-    pub fn new() -> Self {
+    pub fn new(width: u16, height: u16) -> Self {
         Self {
+            width,
+            height,
             repeat: Repeat::Infinite,
             global_palette: None,
             use_transparency: true,
@@ -523,7 +531,7 @@ impl EncoderConfig {
                 feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
-            max_buffer_frames: 32, // Will be updated when encoder is created
+            max_buffer_frames: default_buffer_frames(width, height),
             #[cfg(any(
                 feature = "imagequant",
                 feature = "quantizr",
@@ -600,15 +608,15 @@ impl EncoderConfig {
     /// use zengif::{EncoderConfig, Quantizer};
     ///
     /// // Use quantizr with default settings
-    /// let config = EncoderConfig::new()
+    /// let config = EncoderConfig::new(100, 100)
     ///     .quantizer(Quantizer::quantizr());
     ///
     /// // Use quantizr with custom dithering
-    /// let config = EncoderConfig::new()
+    /// let config = EncoderConfig::new(100, 100)
     ///     .quantizer(Quantizer::quantizr_with_dithering(0.3));
     ///
     /// // Use imagequant (AGPL) for smallest files
-    /// let config = EncoderConfig::new()
+    /// let config = EncoderConfig::new(100, 100)
     ///     .quantizer(Quantizer::imagequant());
     /// ```
     #[cfg(any(
@@ -780,12 +788,6 @@ pub struct Encoder<W: Write, S: Stop> {
     /// Writer stored until the gif encoder is created.
     pending_writer: Option<W>,
 
-    /// Canvas width.
-    width: u16,
-
-    /// Canvas height.
-    height: u16,
-
     /// Whether the encoder was created with a non-empty global color table.
     /// When true, frames with the same palette can use `palette: None`.
     has_global_palette: bool,
@@ -855,19 +857,12 @@ pub struct Encoder<W: Write, S: Stop> {
 
 impl<W: Write, S: Stop> Encoder<W, S> {
     /// Create a new encoder.
-    pub fn new(
-        writer: W,
-        width: u16,
-        height: u16,
-        config: EncoderConfig,
-        limits: Limits,
-        stop: S,
-    ) -> Result<Self> {
+    pub fn new(writer: W, config: EncoderConfig, limits: Limits, stop: S) -> Result<Self> {
         // Check cancellation
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Validate dimensions
-        limits.check_dimensions(width, height)?;
+        limits.check_dimensions(config.width, config.height)?;
 
         let stats = Stats::new();
 
@@ -900,7 +895,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
                 .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
                 .unwrap_or_default();
             let has_global = !global_palette_bytes.is_empty();
-            let enc = gif::Encoder::new(writer, width, height, &global_palette_bytes)
+            let enc = gif::Encoder::new(writer, config.width, config.height, &global_palette_bytes)
                 .map_err(|e| at!(GifError::from(e)))?;
             (Some(enc), None, has_global)
         };
@@ -927,8 +922,6 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         Ok(Self {
             encoder,
             pending_writer,
-            width,
-            height,
             has_global_palette,
             config,
             previous_frame: None,
@@ -976,6 +969,8 @@ impl<W: Write, S: Stop> Encoder<W, S> {
     #[allow(deprecated)] // quantizer_backend is deprecated
     pub fn from_metadata(writer: W, metadata: &Metadata, limits: Limits, stop: S) -> Result<Self> {
         let config = EncoderConfig {
+            width: metadata.width,
+            height: metadata.height,
             repeat: metadata.repeat,
             global_palette: metadata
                 .global_palette
@@ -1041,14 +1036,7 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             lossy_tolerance: 0, // Lossless for round-trip
         };
 
-        Self::new(
-            writer,
-            metadata.width,
-            metadata.height,
-            config,
-            limits,
-            stop,
-        )
+        Self::new(writer, config, limits, stop)
     }
 
     /// Get the encoder configuration.
@@ -1078,8 +1066,13 @@ impl<W: Write, S: Stop> Encoder<W, S> {
             })
         })?;
         self.has_global_palette = !global_palette.is_empty();
-        let enc = gif::Encoder::new(writer, self.width, self.height, global_palette)
-            .map_err(|e| at!(GifError::from(e)))?;
+        let enc = gif::Encoder::new(
+            writer,
+            self.config.width,
+            self.config.height,
+            global_palette,
+        )
+        .map_err(|e| at!(GifError::from(e)))?;
         self.encoder = Some(enc);
         Ok(())
     }
@@ -1131,10 +1124,10 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Validate dimensions
-        if input.width != self.width || input.height != self.height {
+        if input.width != self.config.width || input.height != self.config.height {
             return Err(at!(GifError::FrameDimensionMismatch {
-                expected_width: self.width,
-                expected_height: self.height,
+                expected_width: self.config.width,
+                expected_height: self.config.height,
                 actual_width: input.width,
                 actual_height: input.height,
             }));
@@ -1230,8 +1223,8 @@ impl<W: Write, S: Stop> Encoder<W, S> {
         // Build shared palette
         let palette_bytes = self.quantizer.build_shared_palette(
             &frame_refs,
-            self.width,
-            self.height,
+            self.config.width,
+            self.config.height,
             &quant_config,
             &self.stop,
         )?;
@@ -1623,7 +1616,7 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
     /// # use zengif::*;
     /// # use enough::Unstoppable;
     /// let mut buf = Vec::new();
-    /// let config = EncoderConfig::new();
+    /// let config = EncoderConfig::new(100, 100);
     /// let encoder = Encoder::new(Vec::new(), config, Limits::default(), Unstoppable)?;
     /// // ... add frames ...
     /// encoder.finish_into(&mut buf)?;
@@ -1644,7 +1637,7 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
     /// ```no_run
     /// # use zengif::*;
     /// # use enough::Unstoppable;
-    /// let config = EncoderConfig::new();
+    /// let config = EncoderConfig::new(100, 100);
     /// let encoder = Encoder::new(Vec::new(), config, Limits::default(), Unstoppable)?;
     /// // ... add frames ...
     /// encoder.finish_to("output.gif")?;
@@ -1668,8 +1661,6 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
 /// Takes ownership of the frames to avoid cloning pixel buffers.
 pub fn encode_gif<S: Stop>(
     frames: Vec<FrameInput>,
-    width: u16,
-    height: u16,
     config: EncoderConfig,
     limits: Limits,
     stop: S,
@@ -1686,7 +1677,7 @@ pub fn encode_gif<S: Stop>(
         })
     })?;
 
-    let mut encoder = Encoder::new(output, width, height, config, limits, stop)?;
+    let mut encoder = Encoder::new(output, config, limits, stop)?;
 
     for frame in frames {
         encoder.add_frame(frame)?;
@@ -1713,8 +1704,6 @@ pub fn encode_gif<S: Stop>(
 ))]
 pub fn encode_gif_shared_palette<S: Stop + Clone>(
     frames: Vec<FrameInput>,
-    width: u16,
-    height: u16,
     config: EncoderConfig,
     limits: Limits,
     stop: S,
@@ -1741,7 +1730,7 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
     ))]
     let quantizer = crate::quantize::ExoquantQuantizer::new();
 
-    encode_gif_with_quantizer(frames, width, height, config, limits, stop, quantizer)
+    encode_gif_with_quantizer(frames, config, limits, stop, quantizer)
 }
 
 /// Encode frames using a custom quantizer.
@@ -1758,8 +1747,6 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
 ))]
 pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerTrait>(
     frames: Vec<FrameInput>,
-    width: u16,
-    height: u16,
     config: EncoderConfig,
     limits: Limits,
     stop: S,
@@ -1768,7 +1755,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
     use crate::quantize::QuantizeConfig;
 
     if frames.is_empty() {
-        return encode_gif(frames, width, height, config, limits, stop);
+        return encode_gif(frames, config, limits, stop);
     }
 
     stop.check().map_err(|_| at!(GifError::Cancelled))?;
@@ -1785,8 +1772,13 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
     let frame_refs: Vec<&[Rgba]> = frames.iter().map(|f| f.pixels.as_slice()).collect();
 
     // Build shared palette from all frames (with cancellation support)
-    let palette_bytes =
-        quantizer.build_shared_palette(&frame_refs, width, height, &quant_config, &stop)?;
+    let palette_bytes = quantizer.build_shared_palette(
+        &frame_refs,
+        config.width,
+        config.height,
+        &quant_config,
+        &stop,
+    )?;
 
     // Estimate output size
     let estimated_size = 1024 + frames.len() * 512;
@@ -1798,7 +1790,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
     })?;
 
     // Create encoder with global palette
-    let mut gif_encoder = gif::Encoder::new(output, width, height, &palette_bytes)
+    let mut gif_encoder = gif::Encoder::new(output, config.width, config.height, &palette_bytes)
         .map_err(|e| at!(GifError::from(e)))?;
 
     // Write repeat extension
@@ -1875,13 +1867,13 @@ mod tests {
         feature = "color_quant"
     ))]
     fn encode_single_frame() {
-        let config = EncoderConfig::new().repeat(Repeat::Once);
+        let config = EncoderConfig::new(2, 2).repeat(Repeat::Once);
         let limits = Limits::default();
 
         let frame = make_red_frame(2, 2, 10);
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         encoder.add_frame(frame).unwrap();
         encoder.finish().unwrap();
@@ -1899,11 +1891,11 @@ mod tests {
         feature = "color_quant"
     ))]
     fn encode_multiple_frames() {
-        let config = EncoderConfig::new().repeat(Repeat::Infinite);
+        let config = EncoderConfig::new(2, 2).repeat(Repeat::Infinite);
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         for _ in 0..3 {
             let frame = make_red_frame(2, 2, 10);
@@ -1917,11 +1909,11 @@ mod tests {
 
     #[test]
     fn encode_dimension_mismatch() {
-        let config = EncoderConfig::new();
+        let config = EncoderConfig::new(4, 4);
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         // Wrong dimensions
         let frame = make_red_frame(2, 2, 10);
@@ -1938,12 +1930,12 @@ mod tests {
         feature = "color_quant"
     ))]
     fn encode_convenience_function() {
-        let config = EncoderConfig::new();
+        let config = EncoderConfig::new(2, 2);
         let limits = Limits::default();
 
         let frames = vec![make_red_frame(2, 2, 10), make_red_frame(2, 2, 10)];
 
-        let output = encode_gif(frames, 2, 2, config, limits, Unstoppable).unwrap();
+        let output = encode_gif(frames, config, limits, Unstoppable).unwrap();
 
         assert!(output.len() > 10);
         assert_eq!(&output[0..6], b"GIF89a");
@@ -1957,11 +1949,11 @@ mod tests {
         feature = "color_quant"
     ))]
     fn encode_with_limits() {
-        let config = EncoderConfig::new();
+        let config = EncoderConfig::new(2, 2);
         let limits = Limits::default().max_frame_count(1);
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         // First frame OK
         encoder.add_frame(make_red_frame(2, 2, 10)).unwrap();
@@ -2077,7 +2069,7 @@ mod tests {
     ))]
     fn frame_diff_produces_smaller_output() {
         // Encode two identical red frames - second should be tiny due to diff
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(100, 100)
             .repeat(Repeat::Once)
             .use_transparency(true);
         let limits = Limits::default();
@@ -2088,15 +2080,8 @@ mod tests {
 
         let output_with_diff = {
             let mut output = Vec::new();
-            let mut encoder = Encoder::new(
-                &mut output,
-                100,
-                100,
-                config.clone(),
-                limits.clone(),
-                Unstoppable,
-            )
-            .unwrap();
+            let mut encoder =
+                Encoder::new(&mut output, config.clone(), limits.clone(), Unstoppable).unwrap();
             encoder.add_frame(frame1.clone()).unwrap();
             encoder.add_frame(frame2.clone()).unwrap();
             encoder.finish().unwrap();
@@ -2108,7 +2093,7 @@ mod tests {
         let output_without_diff = {
             let mut output = Vec::new();
             let mut encoder =
-                Encoder::new(&mut output, 100, 100, config_no_opt, limits, Unstoppable).unwrap();
+                Encoder::new(&mut output, config_no_opt, limits, Unstoppable).unwrap();
             encoder.add_frame(frame1).unwrap();
             encoder.add_frame(frame2).unwrap();
             encoder.finish().unwrap();
@@ -2157,18 +2142,14 @@ mod tests {
             vec![Rgba::rgb(0, 0, 255); size], // Blue
         );
 
-        let config = EncoderConfig::new().repeat(Repeat::Infinite).dithering(0.0); // No dithering for deterministic test
+        let config = EncoderConfig::new(width, height)
+            .repeat(Repeat::Infinite)
+            .dithering(0.0); // No dithering for deterministic test
         let limits = Limits::default();
 
-        let output = encode_gif_shared_palette(
-            vec![frame1, frame2, frame3],
-            4,
-            4,
-            config,
-            limits,
-            Unstoppable,
-        )
-        .unwrap();
+        let output =
+            encode_gif_shared_palette(vec![frame1, frame2, frame3], config, limits, Unstoppable)
+                .unwrap();
 
         // Should produce valid GIF
         assert!(output.len() > 100);
@@ -2197,8 +2178,10 @@ mod tests {
             })
             .collect();
 
-        let config_shared = EncoderConfig::new().repeat(Repeat::Once).dithering(0.0);
-        let config_perframe = EncoderConfig::new()
+        let config_shared = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(0.0);
+        let config_perframe = EncoderConfig::new(width, height)
             .repeat(Repeat::Once)
             .dithering(0.0)
             .shared_palette(false); // Explicitly per-frame
@@ -2206,19 +2189,12 @@ mod tests {
         let limits = Limits::default();
 
         // Encode with shared palette
-        let output_shared = encode_gif_shared_palette(
-            frames.clone(),
-            64,
-            64,
-            config_shared,
-            limits.clone(),
-            Unstoppable,
-        )
-        .unwrap();
+        let output_shared =
+            encode_gif_shared_palette(frames.clone(), config_shared, limits.clone(), Unstoppable)
+                .unwrap();
 
         // Encode with per-frame palettes (normal encode_gif)
-        let output_perframe =
-            encode_gif(frames, 64, 64, config_perframe, limits, Unstoppable).unwrap();
+        let output_perframe = encode_gif(frames, config_perframe, limits, Unstoppable).unwrap();
 
         // Shared palette should produce smaller output due to:
         // 1. No per-frame palette storage (uses global)
@@ -2254,21 +2230,18 @@ mod tests {
 
         let frame = FrameInput::new(width, height, 10, pixels);
 
-        let config_low = EncoderConfig::new().repeat(Repeat::Once).dithering(0.0);
-        let config_high = EncoderConfig::new().repeat(Repeat::Once).dithering(1.0);
+        let config_low = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(0.0);
+        let config_high = EncoderConfig::new(width, height)
+            .repeat(Repeat::Once)
+            .dithering(1.0);
 
         let limits = Limits::default();
 
-        let output_low = encode_gif(
-            vec![frame.clone()],
-            64,
-            64,
-            config_low,
-            limits.clone(),
-            Unstoppable,
-        )
-        .unwrap();
-        let output_high = encode_gif(vec![frame], 64, 64, config_high, limits, Unstoppable).unwrap();
+        let output_low =
+            encode_gif(vec![frame.clone()], config_low, limits.clone(), Unstoppable).unwrap();
+        let output_high = encode_gif(vec![frame], config_high, limits, Unstoppable).unwrap();
 
         // Low dithering should produce smaller output (less noise = better LZW)
         assert!(
@@ -2287,7 +2260,7 @@ mod tests {
     ))]
     #[test]
     fn for_round_trip_config() {
-        let config = EncoderConfig::new().for_round_trip();
+        let config = EncoderConfig::new(100, 100).for_round_trip();
 
         // Should have zero dithering and shared palette enabled
         assert_eq!(config.dithering, 0.0);
@@ -2303,7 +2276,7 @@ mod tests {
     #[test]
     fn buffered_streaming_shared_palette() {
         // Test that streaming encoder buffers frames and builds shared palette
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(4, 4)
             .repeat(Repeat::Infinite)
             .shared_palette(true)
             .max_buffer_frames(3); // Buffer up to 3 frames
@@ -2311,7 +2284,7 @@ mod tests {
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         // Add 5 frames - should buffer first 3, then flush and encode
         for i in 0..5 {
@@ -2337,7 +2310,7 @@ mod tests {
     #[test]
     fn buffered_streaming_flushes_on_finish() {
         // Test that finish() flushes remaining buffered frames
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(4, 4)
             .repeat(Repeat::Once)
             .shared_palette(true)
             .max_buffer_frames(10); // Large buffer - won't hit limit
@@ -2345,7 +2318,7 @@ mod tests {
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         // Add only 2 frames - less than buffer limit
         for _ in 0..2 {
@@ -2370,7 +2343,7 @@ mod tests {
     #[test]
     fn buffered_streaming_memory_limit() {
         // Test that buffer flushes when memory limit is reached
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(4, 4)
             .repeat(Repeat::Once)
             .shared_palette(true)
             .max_buffer_frames(1000) // High frame limit
@@ -2379,7 +2352,7 @@ mod tests {
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         // Add 5 frames - should trigger memory limit flush
         for _ in 0..5 {
@@ -2417,11 +2390,11 @@ mod tests {
         // Create frame with explicit palette (pass-through mode)
         let frame = FrameInput::with_palette(2, 2, 10, pixels, palette);
 
-        let config = EncoderConfig::new().repeat(Repeat::Once);
+        let config = EncoderConfig::new(2, 2).repeat(Repeat::Once);
         let limits = Limits::default();
 
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output, 2, 2, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
         encoder.add_frame(frame).unwrap();
         encoder.finish().unwrap();
 
@@ -2461,12 +2434,12 @@ mod tests {
         ];
 
         // Encode with hybrid mode (threshold = 5.0 to force fallback for blue)
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(w, h)
             .shared_palette(true)
             .palette_error_threshold(Some(5.0));
         let mut output = Vec::new();
         let limits = crate::limits::Limits::none();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
@@ -2516,12 +2489,12 @@ mod tests {
         ];
 
         // No threshold — always shared, even if inaccurate
-        let config = EncoderConfig::new()
+        let config = EncoderConfig::new(w, h)
             .shared_palette(true)
             .palette_error_threshold(None);
         let mut output = Vec::new();
         let limits = crate::limits::Limits::none();
-        let mut encoder = Encoder::new(&mut output, 4, 4, config, limits, Unstoppable).unwrap();
+        let mut encoder = Encoder::new(&mut output, config, limits, Unstoppable).unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
@@ -2554,6 +2527,23 @@ mod tests {
 
         // Edge case: zero dimensions
         assert_eq!(super::default_buffer_frames(0, 100), 32);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_config_uses_dimension_aware_buffer() {
+        // Small GIF should get more buffer frames
+        let config_small = EncoderConfig::new(100, 100);
+        assert_eq!(config_small.max_buffer_frames, 32);
+
+        // Large video should get fewer buffer frames
+        let config_large = EncoderConfig::new(1920, 1080);
+        assert_eq!(config_large.max_buffer_frames, 4);
     }
 
     #[cfg(any(

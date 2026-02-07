@@ -169,7 +169,7 @@ pub use encode::{encode_gif, Encoder, EncoderConfig, PaletteStrategy};
     )
 ))]
 pub use encode::{encode_gif_shared_palette, encode_gif_with_quantizer};
-pub use error::{GifError, Result};
+pub use error::{DecodeError, EncodeError, GifError, Result};
 pub use limits::Limits;
 #[cfg(all(feature = "std", feature = "color_quant"))]
 pub use quantize::ColorQuantQuantizer;

@@ -65,7 +65,7 @@ fn main() {
         // Shared only (no fallback)
         let mut out_shared = Vec::new();
         {
-            let config = EncoderConfig::new(w, h)
+            let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true)
                 .palette_error_threshold(None); // Disable fallback
@@ -80,7 +80,7 @@ fn main() {
         // Hybrid mode (with fallback at threshold=15)
         let mut out_hybrid = Vec::new();
         {
-            let config = EncoderConfig::new(w, h)
+            let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true)
                 .palette_error_threshold(Some(15.0));
@@ -95,7 +95,7 @@ fn main() {
         // Per-frame only
         let mut out_perframe = Vec::new();
         {
-            let config = EncoderConfig::new(w, h)
+            let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(false);
             let mut enc =

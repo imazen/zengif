@@ -173,7 +173,14 @@ fn corpus_round_trip_animation_gifs() {
 
         // Re-encode
         let config = EncoderConfig::new(metadata.width, metadata.height).repeat(metadata.repeat);
-        let encoded = match encode_gif(frame_inputs, config, limits.clone(), Unstoppable) {
+        let encoded = match encode_gif(
+            frame_inputs,
+            metadata.width,
+            metadata.height,
+            config,
+            limits.clone(),
+            Unstoppable,
+        ) {
             Ok(enc) => enc,
             Err(e) => {
                 eprintln!("Skipping {} (encode failed): {:?}", filename, e);

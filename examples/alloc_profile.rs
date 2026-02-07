@@ -245,7 +245,15 @@ fn profile_decode(
     ))]
     let gif_data = {
         let config = EncoderConfig::new(width as u16, height as u16);
-        zengif::encode_gif(frames, config, Limits::default(), Unstoppable).unwrap()
+        zengif::encode_gif(
+            frames,
+            width,
+            height,
+            config,
+            Limits::default(),
+            Unstoppable,
+        )
+        .unwrap()
     };
 
     #[cfg(not(any(

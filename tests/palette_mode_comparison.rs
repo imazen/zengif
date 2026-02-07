@@ -50,7 +50,7 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
     let start = Instant::now();
     let mut output_shared = Vec::new();
     {
-        let config = EncoderConfig::new(width, height)
+        let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
         let mut encoder =
@@ -66,7 +66,7 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
     let start = Instant::now();
     let mut output_perframe = Vec::new();
     {
-        let config = EncoderConfig::new(width, height)
+        let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
         let mut encoder =

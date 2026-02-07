@@ -558,3 +558,13 @@ This maintains the memory tracking invariants while handling variable-size frame
 4. All prioritized TODOs (P0-P5) are now complete
 5. Future enhancements: temporal dithering, frame-to-frame palette consistency
 6. Comment extraction blocked by gif crate limitation (won't fix)
+
+## API Convergence TODOs
+
+See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec comparison.
+
+- [ ] Move dimensions out of `EncoderConfig` into `Encoder::new()` or first frame — config should be reusable across sizes
+- [ ] Rename `GifError` → `EncodeError`/`DecodeError` (or keep format-specific but add type aliases)
+- [x] Dimension types: keep `u16` — GIF format limit is 65535×65535, so `u16` gives compile-time enforcement
+- [ ] Standardize output method names: `finish()` already correct, add `finish_into()`/`finish_to()` variants
+- [ ] Already good: `S: Stop` generic, `At<>` error wrapping, `Limits` struct — these are the reference patterns

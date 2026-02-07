@@ -34,8 +34,16 @@ fn round_trip_single_frame() {
     let frame = solid_frame(width, height, Rgba::rgb(255, 0, 0), 10);
 
     // Encode
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Once);
-    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new().repeat(Repeat::Once);
+    let encoded = encode_gif(
+        vec![frame],
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode
     let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -68,8 +76,16 @@ fn round_trip_multiple_frames() {
     ];
 
     // Encode
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
+    let encoded = encode_gif(
+        frames_in,
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode
     let (metadata, frames_out, _stats) =
@@ -100,8 +116,16 @@ fn round_trip_with_transparency() {
     let frame = FrameInput::new(width, height, 10, pixels);
 
     // Encode
-    let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new();
+    let encoded = encode_gif(
+        vec![frame],
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode
     let (_, frames, _) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -130,8 +154,16 @@ fn round_trip_checkerboard() {
     );
 
     // Encode
-    let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new();
+    let encoded = encode_gif(
+        vec![frame],
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode
     let (_, frames, _) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -147,8 +179,16 @@ fn round_trip_preserves_metadata() {
     let frame = solid_frame(width, height, Rgba::rgb(128, 128, 128), 50);
 
     // Encode with Infinite repeat
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
-    let encoded = encode_gif(vec![frame], config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
+    let encoded = encode_gif(
+        vec![frame],
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode
     let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -169,8 +209,16 @@ fn memory_tracking_during_round_trip() {
         .collect();
 
     // Encode
-    let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new();
+    let encoded = encode_gif(
+        frames_in,
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Decode with stats tracking
     let (_, frames, stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -192,8 +240,16 @@ fn streaming_decode_matches_batch() {
     ];
 
     // Encode
-    let config = EncoderConfig::new(width, height);
-    let encoded = encode_gif(frames_in, config, Limits::default(), Unstoppable).unwrap();
+    let config = EncoderConfig::new();
+    let encoded = encode_gif(
+        frames_in,
+        width,
+        height,
+        config,
+        Limits::default(),
+        Unstoppable,
+    )
+    .unwrap();
 
     // Batch decode
     let (_, batch_frames, _stats1) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
@@ -257,9 +313,11 @@ fn round_trip_vflip_with_palette_passthrough() {
         .collect();
 
     // Step 1: Encode original
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
     let encoded1 = encode_gif(
         original_frames,
+        width,
+        height,
         config.clone(),
         Limits::default(),
         Unstoppable,
@@ -304,9 +362,11 @@ fn round_trip_vflip_with_palette_passthrough() {
         })
         .collect();
 
-    let config2 = EncoderConfig::new(metadata1.width, metadata1.height).repeat(metadata1.repeat);
+    let config2 = EncoderConfig::new().repeat(metadata1.repeat);
     let encoded2 = encode_gif(
         flipped_frames,
+        width,
+        height,
         config2.clone(),
         Limits::default(),
         Unstoppable,
@@ -341,8 +401,15 @@ fn round_trip_vflip_with_palette_passthrough() {
         })
         .collect();
 
-    let encoded3 = encode_gif(reflipped_frames, config2, Limits::default(), Unstoppable)
-        .expect("Re-flipped encode failed");
+    let encoded3 = encode_gif(
+        reflipped_frames,
+        width,
+        height,
+        config2,
+        Limits::default(),
+        Unstoppable,
+    )
+    .expect("Re-flipped encode failed");
 
     // Step 6: Decode final
 
