@@ -4,9 +4,15 @@ use crate::{
     types::{FrameInput, Metadata, Repeat, Rgba},
     GifError, Limits, Result, Stats,
 };
-use super::config::default_buffer_frames;
 use super::{EncodeRequest, EncoderConfig};
 use super::palette::{compute_frame_diff_pooled, ScratchBuffer};
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+use super::config::default_buffer_frames;
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
