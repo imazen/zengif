@@ -566,5 +566,8 @@ See `/home/lilith/work/zendiff/API_COMPARISON.md` for full cross-codec compariso
 - [ ] Move dimensions out of `EncoderConfig` into `Encoder::new()` or first frame — config should be reusable across sizes
 - [ ] Rename `GifError` → `EncodeError`/`DecodeError` (or keep format-specific but add type aliases)
 - [x] Dimension types: keep `u16` — GIF format limit is 65535×65535, so `u16` gives compile-time enforcement
-- [ ] Standardize output method names: `finish()` already correct, add `finish_into()`/`finish_to()` variants
-- [ ] Already good: `S: Stop` generic, `At<>` error wrapping, `Limits` struct — these are the reference patterns
+- [ ] Streaming uses `finish()`/`finish_into()`/`finish_to()` (already correct); add one-shot `encode()` convenience
+- [ ] `finish_to()`/`encode_to()` std-only (IO abstraction, not file IO)
+- [ ] `Limits` should be optional (not required to encode), add `max_pixels: u64` field
+- [ ] Cancellation: switch from `S: Stop` generic to `&dyn Stop` (less type pollution, negligible vtable cost)
+- [x] Already good: `At<>` error wrapping, `Limits` struct concept

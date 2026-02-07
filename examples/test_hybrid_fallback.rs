@@ -70,7 +70,7 @@ fn main() {
                 .shared_palette(true)
                 .palette_error_threshold(None); // Disable fallback
             let mut enc =
-                Encoder::new(&mut out_shared, config, Limits::none(), Unstoppable).unwrap();
+                Encoder::new(&mut out_shared, 4, 4, config, Limits::none(), Unstoppable).unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
@@ -85,7 +85,7 @@ fn main() {
                 .shared_palette(true)
                 .palette_error_threshold(Some(15.0));
             let mut enc =
-                Encoder::new(&mut out_hybrid, config, Limits::none(), Unstoppable).unwrap();
+                Encoder::new(&mut out_hybrid, 4, 4, config, Limits::none(), Unstoppable).unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }
@@ -99,7 +99,7 @@ fn main() {
                 .repeat(Repeat::Infinite)
                 .shared_palette(false);
             let mut enc =
-                Encoder::new(&mut out_perframe, config, Limits::none(), Unstoppable).unwrap();
+                Encoder::new(&mut out_perframe, 4, 4, config, Limits::none(), Unstoppable).unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }

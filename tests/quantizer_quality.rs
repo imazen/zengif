@@ -137,7 +137,7 @@ fn test_quantizer_on_png(
     let limits = Limits::default();
 
     // Create encoder config with specific backend
-    let config = zengif::EncoderConfig::new(width as u16, height as u16).quantizer_backend(backend);
+    let config = zengif::EncoderConfig::new().quantizer_backend(backend);
 
     // Encode to GIF with timing
     let mut output = Vec::new();
@@ -145,8 +145,8 @@ fn test_quantizer_on_png(
 
     let mut encoder = match zengif::Encoder::new(
         &mut output,
-        width,
-        height,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
         config,
         limits.clone(),
         Unstoppable,
@@ -700,15 +700,15 @@ mod quality_tests {
             let limits = Limits::default();
 
             // Create encoder with specific dithering
-            let config = zengif::EncoderConfig::new(width as u16, height as u16)
+            let config = zengif::EncoderConfig::new()
                 .quantizer_backend(QuantizerBackend::Quantizr)
                 .dithering(dither);
 
             let mut output = Vec::new();
             let mut encoder = zengif::Encoder::new(
                 &mut output,
-                width,
-                height,
+                width.try_into().unwrap(),
+                height.try_into().unwrap(),
                 config,
                 limits.clone(),
                 Unstoppable,

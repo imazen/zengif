@@ -53,8 +53,15 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true);
-        let mut encoder =
-            Encoder::new(&mut output_shared, config, Limits::none(), Unstoppable).ok()?;
+        let mut encoder = Encoder::new(
+            &mut output_shared,
+            width,
+            height,
+            config,
+            Limits::none(),
+            Unstoppable,
+        )
+        .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
@@ -69,8 +76,15 @@ fn test_gif(path: &Path) -> Option<PaletteTestResult> {
         let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(false);
-        let mut encoder =
-            Encoder::new(&mut output_perframe, config, Limits::none(), Unstoppable).ok()?;
+        let mut encoder = Encoder::new(
+            &mut output_perframe,
+            width,
+            height,
+            config,
+            Limits::none(),
+            Unstoppable,
+        )
+        .ok()?;
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }

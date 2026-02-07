@@ -70,6 +70,8 @@ fn decode_can_be_cancelled_between_frames() {
 #[test]
 fn encode_with_pre_cancelled_stopper() {
     let config = EncoderConfig::new();
+    let width = 2u16;
+    let height = 2u16;
     let limits = Limits::default();
 
     // Pre-cancel the stopper
@@ -95,6 +97,8 @@ fn encode_with_pre_cancelled_stopper() {
 ))]
 fn encode_can_be_cancelled_between_frames() {
     let config = EncoderConfig::new();
+    let width = 2u16;
+    let height = 2u16;
     let limits = Limits::default();
 
     let stop = Stopper::new();

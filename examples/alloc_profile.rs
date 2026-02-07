@@ -244,11 +244,11 @@ fn profile_decode(
         feature = "exoquant-deprecated"
     ))]
     let gif_data = {
-        let config = EncoderConfig::new(width as u16, height as u16);
+        let config = EncoderConfig::new();
         zengif::encode_gif(
             frames,
-            width,
-            height,
+            width.try_into().unwrap(),
+            height.try_into().unwrap(),
             config,
             Limits::default(),
             Unstoppable,
@@ -325,13 +325,15 @@ fn profile_encode_with_quantizer<Q: zengif::QuantizerTrait>(
         })
         .collect();
 
-    let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
+    let config = EncoderConfig::new().dithering(0.5);
 
     // Profile encode
     let start = Instant::now();
 
     let output = zengif::encode_gif_with_quantizer(
         frames,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
         config,
         Limits::default(),
         Unstoppable,

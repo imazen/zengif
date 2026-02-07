@@ -81,8 +81,15 @@ fn test_hybrid_palette_quality() {
                 } else if shared {
                     config = config.palette_error_threshold(None); // Disable fallback
                 }
-                let mut encoder =
-                    Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+                let mut encoder = Encoder::new(
+                    &mut output,
+                    width,
+                    height,
+                    config,
+                    Limits::none(),
+                    Unstoppable,
+                )
+                .unwrap();
                 for frame in &frame_inputs {
                     encoder.add_frame(frame.clone()).unwrap();
                 }

@@ -487,6 +487,7 @@ fn default_buffer_frames(width: u16, height: u16) -> usize {
 impl EncoderConfig {
     /// Create a new encoder configuration.
     #[allow(deprecated)] // quantizer_backend is deprecated
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             repeat: Repeat::Infinite,
@@ -1624,7 +1625,7 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
     /// # use enough::Unstoppable;
     /// let mut buf = Vec::new();
     /// let config = EncoderConfig::new();
-    /// let encoder = Encoder::new(Vec::new(), config, Limits::default(), Unstoppable)?;
+    /// let encoder = Encoder::new(Vec::new(), 100, 100, config, Limits::default(), Unstoppable)?;
     /// // ... add frames ...
     /// encoder.finish_into(&mut buf)?;
     /// # Ok::<(), whereat::At<GifError>>(())
@@ -1634,35 +1635,7 @@ impl<S: Stop> Encoder<Vec<u8>, S> {
         buf.extend_from_slice(&encoded);
         Ok(())
     }
-
-    /// Finish encoding and write the output directly to a file.
-    ///
-    /// This is a convenience method that handles file creation and error handling.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use zengif::*;
-    /// # use enough::Unstoppable;
-    /// let config = EncoderConfig::new();
-    /// let encoder = Encoder::new(Vec::new(), config, Limits::default(), Unstoppable)?;
-    /// // ... add frames ...
-    /// encoder.finish_to("output.gif")?;
-    /// # Ok::<(), whereat::At<GifError>>(())
-    /// ```
-    #[cfg(feature = "std")]
-    pub fn finish_to(self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        use std::fs::File;
-        use std::io::Write as _;
-
-        let encoded = self.finish()?;
-        let mut file = File::create(path).map_err(|e| at!(GifError::from(e)))?;
-        file.write_all(&encoded)
-            .map_err(|e| at!(GifError::from(e)))?;
-        Ok(())
-    }
 }
-
 /// Convenience function to encode frames to a byte vector.
 ///
 /// Takes ownership of the frames to avoid cloning pixel buffers.
@@ -2268,7 +2241,8 @@ mod tests {
             Unstoppable,
         )
         .unwrap();
-        let output_high = encode_gif(vec![frame], 64, 64, config_high, limits, Unstoppable).unwrap();
+        let output_high =
+            encode_gif(vec![frame], 64, 64, config_high, limits, Unstoppable).unwrap();
 
         // Low dithering should produce smaller output (less noise = better LZW)
         assert!(

@@ -56,7 +56,8 @@ fn test_gif(path: &Path, thresholds: &[f32]) {
             } else {
                 config = config.palette_error_threshold(None);
             }
-            let mut enc = Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+            let mut enc =
+                Encoder::new(&mut output, 4, 4, config, Limits::none(), Unstoppable).unwrap();
             for frame in &inputs {
                 enc.add_frame(frame.clone()).unwrap();
             }

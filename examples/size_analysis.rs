@@ -12,11 +12,11 @@ fn encode_with_threshold(orig_data: &[u8], threshold: Option<f32>) -> (usize, St
 
     let mut output = Vec::new();
     {
-        let config = EncoderConfig::new(meta.width, meta.height)
+        let config = EncoderConfig::new()
             .repeat(Repeat::Infinite)
             .shared_palette(true)
             .palette_error_threshold(threshold);
-        let mut enc = Encoder::new(&mut output, config, Limits::none(), Unstoppable).unwrap();
+        let mut enc = Encoder::new(&mut output, 4, 4, config, Limits::none(), Unstoppable).unwrap();
         for inp in &inputs {
             enc.add_frame(inp.clone()).unwrap();
         }

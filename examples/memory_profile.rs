@@ -226,10 +226,12 @@ fn measure_encode_imagequant(
     ALLOCATOR.reset();
 
     let start = Instant::now();
-    let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
+    let config = EncoderConfig::new().dithering(0.5);
     let quantizer = ImagequantQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
         frames,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
         config,
         Limits::default(),
         Unstoppable,
@@ -273,10 +275,12 @@ fn measure_encode_quantizr(
     ALLOCATOR.reset();
 
     let start = Instant::now();
-    let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
+    let config = EncoderConfig::new().dithering(0.5);
     let quantizer = QuantizrQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
         frames,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
         config,
         Limits::default(),
         Unstoppable,
@@ -320,10 +324,12 @@ fn measure_encode_color_quant(
     ALLOCATOR.reset();
 
     let start = Instant::now();
-    let config = EncoderConfig::new(width as u16, height as u16).dithering(0.5);
+    let config = EncoderConfig::new().dithering(0.5);
     let quantizer = ColorQuantQuantizer::new();
     let _output = zengif::encode_gif_with_quantizer(
         frames,
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
         config,
         Limits::default(),
         Unstoppable,
@@ -391,10 +397,12 @@ fn main() {
 
         #[cfg(feature = "imagequant")]
         {
-            let config = EncoderConfig::new(width as u16, height as u16);
+            let config = EncoderConfig::new();
             let quantizer = ImagequantQuantizer::new();
             let gif_data = zengif::encode_gif_with_quantizer(
                 frames.clone(),
+                width.try_into().unwrap(),
+                height.try_into().unwrap(),
                 config,
                 Limits::default(),
                 Unstoppable,

@@ -172,7 +172,7 @@ fn corpus_round_trip_animation_gifs() {
             .collect();
 
         // Re-encode
-        let config = EncoderConfig::new(metadata.width, metadata.height).repeat(metadata.repeat);
+        let config = EncoderConfig::new().repeat(metadata.repeat);
         let encoded = match encode_gif(
             frame_inputs,
             metadata.width,
