@@ -1,7 +1,9 @@
 //! Analyze RMSE distribution across frames - matches encoder's compute_remap_rmse.
 
 use std::fs;
-use zengif::{decode_gif, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{
+    decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+};
 
 fn compute_frame_rmse(orig: &[Rgba], enc: &[Rgba]) -> f64 {
     if orig.len() != enc.len() || orig.is_empty() {
@@ -56,19 +58,22 @@ fn main() {
             .map(|f| FrameInput::new(meta.width, meta.height, 10, f.pixels.clone()))
             .collect();
 
-        let mut output = Vec::new();
-        {
+        let output = {
             let config = EncoderConfig::new()
                 .repeat(Repeat::Infinite)
                 .shared_palette(true)
                 .palette_error_threshold(None);
-            let mut enc =
-                EncodeRequest::new(&config, 4, 4, config, Limits::none(), Unstoppable).unwrap();
+            let limits = Limits::none();
+            let mut enc = EncodeRequest::new(&config, 4, 4)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             for inp in &inputs {
                 enc.add_frame(inp.clone()).unwrap();
             }
-            enc.finish().unwrap();
-        }
+            enc.finish().unwrap()
+        };
 
         let (_, enc_frames, _) = decode_gif(&output, Limits::none(), Unstoppable).unwrap();
 
