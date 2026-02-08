@@ -81,4 +81,4 @@ name = "codec"
 harness = false
 
 [patch.crates-io]
-imagequant = { path = "deps/imagequant" }
+imagequant = { git = "https://github.com/imazen/libimagequant", branch = "wasm-simd128" }
