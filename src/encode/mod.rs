@@ -33,6 +33,12 @@
 //! **Note**: Temporal dithering (spreading error across frames) is not yet
 //! implemented. This is an advanced feature that would require explicit opt-in.
 
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 use std::borrow::Cow;
 
 use enough::Stop;
@@ -40,7 +46,14 @@ use whereat::at;
 
 use crate::error::{GifError, Result};
 use crate::limits::Limits;
-use crate::types::{FrameInput, Repeat, Rgba};
+use crate::types::FrameInput;
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+use crate::types::{Repeat, Rgba};
 
 // Module declarations
 mod config;
@@ -265,6 +278,12 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
     use super::config::default_buffer_frames;
     use super::palette::compute_frame_diff;
     #[cfg(any(
