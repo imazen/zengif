@@ -21,9 +21,18 @@ use std::time::Instant;
 
 use enough::Unstoppable;
 use zengif::{
-    heuristics::{estimate_decode, estimate_encode, QuantizerType},
-    Decoder, EncoderConfig, FrameInput, Limits, Rgba,
+    heuristics::estimate_decode,
+    Decoder, FrameInput, Limits, Rgba,
 };
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant",
+    feature = "exoquant-deprecated"
+))]
+use zengif::EncoderConfig;
+#[cfg(any(feature = "imagequant", feature = "quantizr"))]
+use zengif::heuristics::{estimate_encode, QuantizerType};
 
 #[cfg(feature = "color_quant")]
 use zengif::ColorQuantQuantizer;
@@ -230,6 +239,7 @@ fn profile_decode(
     let pixels = (width as u64) * (height as u64) * (frame_count as u64);
 
     // First, encode a GIF to decode
+    #[allow(unused_variables)]
     let frames: Vec<FrameInput> = (0..frame_count)
         .map(|i| {
             let px = content.generate(width, height, i);

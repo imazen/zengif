@@ -13,7 +13,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use enough::Unstoppable;
-use zengif::{Decoder, EncoderConfig, FrameInput, Limits, Rgba};
+use zengif::{Decoder, FrameInput, Limits, Rgba};
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
+use zengif::EncoderConfig;
 
 #[cfg(feature = "color_quant")]
 use zengif::ColorQuantQuantizer;
@@ -384,10 +390,12 @@ fn main() {
     ];
 
     // First, generate test frames and encode to GIF for decode testing
+    #[allow(unused_mut)]
     let mut test_gifs: Vec<((u32, u32, u32), Vec<u8>)> = Vec::new();
 
     println!("Preparing test data...");
     for &(width, height, frame_count) in &test_configs {
+        #[allow(unused_variables)]
         let frames: Vec<FrameInput> = (0..frame_count)
             .map(|i| {
                 let px = generate_photo_like(width, height, i);
