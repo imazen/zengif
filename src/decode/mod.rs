@@ -114,7 +114,7 @@ type ChainedReader<R, S> =
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
-pub struct Decoder<R: Read, S: Stop + Clone> {
+pub struct Decoder<R: Read, S: Stop + Copy> {
     /// Underlying gif crate reader. Header bytes are chained back after pre-validation,
     /// and Stop is checked on every read for cancellation during LZW decompression.
     reader: gif::Decoder<ChainedReader<R, S>>,
@@ -152,7 +152,7 @@ pub struct Decoder<R: Read, S: Stop + Clone> {
 
 // Stats is always owned by the decoder - no unsafe raw pointers.
 
-impl<R: Read, S: Stop + Clone> Decoder<R, S> {
+impl<R: Read, S: Stop + Copy> Decoder<R, S> {
     /// Create a new decoder from a reader.
     ///
     /// The decoder owns its memory statistics internally. Use `stats()`
@@ -161,7 +161,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
     /// # Arguments
     /// * `reader` - The GIF data source
     /// * `limits` - Size and memory limits
-    /// * `stop` - Cancellation checker (must be Clone; checked on every read)
+    /// * `stop` - Cancellation checker (must be Copy; checked on every read)
     pub fn new(reader: R, limits: Limits, stop: S) -> Result<Self> {
         let stats = Stats::new();
 
@@ -169,7 +169,7 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
-        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
+        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
@@ -532,11 +532,11 @@ impl<R: Read, S: Stop + Clone> Decoder<R, S> {
 }
 
 /// Iterator adapter for decoder frames.
-pub struct FrameIterator<R: Read, S: Stop + Clone> {
+pub struct FrameIterator<R: Read, S: Stop + Copy> {
     decoder: Decoder<R, S>,
 }
 
-impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
+impl<R: Read, S: Stop + Copy> Iterator for FrameIterator<R, S> {
     type Item = Result<ComposedFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -555,7 +555,7 @@ impl<R: Read, S: Stop + Clone> Iterator for FrameIterator<R, S> {
 /// Convenience function to decode a GIF from bytes.
 ///
 /// Returns metadata, frames, and memory usage statistics.
-pub fn decode_gif<S: Stop + Clone>(
+pub fn decode_gif<S: Stop + Copy>(
     data: &[u8],
     limits: Limits,
     stop: S,

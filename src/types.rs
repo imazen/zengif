@@ -90,7 +90,7 @@ impl Rgba {
 }
 
 // RGB crate interop
-#[cfg(feature = "rgb-interop")]
+
 impl From<rgb::RGBA8> for Rgba {
     #[inline]
     fn from(c: rgb::RGBA8) -> Self {
@@ -103,7 +103,7 @@ impl From<rgb::RGBA8> for Rgba {
     }
 }
 
-#[cfg(feature = "rgb-interop")]
+
 impl From<Rgba> for rgb::RGBA8 {
     #[inline]
     fn from(c: Rgba) -> Self {
@@ -116,7 +116,7 @@ impl From<Rgba> for rgb::RGBA8 {
     }
 }
 
-#[cfg(feature = "rgb-interop")]
+
 impl From<rgb::RGB8> for Rgba {
     #[inline]
     fn from(c: rgb::RGB8) -> Self {
@@ -129,7 +129,7 @@ impl From<rgb::RGB8> for Rgba {
     }
 }
 
-#[cfg(feature = "rgb-interop")]
+
 impl From<Rgba> for rgb::RGB8 {
     /// Note: Alpha channel is discarded.
     #[inline]

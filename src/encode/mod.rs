@@ -117,7 +117,7 @@ pub fn encode_gif<S: Stop>(
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
-pub fn encode_gif_shared_palette<S: Stop + Clone>(
+pub fn encode_gif_shared_palette<S: Stop + Copy>(
     frames: Vec<FrameInput>,
     width: u16,
     height: u16,
@@ -162,7 +162,7 @@ pub fn encode_gif_shared_palette<S: Stop + Clone>(
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
-pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerTrait>(
+pub fn encode_gif_with_quantizer<S: Stop + Copy, Q: crate::quantize::QuantizerTrait>(
     frames: Vec<FrameInput>,
     width: u16,
     height: u16,
@@ -264,7 +264,6 @@ pub fn encode_gif_with_quantizer<S: Stop + Clone, Q: crate::quantize::QuantizerT
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
     use super::config::default_buffer_frames;
@@ -511,8 +510,7 @@ mod tests {
                 .unwrap();
             encoder.add_frame(frame1.clone()).unwrap();
             encoder.add_frame(frame2.clone()).unwrap();
-            let output = encoder.finish().unwrap();
-            output
+            encoder.finish().unwrap()
         };
 
         // Encode without transparency optimization
@@ -523,8 +521,7 @@ mod tests {
                 EncodeRequest::new(&config_no_opt, 100, 100).limits(&limits).stop(&Unstoppable).build().unwrap();
             encoder.add_frame(frame1).unwrap();
             encoder.add_frame(frame2).unwrap();
-            let output = encoder.finish().unwrap();
-            output
+            encoder.finish().unwrap()
         };
 
         // With diff optimization, output should be smaller

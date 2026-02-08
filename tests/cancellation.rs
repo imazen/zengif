@@ -36,7 +36,7 @@ fn decode_with_pre_cancelled_stopper() {
     stop.cancel();
 
     let cursor = std::io::Cursor::new(minimal_gif());
-    let result = Decoder::new(cursor, limits, stop);
+    let result = Decoder::new(cursor, limits, &stop);
 
     // Should fail with Cancelled
     match result {
@@ -55,7 +55,7 @@ fn decode_can_be_cancelled_between_frames() {
     let stop_clone = stop.clone();
 
     let cursor = std::io::Cursor::new(minimal_gif());
-    let mut decoder = Decoder::new(cursor, limits, stop).unwrap();
+    let mut decoder = Decoder::new(cursor, limits, &stop).unwrap();
 
     // Read first frame successfully
     let frame = decoder.next_frame().unwrap();

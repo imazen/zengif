@@ -10,7 +10,7 @@
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, EncodeRequest, Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
 
 struct QualityResult {
     name: String,

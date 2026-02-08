@@ -30,8 +30,7 @@ color_quant = ["dep:color_quant"]
 exoquant-deprecated = ["dep:exoquant"]
 
 # RGB/imgref ecosystem interop
-rgb-interop = ["rgb"]
-imgref-interop = ["imgref", "rgb-interop"]
+imgref-interop = ["imgref"]
 
 [dependencies]
 # Core GIF codec (no_std compatible with alloc)
@@ -53,7 +52,7 @@ exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
 
 # RGB/imgref ecosystem interop (optional)
-rgb = { version = "0.8", optional = true }
+rgb = "0.8"
 imgref = { version = "1.12", optional = true }
 
 [dev-dependencies]
