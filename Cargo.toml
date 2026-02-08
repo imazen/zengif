@@ -60,6 +60,7 @@ imgref = { version = "1.12", optional = true }
 # Testing
 almost-enough = "0.3"
 imgref = "1.12"
+codec-corpus = "1"
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

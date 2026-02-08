@@ -8,9 +8,6 @@ use std::fs;
 use std::path::Path;
 use zengif::{decode_gif, encode_gif, EncoderConfig, FrameInput, Limits};
 
-/// Path to external codec-corpus (optional, for extended testing)
-const EXTERNAL_CORPUS: &str = "/home/lilith/work/codec-corpus";
-
 /// Path to local corpus files (committed to repo)
 const LOCAL_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/codec-corpus");
 
@@ -28,15 +25,18 @@ fn local_corpus_files() -> Vec<std::path::PathBuf> {
 fn external_corpus_files() -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
 
+    let corpus = match codec_corpus::Corpus::new() {
+        Ok(c) => c,
+        Err(_) => return files,
+    };
+
     // image-rs test images
-    let image_rs_base = Path::new(EXTERNAL_CORPUS).join("image-rs/test-images/gif");
-    if image_rs_base.exists() {
+    if let Ok(image_rs_base) = corpus.get("image-rs/test-images/gif") {
         collect_gifs(&image_rs_base, &mut files);
     }
 
     // imageflow test inputs
-    let imageflow_base = Path::new(EXTERNAL_CORPUS).join("imageflow/test_inputs");
-    if imageflow_base.exists() {
+    if let Ok(imageflow_base) = corpus.get("imageflow/test_inputs") {
         collect_gifs(&imageflow_base, &mut files);
     }
 
