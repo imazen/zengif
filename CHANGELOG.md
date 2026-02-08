@@ -157,6 +157,7 @@ println!("Peak: {}", decoder.stats().peak());
 - Encode (pre-indexed): ~200 MB/s.
 - Encode (quantized): ~40 MB/s.
 
+[0.6.0]: https://github.com/imazen/zengif/releases/tag/v0.6.0
 [0.5.0]: https://github.com/imazen/zengif/releases/tag/v0.5.0
 [0.4.0]: https://github.com/imazen/zengif/releases/tag/v0.4.0
 [0.3.0]: https://github.com/imazen/zengif/releases/tag/v0.3.0
