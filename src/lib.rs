@@ -129,7 +129,7 @@
 //!
 //! Configure the quantizer using the `Quantizer` enum:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use zengif::{EncoderConfig, Quantizer};
 //!
 //! // Use imagequant (recommended) for best quality

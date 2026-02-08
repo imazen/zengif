@@ -1,7 +1,14 @@
 //! Tests for cancellation support via the enough crate.
 
 use almost_enough::{Stop, Stopper};
-use zengif::{Decoder, EncodeRequest, EncoderConfig, FrameInput, GifError, Limits, Rgba};
+use zengif::{Decoder, EncodeRequest, EncoderConfig, GifError, Limits};
+#[cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
+use zengif::{FrameInput, Rgba};
 
 /// Create a minimal valid GIF.
 fn minimal_gif() -> Vec<u8> {

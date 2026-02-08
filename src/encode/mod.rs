@@ -294,6 +294,7 @@ mod tests {
     ))]
     use super::palette::compute_remap_rmse;
     use super::*;
+    use crate::types::{Repeat, Rgba};
     use enough::Unstoppable;
 
     fn make_red_frame(width: u16, height: u16, delay: u16) -> FrameInput {

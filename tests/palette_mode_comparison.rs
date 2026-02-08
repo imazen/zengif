@@ -1,4 +1,10 @@
 //! Test shared vs per-frame palette on real GIFs
+#![cfg(any(
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 #![allow(dead_code)]
 
 use std::fs;
