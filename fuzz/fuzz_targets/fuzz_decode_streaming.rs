@@ -11,7 +11,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use std::io::Cursor;
-use zengif::{Decoder, Limits, Stats, Unstoppable};
+use zengif::{Decoder, Limits, Unstoppable};
 
 fuzz_target!(|data: &[u8]| {
     let limits = Limits::default()
@@ -22,11 +22,10 @@ fuzz_target!(|data: &[u8]| {
         .max_memory(10 * 1024 * 1024)
         .max_decompression_ratio(100.0);
 
-    let stats = Stats::new();
     let reader = Cursor::new(data);
 
     // Try to create decoder
-    let mut decoder = match Decoder::new(reader, limits, &stats, Unstoppable) {
+    let mut decoder = match Decoder::new(reader, limits, &Unstoppable) {
         Ok(d) => d,
         Err(_) => return, // Invalid header is fine
     };

@@ -47,7 +47,7 @@ fn main() {
         let name = path.file_stem().unwrap().to_string_lossy();
         let data = fs::read(&path).unwrap();
 
-        let (meta, orig_frames, _) = decode_gif(&data, Limits::none(), Unstoppable).unwrap();
+        let (meta, orig_frames, _) = decode_gif(&data, Limits::none(), &Unstoppable).unwrap();
         if orig_frames.is_empty() {
             continue;
         }
@@ -75,7 +75,7 @@ fn main() {
             enc.finish().unwrap()
         };
 
-        let (_, enc_frames, _) = decode_gif(&output, Limits::none(), Unstoppable).unwrap();
+        let (_, enc_frames, _) = decode_gif(&output, Limits::none(), &Unstoppable).unwrap();
 
         // Compute per-frame RMSE
         let mut rmses: Vec<f64> = Vec::new();

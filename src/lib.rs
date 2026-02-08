@@ -24,7 +24,7 @@
 //! let reader = std::io::Cursor::new(&data);
 //! let limits = Limits::default();
 //!
-//! let mut decoder = Decoder::new(reader, limits, Unstoppable)?;
+//! let mut decoder = Decoder::new(reader, limits, &Unstoppable)?;
 //!
 //! while let Some(frame) = decoder.next_frame()? {
 //!     // frame.pixels is composited RGBA
@@ -70,7 +70,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let data = std::fs::read("animation.gif")?;
 //! let reader = std::io::Cursor::new(&data);
-//! let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
+//! let mut decoder = Decoder::new(reader, Limits::default(), &Unstoppable)?;
 //!
 //! while let Some(frame) = decoder.next_frame()? {
 //!     // Check memory usage during decode

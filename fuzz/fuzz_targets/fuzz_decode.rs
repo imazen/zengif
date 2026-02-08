@@ -12,7 +12,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zengif::{decode_gif, Limits, Stats, Unstoppable};
+use zengif::{decode_gif, Limits, Unstoppable};
 
 fuzz_target!(|data: &[u8]| {
     // Use restrictive limits for fuzzing to catch issues quickly
@@ -24,10 +24,8 @@ fuzz_target!(|data: &[u8]| {
         .max_memory(10 * 1024 * 1024) // 10 MB
         .max_decompression_ratio(100.0); // Tighter ratio for fuzzing
 
-    let stats = Stats::new();
-
     // Try to decode - we expect most inputs to fail gracefully
-    let _ = decode_gif(data, limits, &stats, Unstoppable);
+    let _ = decode_gif(data, limits, &Unstoppable);
 
     // Note: Memory leak detection is tricky because:
     // - Stats tracks allocations but ComposedFrame doesn't dealloc via Stats

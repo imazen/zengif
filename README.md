@@ -25,7 +25,7 @@ fn main() -> zengif::Result<()> {
     let file = File::open("animation.gif")?;
     let reader = BufReader::new(file);
 
-    let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
+    let mut decoder = Decoder::new(reader, Limits::default(), &Unstoppable)?;
 
     println!("{}x{}, {} frames",
         decoder.metadata().width,

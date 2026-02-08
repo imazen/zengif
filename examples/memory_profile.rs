@@ -187,7 +187,7 @@ fn measure_decode(width: u32, height: u32, frame_count: u32, gif_data: &[u8]) ->
 
     let start = Instant::now();
     let cursor = std::io::Cursor::new(gif_data);
-    let mut decoder = Decoder::new(cursor, Limits::default(), Unstoppable).unwrap();
+    let mut decoder = Decoder::new(cursor, Limits::default(), &Unstoppable).unwrap();
     let _frames = decoder.decode_all().unwrap();
     let elapsed = start.elapsed();
 
@@ -234,7 +234,7 @@ fn measure_encode_imagequant(
         height.try_into().unwrap(),
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
         quantizer,
     )
     .unwrap();
@@ -283,7 +283,7 @@ fn measure_encode_quantizr(
         height.try_into().unwrap(),
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
         quantizer,
     )
     .unwrap();
@@ -332,7 +332,7 @@ fn measure_encode_color_quant(
         height.try_into().unwrap(),
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
         quantizer,
     )
     .unwrap();
@@ -405,7 +405,7 @@ fn main() {
                 height.try_into().unwrap(),
                 config,
                 Limits::default(),
-                Unstoppable,
+                &Unstoppable,
                 quantizer,
             )
             .unwrap();

@@ -31,14 +31,14 @@ use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, R
 /// - For adversarial input (high compression ratio), latency could be significant
 ///
 /// For truly responsive cancellation, the gif crate would need native Stop support.
-struct StopCheckingRead<R, S: Stop> {
+struct StopCheckingRead<'a, R> {
     inner: R,
     bytes_read: Arc<AtomicUsize>,
-    stop: S,
+    stop: &'a dyn Stop,
 }
 
-impl<R, S: Stop> StopCheckingRead<R, S> {
-    fn new(inner: R, stop: S) -> (Self, Arc<AtomicUsize>) {
+impl<'a, R> StopCheckingRead<'a, R> {
+    fn new(inner: R, stop: &'a dyn Stop) -> (Self, Arc<AtomicUsize>) {
         let bytes_read = Arc::new(AtomicUsize::new(0));
         (
             Self {
@@ -51,7 +51,7 @@ impl<R, S: Stop> StopCheckingRead<R, S> {
     }
 }
 
-impl<R: Read, S: Stop> Read for StopCheckingRead<R, S> {
+impl<R: Read> Read for StopCheckingRead<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Check for cancellation on every read
         if self.stop.check().is_err() {
@@ -107,17 +107,17 @@ fn pre_validate_header<R: Read>(
 }
 
 /// Reader type that chains the pre-read header bytes with the rest of the stream.
-type ChainedReader<R, S> =
-    std::io::Chain<std::io::Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<R, S>>;
+type ChainedReader<'a, R> =
+    std::io::Chain<std::io::Cursor<[u8; GIF_HEADER_SIZE]>, StopCheckingRead<'a, R>>;
 
 /// Streaming GIF decoder.
 ///
 /// Decodes a GIF file frame by frame, producing composited RGBA output
 /// with proper disposal method and transparency handling.
-pub struct Decoder<R: Read, S: Stop + Copy> {
+pub struct Decoder<'a, R: Read> {
     /// Underlying gif crate reader. Header bytes are chained back after pre-validation,
     /// and Stop is checked on every read for cancellation during LZW decompression.
-    reader: gif::Decoder<ChainedReader<R, S>>,
+    reader: gif::Decoder<ChainedReader<'a, R>>,
 
     /// Compositing screen.
     screen: Screen,
@@ -135,7 +135,7 @@ pub struct Decoder<R: Read, S: Stop + Copy> {
     stats: Stats,
 
     /// Cancellation checker.
-    stop: S,
+    stop: &'a dyn Stop,
 
     /// Whether we've finished reading all frames.
     finished: bool,
@@ -152,7 +152,7 @@ pub struct Decoder<R: Read, S: Stop + Copy> {
 
 // Stats is always owned by the decoder - no unsafe raw pointers.
 
-impl<R: Read, S: Stop + Copy> Decoder<R, S> {
+impl<'a, R: Read> Decoder<'a, R> {
     /// Create a new decoder from a reader.
     ///
     /// The decoder owns its memory statistics internally. Use `stats()`
@@ -161,8 +161,8 @@ impl<R: Read, S: Stop + Copy> Decoder<R, S> {
     /// # Arguments
     /// * `reader` - The GIF data source
     /// * `limits` - Size and memory limits
-    /// * `stop` - Cancellation checker (must be Copy; checked on every read)
-    pub fn new(reader: R, limits: Limits, stop: S) -> Result<Self> {
+    /// * `stop` - Cancellation checker (checked on every read)
+    pub fn new(reader: R, limits: Limits, stop: &'a dyn Stop) -> Result<Self> {
         let stats = Stats::new();
 
         // Check for cancellation
@@ -240,15 +240,6 @@ impl<R: Read, S: Stop + Copy> Decoder<R, S> {
             bytes_read,
             bytes_decompressed: 0,
         })
-    }
-
-    /// Deprecated: Use `new()` instead. This is an alias for backwards compatibility.
-    #[deprecated(
-        since = "0.4.0",
-        note = "Use new() instead - decoder always owns its stats now"
-    )]
-    pub fn with_owned_stats(reader: R, limits: Limits, stop: S) -> Result<Self> {
-        Self::new(reader, limits, stop)
     }
 
     /// Get the canvas width.
@@ -504,7 +495,7 @@ impl<R: Read, S: Stop + Copy> Decoder<R, S> {
     }
 
     /// Create an iterator over all frames.
-    pub fn frames(self) -> FrameIterator<R, S> {
+    pub fn frames(self) -> FrameIterator<'a, R> {
         FrameIterator { decoder: self }
     }
 
@@ -532,11 +523,11 @@ impl<R: Read, S: Stop + Copy> Decoder<R, S> {
 }
 
 /// Iterator adapter for decoder frames.
-pub struct FrameIterator<R: Read, S: Stop + Copy> {
-    decoder: Decoder<R, S>,
+pub struct FrameIterator<'a, R: Read> {
+    decoder: Decoder<'a, R>,
 }
 
-impl<R: Read, S: Stop + Copy> Iterator for FrameIterator<R, S> {
+impl<R: Read> Iterator for FrameIterator<'_, R> {
     type Item = Result<ComposedFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -555,10 +546,10 @@ impl<R: Read, S: Stop + Copy> Iterator for FrameIterator<R, S> {
 /// Convenience function to decode a GIF from bytes.
 ///
 /// Returns metadata, frames, and memory usage statistics.
-pub fn decode_gif<S: Stop + Copy>(
+pub fn decode_gif(
     data: &[u8],
     limits: Limits,
-    stop: S,
+    stop: &dyn Stop,
 ) -> Result<(Metadata, Vec<ComposedFrame>, Stats)> {
     let cursor = std::io::Cursor::new(data);
     let mut decoder = Decoder::new(cursor, limits, stop)?;
@@ -600,7 +591,7 @@ mod tests {
         let limits = Limits::default();
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
 
         assert_eq!(decoder.width(), 1);
         assert_eq!(decoder.height(), 1);
@@ -620,7 +611,7 @@ mod tests {
         let limits = Limits::default().max_dimensions(0, 0); // No images allowed
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let result = Decoder::new(cursor, limits, Unstoppable);
+        let result = Decoder::new(cursor, limits, &Unstoppable);
 
         assert!(result.is_err());
     }
@@ -630,7 +621,7 @@ mod tests {
         let limits = Limits::default();
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
+        let decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
 
         let frames: Vec<_> = decoder.frames().collect();
         assert_eq!(frames.len(), 1);
@@ -641,7 +632,7 @@ mod tests {
     fn decode_all() {
         let limits = Limits::default();
 
-        let (metadata, frames, _stats) = decode_gif(MINIMAL_GIF, limits, Unstoppable).unwrap();
+        let (metadata, frames, _stats) = decode_gif(MINIMAL_GIF, limits, &Unstoppable).unwrap();
 
         assert_eq!(metadata.width, 1);
         assert_eq!(metadata.height, 1);
@@ -655,7 +646,7 @@ mod tests {
         let limits = Limits::default().max_decompression_ratio(0.01);
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
 
         // Should fail due to decompression ratio exceeded
         let result = decoder.next_frame();
@@ -672,7 +663,7 @@ mod tests {
         let limits = Limits::default().max_decompression_ratio(1000.0);
 
         let cursor = Cursor::new(MINIMAL_GIF);
-        let mut decoder = Decoder::new(cursor, limits, Unstoppable).unwrap();
+        let mut decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
 
         // Should succeed
         let frame = decoder.next_frame().unwrap();

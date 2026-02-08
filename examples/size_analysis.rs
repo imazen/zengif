@@ -4,7 +4,7 @@ use std::fs;
 use zengif::{decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
 
 fn encode_with_threshold(orig_data: &[u8], threshold: Option<f32>) -> (usize, String) {
-    let (meta, orig_frames, _) = decode_gif(orig_data, Limits::none(), Unstoppable).unwrap();
+    let (meta, orig_frames, _) = decode_gif(orig_data, Limits::none(), &Unstoppable).unwrap();
     let inputs: Vec<_> = orig_frames
         .iter()
         .map(|f| FrameInput::new(meta.width, meta.height, 10, f.pixels.clone()))

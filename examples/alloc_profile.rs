@@ -251,7 +251,7 @@ fn profile_decode(
             height.try_into().unwrap(),
             config,
             Limits::default(),
-            Unstoppable,
+            &Unstoppable,
         )
         .unwrap()
     };
@@ -283,7 +283,7 @@ fn profile_decode(
     let start = Instant::now();
 
     let cursor = std::io::Cursor::new(&gif_data);
-    let mut decoder = Decoder::new(cursor, Limits::default(), Unstoppable).unwrap();
+    let mut decoder = Decoder::new(cursor, Limits::default(), &Unstoppable).unwrap();
     let decoded_frames = decoder.decode_all().unwrap();
 
     let elapsed = start.elapsed();
@@ -336,7 +336,7 @@ fn profile_encode_with_quantizer<Q: zengif::QuantizerTrait>(
         height.try_into().unwrap(),
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
         quantizer,
     )
     .unwrap();

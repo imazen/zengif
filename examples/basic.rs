@@ -52,7 +52,7 @@ fn create_animation() -> Vec<u8> {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .expect("Failed to encode GIF")
 }
@@ -66,7 +66,7 @@ fn create_solid_frame(width: u16, height: u16, color: Rgba, delay_cs: u16) -> Fr
 /// Decode an animation using the convenience function.
 fn decode_animation(data: &[u8]) {
     let (metadata, frames, stats) =
-        decode_gif(data, Limits::default(), Unstoppable).expect("Failed to decode GIF");
+        decode_gif(data, Limits::default(), &Unstoppable).expect("Failed to decode GIF");
 
     println!("  Dimensions: {}x{}", metadata.width, metadata.height);
     println!("  Frame count: {}", frames.len());
@@ -87,7 +87,7 @@ fn streaming_decode(data: &[u8]) {
     let limits = Limits::default();
     let cursor = std::io::Cursor::new(data);
 
-    let mut decoder = Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
+    let mut decoder = Decoder::new(cursor, limits, &Unstoppable).expect("Failed to create decoder");
 
     println!("  Canvas: {}x{}", decoder.width(), decoder.height());
 
@@ -112,7 +112,7 @@ fn test_limits(data: &[u8]) {
         .max_frame_count(100) // Max 100 frames
         .max_memory(50 * 1024 * 1024); // Max 50MB total
 
-    let result = decode_gif(data, strict_limits, Unstoppable);
+    let result = decode_gif(data, strict_limits, &Unstoppable);
 
     match result {
         Ok((metadata, frames, _stats)) => {
@@ -131,7 +131,7 @@ fn test_limits(data: &[u8]) {
     // Very restrictive limits (will reject our animation)
     let tiny_limits = Limits::default().max_dimensions(10, 10);
 
-    let result = decode_gif(data, tiny_limits, Unstoppable);
+    let result = decode_gif(data, tiny_limits, &Unstoppable);
 
     match result {
         Ok(_) => println!("  Unexpectedly passed tiny limits"),
@@ -144,7 +144,7 @@ fn track_memory(data: &[u8]) {
     let cursor = std::io::Cursor::new(data);
     let limits = Limits::default();
 
-    let mut decoder = Decoder::new(cursor, limits, Unstoppable).expect("Failed to create decoder");
+    let mut decoder = Decoder::new(cursor, limits, &Unstoppable).expect("Failed to create decoder");
 
     println!(
         "  After decoder creation: {} bytes",

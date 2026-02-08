@@ -29,7 +29,7 @@ struct QualityResult {
 
 fn decode_to_frames(data: &[u8]) -> Option<(u16, u16, Vec<Vec<Rgba>>)> {
     let cursor = std::io::Cursor::new(data);
-    let mut decoder = Decoder::new(cursor, Limits::none(), Unstoppable).ok()?;
+    let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).ok()?;
     let metadata = decoder.metadata().clone();
 
     let mut frames = Vec::new();

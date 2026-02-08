@@ -11,7 +11,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use zengif::{
-    decode_gif, encode_gif, EncoderConfig, FrameInput, Limits, Repeat, Stats, Unstoppable,
+    decode_gif, encode_gif, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable,
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -23,11 +23,9 @@ fuzz_target!(|data: &[u8]| {
         .max_memory(5 * 1024 * 1024)
         .max_decompression_ratio(100.0);
 
-    let stats = Stats::new();
-
     // Step 1: Try to decode the input
-    let (metadata, frames) = match decode_gif(data, limits.clone(), &stats, Unstoppable) {
-        Ok((m, f)) if !f.is_empty() => (m, f),
+    let (metadata, frames, _stats) = match decode_gif(data, limits.clone(), &Unstoppable) {
+        Ok(result) if !result.1.is_empty() => result,
         _ => return, // Need at least one valid frame
     };
 
@@ -38,23 +36,26 @@ fuzz_target!(|data: &[u8]| {
     // Step 2: Convert to FrameInput for encoding
     let frame_inputs: Vec<FrameInput> = frames
         .iter()
-        .map(|f| {
-            FrameInput::new(f.width, f.height, f.delay.max(1), f.pixels.clone())
-        })
+        .map(|f| FrameInput::new(f.width, f.height, f.delay.max(1), f.pixels.clone()))
         .collect();
 
     // Step 3: Encode
-    let config = EncoderConfig::new(width, height).repeat(Repeat::Once);
+    let config = EncoderConfig::new().repeat(Repeat::Once);
 
-    let output = match encode_gif(frame_inputs.clone(), config.clone(), limits.clone(), Unstoppable)
-    {
+    let output = match encode_gif(
+        frame_inputs.clone(),
+        width,
+        height,
+        config,
+        limits.clone(),
+        &Unstoppable,
+    ) {
         Ok(o) => o,
         Err(_) => return, // Encoding failure is acceptable
     };
 
     // Step 4: Decode the re-encoded output
-    let stats2 = Stats::new();
-    let (_, decoded) = match decode_gif(&output, limits, &stats2, Unstoppable) {
+    let (_, decoded, _stats2) = match decode_gif(&output, limits, &Unstoppable) {
         Ok(d) => d,
         Err(_) => {
             // If we successfully encoded but can't decode, that's a bug!

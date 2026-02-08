@@ -81,7 +81,7 @@ fn corpus_decode_all_gifs() {
 
         let limits = Limits::default();
 
-        match decode_gif(&data, limits, Unstoppable) {
+        match decode_gif(&data, limits, &Unstoppable) {
             Ok((metadata, frames, _)) => {
                 success_count += 1;
                 // Basic sanity checks
@@ -152,7 +152,7 @@ fn corpus_round_trip_animation_gifs() {
         let limits = Limits::default();
 
         // Decode
-        let (metadata, frames, _stats) = match decode_gif(&data, limits.clone(), Unstoppable) {
+        let (metadata, frames, _stats) = match decode_gif(&data, limits.clone(), &Unstoppable) {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("Skipping {} (decode failed): {:?}", filename, e);
@@ -179,7 +179,7 @@ fn corpus_round_trip_animation_gifs() {
             metadata.height,
             config,
             limits.clone(),
-            Unstoppable,
+            &Unstoppable,
         ) {
             Ok(enc) => enc,
             Err(e) => {
@@ -190,7 +190,7 @@ fn corpus_round_trip_animation_gifs() {
 
         // Decode again
         let (metadata2, frames2, _stats2) =
-            decode_gif(&encoded, limits, Unstoppable).expect("Re-decode should succeed");
+            decode_gif(&encoded, limits, &Unstoppable).expect("Re-decode should succeed");
 
         // Verify frame count and dimensions preserved
         assert_eq!(
@@ -242,7 +242,7 @@ fn corpus_disposal_methods() {
         let limits = Limits::default();
 
         let (metadata, frames, _stats) =
-            decode_gif(&data, limits, Unstoppable).expect("Should decode disposal test file");
+            decode_gif(&data, limits, &Unstoppable).expect("Should decode disposal test file");
 
         assert!(
             frames.len() > 1,
@@ -284,7 +284,7 @@ fn corpus_interlaced_gif() {
     let limits = Limits::default();
 
     let (metadata, frames, _stats) =
-        decode_gif(&data, limits, Unstoppable).expect("Should decode interlaced GIF");
+        decode_gif(&data, limits, &Unstoppable).expect("Should decode interlaced GIF");
 
     assert!(metadata.width > 0);
     assert!(metadata.height > 0);
@@ -320,7 +320,7 @@ fn corpus_large_animation() {
     let limits = Limits::default();
 
     let (metadata, frames, stats) =
-        decode_gif(&data, limits, Unstoppable).expect("Should decode large animation");
+        decode_gif(&data, limits, &Unstoppable).expect("Should decode large animation");
 
     assert!(metadata.width > 0);
     assert!(metadata.height > 0);
@@ -350,7 +350,7 @@ fn corpus_simple_gifs() {
         let data = fs::read(&path).expect("Failed to read file");
         let limits = Limits::default();
 
-        let (metadata, frames, _stats) = decode_gif(&data, limits, Unstoppable)
+        let (metadata, frames, _stats) = decode_gif(&data, limits, &Unstoppable)
             .unwrap_or_else(|e| panic!("Should decode {}: {:?}", filename, e));
 
         assert!(metadata.width > 0);
@@ -377,7 +377,7 @@ fn corpus_transparency_handling() {
     let limits = Limits::default();
 
     let (metadata, frames, _stats) =
-        decode_gif(&data, limits, Unstoppable).expect("Should decode alpha GIF");
+        decode_gif(&data, limits, &Unstoppable).expect("Should decode alpha GIF");
 
     assert!(metadata.width > 0);
     assert!(metadata.height > 0);
@@ -420,7 +420,7 @@ fn corpus_memory_limits_respected() {
     // Set very restrictive memory limit (1 KB) - too small for any meaningful GIF
     let limits = Limits::default().max_memory(1024);
 
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     // Should fail due to memory limits
     assert!(result.is_err(), "Should fail with restrictive memory limit");
@@ -447,7 +447,7 @@ fn bomb_dimension_65535x65535() {
     let data = fs::read(&path).expect("Failed to read bomb file");
     let limits = Limits::default(); // Default limits: 16384x16384 max
 
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     // Should fail with DimensionsTooLarge error
     assert!(result.is_err(), "Dimension bomb should be rejected");
@@ -477,7 +477,7 @@ fn bomb_large_dimensions() {
     let data = fs::read(&path).expect("Failed to read file");
     let limits = Limits::default(); // 16384x16384 max
 
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     // 16385x16385 should be rejected (just over 16384 limit)
     assert!(
@@ -498,7 +498,7 @@ fn bomb_tiny_valid_sanity() {
     let limits = Limits::default();
 
     // This should succeed - it's a valid 2x2 GIF
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     match result {
         Ok((metadata, _frames, _stats)) => {
@@ -528,7 +528,7 @@ fn bomb_total_pixels_limit() {
     // Set total pixel limit to 50 megapixels
     let limits = Limits::default().max_total_pixels(50_000_000);
 
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     assert!(
         result.is_err(),
@@ -558,7 +558,7 @@ fn bomb_decompression_ratio() {
     assert!(path.exists(), "sample_1.gif should exist in local corpus");
 
     let data = fs::read(&path).expect("Failed to read file");
-    let result = decode_gif(&data, limits, Unstoppable);
+    let result = decode_gif(&data, limits, &Unstoppable);
 
     // With 1.5x ratio limit, most GIFs should fail (they typically compress well)
     // This verifies the check is actually being performed
@@ -598,7 +598,7 @@ fn local_corpus_animated() {
         let data = fs::read(&path).expect("Failed to read file");
         let limits = Limits::default();
 
-        match decode_gif(&data, limits, Unstoppable) {
+        match decode_gif(&data, limits, &Unstoppable) {
             Ok((metadata, frames, _)) => {
                 eprintln!(
                     "  OK: {} ({}x{}, {} frames)",
@@ -630,7 +630,7 @@ fn local_corpus_static() {
         let data = fs::read(&path).expect("Failed to read file");
         let limits = Limits::default();
 
-        match decode_gif(&data, limits, Unstoppable) {
+        match decode_gif(&data, limits, &Unstoppable) {
             Ok((metadata, frames, _)) => {
                 eprintln!(
                     "  OK: {} ({}x{}, {} frames)",

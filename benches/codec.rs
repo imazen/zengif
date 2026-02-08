@@ -93,7 +93,7 @@ fn decode_benchmark(c: &mut Criterion) {
             |b, data| {
                 b.iter(|| {
                     let cursor = std::io::Cursor::new(data);
-                    let mut decoder = Decoder::new(cursor, Limits::none(), Unstoppable).unwrap();
+                    let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).unwrap();
                     while let Some(frame) = decoder.next_frame().unwrap() {
                         black_box(frame);
                     }
@@ -112,7 +112,7 @@ fn decode_benchmark(c: &mut Criterion) {
         |b, data| {
             b.iter(|| {
                 let cursor = std::io::Cursor::new(data);
-                let mut decoder = Decoder::new(cursor, Limits::none(), Unstoppable).unwrap();
+                let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).unwrap();
                 while let Some(frame) = decoder.next_frame().unwrap() {
                     black_box(frame);
                 }
@@ -347,7 +347,7 @@ fn animation_stress_benchmark(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::new("decode", &label), &gif_data, |b, data| {
                 b.iter(|| {
                     let cursor = std::io::Cursor::new(data);
-                    let mut decoder = Decoder::new(cursor, Limits::none(), Unstoppable).unwrap();
+                    let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).unwrap();
                     while let Some(frame) = decoder.next_frame().unwrap() {
                         black_box(frame);
                     }

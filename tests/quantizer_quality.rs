@@ -194,7 +194,7 @@ fn test_quantizer_on_png(
     let output_size = output.len();
 
     // Decode the GIF back
-    let (_, decoded_frames, _stats) = match zengif::decode_gif(&output, limits, Unstoppable) {
+    let (_, decoded_frames, _stats) = match zengif::decode_gif(&output, limits, &Unstoppable) {
         Ok(r) => r,
         Err(_) => {
             return QuantizerResult {
@@ -728,7 +728,7 @@ mod quality_tests {
 
             // Decode and measure quality
             let (_, decoded_frames, _stats) =
-                zengif::decode_gif(&output, limits, Unstoppable).expect("decode failed");
+                zengif::decode_gif(&output, limits, &Unstoppable).expect("decode failed");
 
             let ssim2 = if !decoded_frames.is_empty() {
                 calculate_ssim2(

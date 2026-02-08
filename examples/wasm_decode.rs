@@ -13,7 +13,7 @@ pub fn decode_and_count(data: &[u8]) -> Result<usize, String> {
     let limits = Limits::default();
 
     let (_metadata, frames, _stats) =
-        decode_gif(data, limits, Unstoppable).map_err(|e| format!("{}", e))?;
+        decode_gif(data, limits, &Unstoppable).map_err(|e| format!("{}", e))?;
 
     Ok(frames.len())
 }

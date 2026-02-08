@@ -41,12 +41,12 @@ fn round_trip_single_frame() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode
-    let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     // Verify
     assert_eq!(metadata.width, width);
@@ -83,13 +83,13 @@ fn round_trip_multiple_frames() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode
     let (metadata, frames_out, _stats) =
-        decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+        decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     // Verify
     assert_eq!(metadata.width, width);
@@ -123,12 +123,12 @@ fn round_trip_with_transparency() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode
-    let (_, frames, _) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     assert_eq!(frames.len(), 1);
 
@@ -161,12 +161,12 @@ fn round_trip_checkerboard() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode
-    let (_, frames, _) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].pixel_count(), 64);
@@ -186,12 +186,12 @@ fn round_trip_preserves_metadata() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode
-    let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (metadata, frames, _stats) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     assert_eq!(metadata.width, width);
     assert_eq!(metadata.height, height);
@@ -216,12 +216,12 @@ fn memory_tracking_during_round_trip() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Decode with stats tracking
-    let (_, frames, stats) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (_, frames, stats) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     assert_eq!(frames.len(), 5);
 
@@ -247,16 +247,16 @@ fn streaming_decode_matches_batch() {
         height,
         config,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .unwrap();
 
     // Batch decode
-    let (_, batch_frames, _stats1) = decode_gif(&encoded, Limits::default(), Unstoppable).unwrap();
+    let (_, batch_frames, _stats1) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
 
     // Streaming decode
     let cursor = std::io::Cursor::new(&encoded);
-    let mut decoder = Decoder::new(cursor, Limits::default(), Unstoppable).unwrap();
+    let mut decoder = Decoder::new(cursor, Limits::default(), &Unstoppable).unwrap();
     let mut streaming_frames = Vec::new();
     while let Some(frame) = decoder.next_frame().unwrap() {
         streaming_frames.push(frame);
@@ -320,14 +320,14 @@ fn round_trip_vflip_with_palette_passthrough() {
         height,
         config.clone(),
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .expect("Initial encode failed");
 
     // Step 2: Decode
 
     let (metadata1, frames1, _stats1) =
-        decode_gif(&encoded1, Limits::default(), Unstoppable).expect("First decode failed");
+        decode_gif(&encoded1, Limits::default(), &Unstoppable).expect("First decode failed");
 
     assert_eq!(frames1.len(), 3);
 
@@ -369,14 +369,14 @@ fn round_trip_vflip_with_palette_passthrough() {
         height,
         config2.clone(),
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .expect("Flipped encode failed");
 
     // Step 4: Decode flipped
 
     let (_, frames2, _stats2) =
-        decode_gif(&encoded2, Limits::default(), Unstoppable).expect("Second decode failed");
+        decode_gif(&encoded2, Limits::default(), &Unstoppable).expect("Second decode failed");
 
     assert_eq!(frames2.len(), 3);
 
@@ -407,14 +407,14 @@ fn round_trip_vflip_with_palette_passthrough() {
         height,
         config2,
         Limits::default(),
-        Unstoppable,
+        &Unstoppable,
     )
     .expect("Re-flipped encode failed");
 
     // Step 6: Decode final
 
     let (_, frames3, _stats3) =
-        decode_gif(&encoded3, Limits::default(), Unstoppable).expect("Final decode failed");
+        decode_gif(&encoded3, Limits::default(), &Unstoppable).expect("Final decode failed");
 
     assert_eq!(frames3.len(), 3);
 

@@ -67,16 +67,16 @@ pub use request::EncodeRequest;
 /// let frames = vec![
 ///     FrameInput::new(100, 100, 50, vec![Rgba::rgb(255, 0, 0); 10000]),
 /// ];
-/// let output = encode_gif(frames, 100, 100, EncoderConfig::new(), Limits::default(), Unstoppable)?;
+/// let output = encode_gif(frames, 100, 100, EncoderConfig::new(), Limits::default(), &Unstoppable)?;
 /// # Ok::<(), whereat::At<zengif::GifError>>(())
 /// ```
-pub fn encode_gif<S: Stop>(
+pub fn encode_gif(
     frames: Vec<FrameInput>,
     width: u16,
     height: u16,
     config: EncoderConfig,
     limits: Limits,
-    stop: S,
+    stop: &dyn Stop,
 ) -> Result<Vec<u8>> {
     // Estimate initial output size (header + per-frame overhead)
     // GIF header ~13 bytes, each frame has overhead of ~100-500 bytes + compressed data
@@ -91,7 +91,7 @@ pub fn encode_gif<S: Stop>(
     })?;
     let req = EncodeRequest::new(&config, width, height)
         .limits(&limits)
-        .stop(&stop);
+        .stop(stop);
     let mut encoder = Encoder::from_request(req)?;
 
     for frame in frames {
@@ -117,13 +117,13 @@ pub fn encode_gif<S: Stop>(
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
-pub fn encode_gif_shared_palette<S: Stop + Copy>(
+pub fn encode_gif_shared_palette(
     frames: Vec<FrameInput>,
     width: u16,
     height: u16,
     config: EncoderConfig,
     limits: Limits,
-    stop: S,
+    stop: &dyn Stop,
 ) -> Result<Vec<u8>> {
     // Select quantizer based on available features (priority: imagequant > quantizr > color_quant > exoquant)
     #[cfg(feature = "imagequant")]
@@ -162,13 +162,13 @@ pub fn encode_gif_shared_palette<S: Stop + Copy>(
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
-pub fn encode_gif_with_quantizer<S: Stop + Copy, Q: crate::quantize::QuantizerTrait>(
+pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
     frames: Vec<FrameInput>,
     width: u16,
     height: u16,
     config: EncoderConfig,
     limits: Limits,
-    stop: S,
+    stop: &dyn Stop,
     mut quantizer: Q,
 ) -> Result<Vec<u8>> {
     use crate::quantize::QuantizeConfig;
@@ -192,7 +192,7 @@ pub fn encode_gif_with_quantizer<S: Stop + Copy, Q: crate::quantize::QuantizerTr
 
     // Build shared palette from all frames (with cancellation support)
     let palette_bytes =
-        quantizer.build_shared_palette(&frame_refs, width, height, &quant_config, &stop)?;
+        quantizer.build_shared_palette(&frame_refs, width, height, &quant_config, stop)?;
 
     // Estimate output size
     let estimated_size = 1024 + frames.len() * 512;
@@ -370,7 +370,7 @@ mod tests {
 
         let frames = vec![make_red_frame(2, 2, 10), make_red_frame(2, 2, 10)];
 
-        let output = encode_gif(frames, 2, 2, config, limits, Unstoppable).unwrap();
+        let output = encode_gif(frames, 2, 2, config, limits, &Unstoppable).unwrap();
 
         assert!(output.len() > 10);
         assert_eq!(&output[0..6], b"GIF89a");
@@ -594,7 +594,7 @@ mod tests {
             4,
             config,
             limits,
-            Unstoppable,
+            &Unstoppable,
         )
         .unwrap();
 
@@ -640,13 +640,13 @@ mod tests {
             64,
             config_shared,
             limits.clone(),
-            Unstoppable,
+            &Unstoppable,
         )
         .unwrap();
 
         // Encode with per-frame palettes (normal encode_gif)
         let output_perframe =
-            encode_gif(frames, 64, 64, config_perframe, limits, Unstoppable).unwrap();
+            encode_gif(frames, 64, 64, config_perframe, limits, &Unstoppable).unwrap();
 
         // Shared palette should produce smaller output due to:
         // 1. No per-frame palette storage (uses global)
@@ -693,11 +693,11 @@ mod tests {
             64,
             config_low,
             limits.clone(),
-            Unstoppable,
+            &Unstoppable,
         )
         .unwrap();
         let output_high =
-            encode_gif(vec![frame], 64, 64, config_high, limits, Unstoppable).unwrap();
+            encode_gif(vec![frame], 64, 64, config_high, limits, &Unstoppable).unwrap();
 
         // Low dithering should produce smaller output (less noise = better LZW)
         assert!(
@@ -925,7 +925,7 @@ mod tests {
         // Decode and verify all frames came through
         let limits = crate::limits::Limits::none();
         let (meta, decoded_frames, _stats) =
-            crate::decode::decode_gif(&output, limits, Unstoppable).unwrap();
+            crate::decode::decode_gif(&output, limits, &Unstoppable).unwrap();
         assert_eq!(meta.frame_count, 4);
         assert_eq!(decoded_frames.len(), 4);
 
