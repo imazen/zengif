@@ -128,19 +128,19 @@ impl QuantizeConfig {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```rust
 /// use zengif::{EncoderConfig, Quantizer};
 ///
 /// // Best quality (recommended)
-/// let config = EncoderConfig::new(100, 100)
+/// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::quantizr());
 ///
 /// // Smallest files (GPL license)
-/// let config = EncoderConfig::new(100, 100)
+/// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::imagequant());
 ///
 /// // Fastest encoding
-/// let config = EncoderConfig::new(100, 100)
+/// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::color_quant());
 /// ```
 #[derive(Debug, Clone)]

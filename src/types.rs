@@ -617,21 +617,21 @@ impl Metadata {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+/// ```rust
+/// use zengif::{FrameInput, Rgba};
 ///
-/// let width = 100;
-/// let height = 100;
+/// let width: u16 = 100;
+/// let height: u16 = 100;
 ///
 /// // Create a red frame (500ms delay = 50 centiseconds)
-/// let red_pixels: Vec<Rgba> = (0..width*height)
+/// let red_pixels: Vec<Rgba> = (0..width as usize * height as usize)
 ///     .map(|_| Rgba::rgb(255, 0, 0))
 ///     .collect();
 ///
 /// let frame = FrameInput::new(width, height, 50, red_pixels);
 ///
 /// // Or from raw bytes
-/// let bytes = vec![255, 0, 0, 255; (width * height) as usize]; // RGBA
+/// let bytes = vec![255u8, 0, 0, 255].repeat(width as usize * height as usize);
 /// let frame = FrameInput::from_bytes(width, height, 50, &bytes);
 /// ```
 #[derive(Debug, Clone)]

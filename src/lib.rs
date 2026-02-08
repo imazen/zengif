@@ -16,10 +16,12 @@
 //!
 //! ### Decoding
 //!
-//! ```rust,ignore
-//! use zengif::{Decoder, Limits};
-//! use enough::Unstoppable;
+//! ```rust,no_run
+//! use zengif::{Decoder, Limits, Unstoppable};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let data = std::fs::read("animation.gif")?;
+//! let reader = std::io::Cursor::new(&data);
 //! let limits = Limits::default();
 //!
 //! let mut decoder = Decoder::new(reader, limits, Unstoppable)?;
@@ -31,42 +33,55 @@
 //!
 //! // Access memory stats after decoding
 //! println!("Memory used: {} bytes", decoder.stats().peak());
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ### Encoding
 //!
-//! ```rust,ignore
-//! use zengif::{Encoder, EncoderConfig, FrameInput, Limits, Repeat};
-//! use enough::Unstoppable;
+//! ```rust,no_run
+//! use zengif::{EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
 //!
-//! let config = EncoderConfig::new(width, height).repeat(Repeat::Infinite);
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = EncoderConfig::new().repeat(Repeat::Infinite);
 //! let limits = Limits::default();
 //!
-//! let mut encoder = Encoder::new(writer, config, limits, Unstoppable)?;
+//! let mut encoder = EncodeRequest::new(&config, 100, 100)
+//!     .limits(&limits)
+//!     .stop(&Unstoppable)
+//!     .build()?;
 //!
-//! for frame in frames {
-//!     encoder.add_frame(frame)?;
-//! }
+//! let pixels: Vec<Rgba> = vec![Rgba::rgb(255, 0, 0); 100 * 100];
+//! encoder.add_frame(FrameInput::new(100, 100, 10, pixels))?;
 //!
-//! encoder.finish()?;
+//! let output: Vec<u8> = encoder.finish()?;
+//! std::fs::write("output.gif", &output)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Memory Tracking
 //!
 //! The decoder tracks buffer allocations internally. Access stats via `decoder.stats()`:
 //!
-//! ```rust,ignore
-//! let mut decoder = Decoder::new(reader, limits, Unstoppable)?;
+//! ```rust,no_run
+//! use zengif::{Decoder, Limits, Unstoppable};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let data = std::fs::read("animation.gif")?;
+//! let reader = std::io::Cursor::new(&data);
+//! let mut decoder = Decoder::new(reader, Limits::default(), Unstoppable)?;
 //!
 //! while let Some(frame) = decoder.next_frame()? {
 //!     // Check memory usage during decode
 //!     if decoder.stats().peak() > 100_000_000 {
 //!         break; // Stop if using too much memory
 //!     }
-//!     process(frame);
 //! }
 //!
 //! println!("Peak buffer usage: {} bytes", decoder.stats().peak());
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! Note: Stats tracks zengif's own allocations (canvas, pixel buffers), not allocations
@@ -76,16 +91,24 @@
 //!
 //! Operations support cooperative cancellation via the `enough` crate:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use almost_enough::Stopper;
+//! use zengif::{Decoder, Limits};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let stop = Stopper::new();
 //! let stop_clone = stop.clone();
 //!
 //! // In another thread:
-//! stop_clone.cancel();
+//! // stop_clone.cancel();
 //!
-//! // Decoder will return GifError::Cancelled
+//! let data = std::fs::read("animation.gif")?;
+//! let reader = std::io::Cursor::new(&data);
+//! // Pass &stop — references are Copy and implement Stop
+//! let mut decoder = Decoder::new(reader, Limits::default(), &stop)?;
+//! // Decoder will return GifError::Cancelled if stop is triggered
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Feature Flags
@@ -106,19 +129,19 @@
 //!
 //! Configure the quantizer using the [`Quantizer`] enum:
 //!
-//! ```rust,ignore
+//! ```rust
 //! use zengif::{EncoderConfig, Quantizer};
 //!
 //! // Use imagequant (recommended) for best quality
-//! let config = EncoderConfig::new(100, 100)
+//! let config = EncoderConfig::new()
 //!     .quantizer(Quantizer::imagequant());
 //!
 //! // Use quantizr (MIT) for permissive licensing
-//! let config = EncoderConfig::new(100, 100)
+//! let config = EncoderConfig::new()
 //!     .quantizer(Quantizer::quantizr_with_dithering(0.3));
 //!
 //! // Auto-select best available
-//! let config = EncoderConfig::new(100, 100)
+//! let config = EncoderConfig::new()
 //!     .quantizer(Quantizer::auto());
 //! ```
 //!
