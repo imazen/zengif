@@ -127,7 +127,7 @@
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
 //! | `exoquant-deprecated` | Good | Slow | Medium | MIT | Legacy compatibility only |
 //!
-//! Configure the quantizer using the [`Quantizer`] enum:
+//! Configure the quantizer using the `Quantizer` enum:
 //!
 //! ```rust
 //! use zengif::{EncoderConfig, Quantizer};
