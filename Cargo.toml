@@ -76,6 +76,22 @@ debug = 1  # For profiling
 [profile.test]
 opt-level = 2  # Tests need speed for processing
 
+[[example]]
+name = "size_analysis"
+required-features = ["quantizr"]
+
+[[example]]
+name = "rmse_analysis"
+required-features = ["quantizr"]
+
+[[example]]
+name = "test_hybrid_fallback"
+required-features = ["quantizr"]
+
+[[example]]
+name = "test_thresholds"
+required-features = ["quantizr"]
+
 [[bench]]
 name = "codec"
 harness = false
