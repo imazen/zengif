@@ -1,11 +1,5 @@
 //! Streaming GIF encoder.
 
-use crate::{
-    types::{FrameInput, Metadata, Repeat, Rgba},
-    GifError, Limits, Result, Stats,
-};
-use super::{EncodeRequest, EncoderConfig};
-use super::palette::{compute_frame_diff_pooled, ScratchBuffer};
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -20,6 +14,12 @@ use super::config::default_buffer_frames;
     feature = "color_quant"
 ))]
 use super::palette::compute_remap_rmse;
+use super::palette::{compute_frame_diff_pooled, ScratchBuffer};
+use super::{EncodeRequest, EncoderConfig};
+use crate::{
+    types::{FrameInput, Metadata, Repeat, Rgba},
+    GifError, Limits, Result, Stats,
+};
 use enough::Stop;
 use std::borrow::Cow;
 use whereat::at;
@@ -185,8 +185,12 @@ impl<'a> Encoder<'a> {
             let mut enc = gif::Encoder::new(Vec::new(), req.width, req.height, &global_pal_bytes)
                 .map_err(|e| at!(GifError::from(e)))?;
 
-            enc.set_repeat(match req.config.repeat { Repeat::Once => gif::Repeat::Finite(0), Repeat::Infinite => gif::Repeat::Infinite, Repeat::Count(n) => gif::Repeat::Finite(n) })
-                .map_err(|e| at!(GifError::from(e)))?;
+            enc.set_repeat(match req.config.repeat {
+                Repeat::Once => gif::Repeat::Finite(0),
+                Repeat::Infinite => gif::Repeat::Infinite,
+                Repeat::Count(n) => gif::Repeat::Finite(n),
+            })
+            .map_err(|e| at!(GifError::from(e)))?;
 
             (Some(enc), Vec::new(), has_global)
         };
@@ -198,7 +202,17 @@ impl<'a> Encoder<'a> {
             feature = "color_quant"
         ))]
         #[allow(deprecated)] // quantizer_backend fallback for backward compat
-        let quantizer = req.config.quantizer.as_ref().map(|q| q.create_backend()).unwrap_or_else(|| req.config.quantizer_backend.create_quantizer().expect("quantizer feature should be enabled"));
+        let quantizer = req
+            .config
+            .quantizer
+            .as_ref()
+            .map(|q| q.create_backend())
+            .unwrap_or_else(|| {
+                req.config
+                    .quantizer_backend
+                    .create_quantizer()
+                    .expect("quantizer feature should be enabled")
+            });
 
         Ok(Self {
             encoder,
@@ -245,14 +259,18 @@ impl<'a> Encoder<'a> {
         })
     }
 
-        // Check cancellation
+    // Check cancellation
 
     /// Create an encoder from metadata.
     ///
     /// This preserves the original global palette if available, and uses
     /// round-trip optimized settings (zero dithering) to minimize bloat.
     #[allow(deprecated)] // quantizer_backend is deprecated
-    pub fn from_metadata(metadata: &Metadata, limits: &'a Limits, stop: &'a dyn Stop) -> Result<Self> {
+    pub fn from_metadata(
+        metadata: &Metadata,
+        limits: &'a Limits,
+        stop: &'a dyn Stop,
+    ) -> Result<Self> {
         let config = EncoderConfig {
             repeat: metadata.repeat,
             global_palette: metadata
@@ -318,7 +336,6 @@ impl<'a> Encoder<'a> {
             palette_error_threshold: None, // Round-trip: always use global palette
 
             lossy_tolerance: 0, // Lossless for round-trip
-
         };
 
         // Box and leak the config to satisfy the 'a lifetime requirement.
@@ -331,11 +348,6 @@ impl<'a> Encoder<'a> {
             .stop(stop);
         Self::from_request(req)
     }
-
-
-
-
-
 
     /// Get the encoder configuration.
     pub fn config(&self) -> &EncoderConfig {

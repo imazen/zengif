@@ -1,11 +1,10 @@
 //! Encode request builder.
 
-use crate::{types::FrameInput, GifError, Limits, Result};
 use super::{Encoder, EncoderConfig};
+use crate::{types::FrameInput, GifError, Limits, Result};
 use enough::{Stop, Unstoppable};
 use std::io::Write;
 use whereat::at;
-
 
 // Default instances for EncodeRequest::new()
 static DEFAULT_LIMITS: Limits = Limits {
@@ -19,7 +18,6 @@ static DEFAULT_LIMITS: Limits = Limits {
 };
 
 static UNSTOPPABLE: Unstoppable = Unstoppable;
-
 
 /// Request to encode a GIF animation.
 ///
@@ -99,8 +97,7 @@ impl<'a> EncodeRequest<'a> {
     #[cfg(feature = "std")]
     pub fn encode_to<W: Write>(self, frames: Vec<FrameInput>, mut dest: W) -> Result<()> {
         let bytes = self.encode(frames)?;
-        dest.write_all(&bytes)
-            .map_err(|e| at!(GifError::from(e)))?;
+        dest.write_all(&bytes).map_err(|e| at!(GifError::from(e)))?;
         Ok(())
     }
 
@@ -109,4 +106,3 @@ impl<'a> EncodeRequest<'a> {
         Encoder::from_request(self)
     }
 }
-

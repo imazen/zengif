@@ -10,7 +10,9 @@
 use imgref::ImgVec;
 use std::fs;
 use std::path::Path;
-use zengif::{Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable};
+use zengif::{
+    Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+};
 
 struct QualityResult {
     name: String,
@@ -81,7 +83,7 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        encoder.finish().ok()?  
+        encoder.finish().ok()?
     };
 
     // Encode with per-frame palette
@@ -98,7 +100,7 @@ fn test_gif_quality(path: &Path) -> Option<QualityResult> {
         for frame in &frame_inputs {
             encoder.add_frame(frame.clone()).ok()?;
         }
-        encoder.finish().ok()?  
+        encoder.finish().ok()?
     };
 
     // Decode both outputs

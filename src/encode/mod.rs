@@ -43,16 +43,16 @@ use crate::limits::Limits;
 use crate::types::{FrameInput, Repeat, Rgba};
 
 // Module declarations
-mod palette;
 mod config;
-mod request;
 mod encoder;
+mod palette;
+mod request;
 
 // Re-exports
-pub use palette::PaletteStrategy;
 pub use config::EncoderConfig;
-pub use request::EncodeRequest;
 pub use encoder::Encoder;
+pub use palette::PaletteStrategy;
+pub use request::EncodeRequest;
 
 /// Convenience function to encode frames to a GIF byte vector.
 ///
@@ -265,7 +265,6 @@ pub fn encode_gif_with_quantizer<S: Stop + Copy, Q: crate::quantize::QuantizerTr
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::config::default_buffer_frames;
     use super::palette::compute_frame_diff;
     #[cfg(any(
@@ -275,6 +274,7 @@ mod tests {
         feature = "color_quant"
     ))]
     use super::palette::compute_remap_rmse;
+    use super::*;
     use enough::Unstoppable;
 
     fn make_red_frame(width: u16, height: u16, delay: u16) -> FrameInput {
@@ -296,7 +296,11 @@ mod tests {
         let frame = make_red_frame(2, 2, 10);
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 2, 2)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         encoder.add_frame(frame).unwrap();
         let output = encoder.finish().unwrap();
@@ -318,7 +322,11 @@ mod tests {
         let limits = Limits::default();
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 2, 2)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         for _ in 0..3 {
             let frame = make_red_frame(2, 2, 10);
@@ -336,7 +344,11 @@ mod tests {
         let limits = Limits::default();
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         // Wrong dimensions
         let frame = make_red_frame(2, 2, 10);
@@ -376,7 +388,11 @@ mod tests {
         let limits = Limits::default().max_frame_count(1);
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 2, 2)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         // First frame OK
         encoder.add_frame(make_red_frame(2, 2, 10)).unwrap();
@@ -517,8 +533,11 @@ mod tests {
         let config_no_opt = config.use_transparency(false);
         let output_without_diff = {
             // output will be returned from encoder.finish()
-            let mut encoder =
-                EncodeRequest::new(&config_no_opt, 100, 100).limits(&limits).stop(&Unstoppable).build().unwrap();
+            let mut encoder = EncodeRequest::new(&config_no_opt, 100, 100)
+                .limits(&limits)
+                .stop(&Unstoppable)
+                .build()
+                .unwrap();
             encoder.add_frame(frame1).unwrap();
             encoder.add_frame(frame2).unwrap();
             encoder.finish().unwrap()
@@ -721,7 +740,11 @@ mod tests {
         let limits = Limits::default();
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         // Add 5 frames - should buffer first 3, then flush and encode
         for i in 0..5 {
@@ -755,7 +778,11 @@ mod tests {
         let limits = Limits::default();
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         // Add only 2 frames - less than buffer limit
         for _ in 0..2 {
@@ -789,7 +816,11 @@ mod tests {
         let limits = Limits::default();
 
         // output will be returned from encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         // Add 5 frames - should trigger memory limit flush
         for _ in 0..5 {
@@ -831,7 +862,11 @@ mod tests {
         let limits = Limits::default();
 
         // output created by encoder.finish()
-        let mut encoder = EncodeRequest::new(&config, 2, 2).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 2, 2)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
         encoder.add_frame(frame).unwrap();
         let output = encoder.finish().unwrap();
 
@@ -876,7 +911,11 @@ mod tests {
             .palette_error_threshold(Some(5.0));
         // output will be returned from encoder.finish()
         let limits = crate::limits::Limits::none();
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
@@ -931,7 +970,11 @@ mod tests {
             .palette_error_threshold(None);
         // output created by encoder.finish()
         let limits = crate::limits::Limits::none();
-        let mut encoder = EncodeRequest::new(&config, 4, 4).limits(&limits).stop(&Unstoppable).build().unwrap();
+        let mut encoder = EncodeRequest::new(&config, 4, 4)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
 
         for frame in &frames {
             encoder.add_frame(frame.clone()).unwrap();
