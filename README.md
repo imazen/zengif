@@ -175,7 +175,7 @@ let config = EncoderConfig::new()
 For WASM or embedded, disable the default `std` feature:
 
 ```toml
-zengif = { version = "0.4", default-features = false }
+zengif = { version = "0.6", default-features = false }
 ```
 
 You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec. Useful when you need to share types between WASM and native code.
