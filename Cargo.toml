@@ -79,3 +79,6 @@ opt-level = 2  # Tests need speed for processing
 [[bench]]
 name = "codec"
 harness = false
+
+[patch.crates-io]
+imagequant = { path = "deps/imagequant" }
