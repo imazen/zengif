@@ -9,9 +9,10 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later | **Recommended** for quality |
+//! | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later | **Recommended** for quality |
+//! | `imagequant` | Good | Medium | **Smallest** | GPL-3.0-or-later | Best compression |
 //! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
-//! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
+//! | `color_quant` | Decent | **Fastest** | Large | MIT | High-throughput servers |
 //!
 //! # Frame-Aware Quantization
 //!
@@ -38,6 +39,8 @@ mod exoquant_impl;
 mod imagequant_impl;
 #[cfg(feature = "quantizr")]
 mod quantizr_impl;
+#[cfg(feature = "zenquant")]
+mod zenquant_impl;
 
 // Re-export backend quantizers
 #[cfg(feature = "color_quant")]
@@ -48,6 +51,8 @@ pub use exoquant_impl::ExoquantQuantizer;
 pub use imagequant_impl::ImagequantQuantizer;
 #[cfg(feature = "quantizr")]
 pub use quantizr_impl::QuantizrQuantizer;
+#[cfg(feature = "zenquant")]
+pub use zenquant_impl::ZenquantQuantizer;
 
 /// Result of quantizing a single frame.
 #[derive(Debug, Clone)]
@@ -122,36 +127,53 @@ impl QuantizeConfig {
 ///
 /// | Feature | Quality | Speed | File Size | License |
 /// |---------|---------|-------|-----------|---------|
-/// | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later |
+/// | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later |
+/// | `imagequant` | Good | Medium | **Smallest** | GPL-3.0-or-later |
 /// | `quantizr` | Good | Fast | Medium | MIT |
-/// | `color_quant` | Good | **Fastest** | Large | MIT |
+/// | `color_quant` | Decent | **Fastest** | Large | MIT |
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use zengif::{EncoderConfig, Quantizer};
 ///
-/// // Best quality (recommended)
+/// // Best perceptual quality (AGPL)
+/// let config = EncoderConfig::new()
+///     .quantizer(Quantizer::zenquant());
+///
+/// // Good quality, fast (MIT)
 /// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::quantizr());
 ///
-/// // Smallest files (GPL license)
+/// // Best compression (GPL)
 /// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::imagequant());
 ///
-/// // Fastest encoding
+/// // Fastest encoding (MIT)
 /// let config = EncoderConfig::new()
 ///     .quantizer(Quantizer::color_quant());
 /// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub enum Quantizer {
+    /// zenquant: Best perceptual quality, AGPL-3.0-or-later licensed.
+    ///
+    /// Produces the best butteraugli and SSIMULACRA2 scores.
+    /// AGPL-3.0-or-later licensed.
+    #[cfg(feature = "zenquant")]
+    Zenquant {
+        /// Dithering level (0.0 = none, 1.0 = full).
+        /// Default: 0.5
+        dithering: f32,
+    },
+
     /// Quantizr: Good quality, fast, MIT licensed.
     ///
     /// Best MIT-licensed option with good quality/speed balance.
@@ -210,12 +232,34 @@ pub enum Quantizer {
 }
 
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 impl Quantizer {
+    /// Create a zenquant quantizer with default settings.
+    ///
+    /// Best perceptual quality (butteraugli/SSIMULACRA2). AGPL-3.0-or-later.
+    #[cfg(feature = "zenquant")]
+    #[must_use]
+    pub fn zenquant() -> Self {
+        Self::Zenquant { dithering: 0.5 }
+    }
+
+    /// Create a zenquant quantizer with custom dithering.
+    ///
+    /// # Arguments
+    /// * `dithering` - Dithering level (0.0 = none, 1.0 = full)
+    #[cfg(feature = "zenquant")]
+    #[must_use]
+    pub fn zenquant_with_dithering(dithering: f32) -> Self {
+        Self::Zenquant {
+            dithering: dithering.clamp(0.0, 1.0),
+        }
+    }
+
     /// Create a Quantizr quantizer with default settings.
     ///
     /// Best MIT-licensed option with good quality/speed balance.
@@ -286,20 +330,29 @@ impl Quantizer {
 
     /// Create the default quantizer based on available features.
     ///
-    /// Priority: imagequant > quantizr > color_quant > exoquant-deprecated
+    /// Priority: zenquant > imagequant > quantizr > color_quant > exoquant-deprecated
     #[must_use]
     #[allow(clippy::needless_return)] // Returns needed for conditional compilation branches
     pub fn auto() -> Self {
-        #[cfg(feature = "imagequant")]
+        #[cfg(feature = "zenquant")]
+        {
+            return Self::zenquant();
+        }
+        #[cfg(all(feature = "imagequant", not(feature = "zenquant")))]
         {
             return Self::imagequant();
         }
-        #[cfg(all(feature = "quantizr", not(feature = "imagequant")))]
+        #[cfg(all(
+            feature = "quantizr",
+            not(feature = "zenquant"),
+            not(feature = "imagequant")
+        ))]
         {
             return Self::quantizr();
         }
         #[cfg(all(
             feature = "color_quant",
+            not(feature = "zenquant"),
             not(feature = "imagequant"),
             not(feature = "quantizr")
         ))]
@@ -308,6 +361,7 @@ impl Quantizer {
         }
         #[cfg(all(
             feature = "exoquant-deprecated",
+            not(feature = "zenquant"),
             not(feature = "imagequant"),
             not(feature = "quantizr"),
             not(feature = "color_quant")
@@ -321,6 +375,8 @@ impl Quantizer {
     /// Create the backend quantizer instance.
     pub(crate) fn create_backend(&self) -> Box<dyn QuantizerTrait> {
         match self {
+            #[cfg(feature = "zenquant")]
+            Self::Zenquant { .. } => Box::new(ZenquantQuantizer::new()),
             #[cfg(feature = "quantizr")]
             Self::Quantizr { .. } => Box::new(QuantizrQuantizer::new()),
             #[cfg(feature = "imagequant")]
@@ -335,6 +391,7 @@ impl Quantizer {
 }
 
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -351,6 +408,7 @@ impl Default for Quantizer {
 /// Returns indices uniformly distributed across the frame range.
 /// Always includes first and last frame if max_samples >= 2.
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -461,9 +519,12 @@ pub trait QuantizerTrait: Send {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum QuantizerBackend {
-    /// Use imagequant (highest quality, GPL licensed).
-    /// Requires `imagequant` feature.
+    /// Use zenquant (best perceptual quality, AGPL-3.0-or-later).
+    /// Requires `zenquant` feature.
     #[default]
+    Zenquant,
+    /// Use imagequant (good quality, best compression, GPL licensed).
+    /// Requires `imagequant` feature.
     Imagequant,
     /// Use exoquant (high quality K-Means, MIT licensed).
     /// Requires `exoquant` feature.
@@ -483,6 +544,11 @@ impl QuantizerBackend {
     #[must_use]
     pub fn create_quantizer(&self) -> Option<Box<dyn QuantizerTrait>> {
         match self {
+            #[cfg(feature = "zenquant")]
+            QuantizerBackend::Zenquant => Some(Box::new(ZenquantQuantizer::new())),
+            #[cfg(not(feature = "zenquant"))]
+            QuantizerBackend::Zenquant => None,
+
             #[cfg(feature = "imagequant")]
             QuantizerBackend::Imagequant => Some(Box::new(ImagequantQuantizer::new())),
             #[cfg(not(feature = "imagequant"))]
@@ -509,6 +575,7 @@ impl QuantizerBackend {
     #[must_use]
     pub fn is_available(&self) -> bool {
         match self {
+            QuantizerBackend::Zenquant => cfg!(feature = "zenquant"),
             QuantizerBackend::Imagequant => cfg!(feature = "imagequant"),
             QuantizerBackend::Exoquant => cfg!(feature = "exoquant-deprecated"),
             QuantizerBackend::Quantizr => cfg!(feature = "quantizr"),

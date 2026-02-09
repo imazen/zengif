@@ -202,6 +202,7 @@ pub use quantize::ImagequantQuantizer;
 #[cfg(all(
     feature = "std",
     any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -211,6 +212,8 @@ pub use quantize::ImagequantQuantizer;
 pub use quantize::Quantizer;
 #[cfg(all(feature = "std", feature = "quantizr"))]
 pub use quantize::QuantizrQuantizer;
+#[cfg(all(feature = "std", feature = "zenquant"))]
+pub use quantize::ZenquantQuantizer;
 #[cfg(feature = "std")]
 pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};

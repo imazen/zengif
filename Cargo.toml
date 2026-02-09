@@ -18,9 +18,11 @@ default = ["std"]
 std = ["gif/std", "enough/std", "whereat/std"]
 
 # Color quantization backends (choose one or more)
-# quantizr: Best quality, fast, MIT licensed (RECOMMENDED)
+# zenquant: Best perceptual quality (butteraugli/SSIMULACRA2), AGPL-3.0-or-later
+zenquant = ["dep:zenquant"]
+# quantizr: Fast, MIT licensed
 quantizr = ["dep:quantizr"]
-# imagequant: Best compression (smallest files), GPL-3.0-or-later licensed
+# imagequant: Good compression (smallest files), GPL-3.0-or-later licensed
 # Note: GPL requires source disclosure. Commercial license: https://pngquant.org
 imagequant = ["dep:imagequant"]
 # color_quant: Fastest encoder, MIT licensed (good for high-throughput)
@@ -48,6 +50,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
 quantizr = { version = "1.4", optional = true }
+zenquant = { path = "../zenquant", optional = true, default-features = false, features = ["std"] }
 exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
 
