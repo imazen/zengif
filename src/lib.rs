@@ -224,5 +224,10 @@ pub use types::{
     ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, RawFrame, Repeat, Rgba,
 };
 
+#[cfg(feature = "std")]
+mod zencodec;
+#[cfg(feature = "std")]
+pub use zencodec::{GifDecodeJob, GifDecoding, GifEncodeJob, GifEncoding};
+
 // Re-export enough for user convenience
 pub use enough::{Stop, Unstoppable};

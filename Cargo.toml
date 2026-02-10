@@ -47,6 +47,9 @@ enough = { version = "0.3", default-features = false }
 # Safe transmutes for pixel data (no_std compatible)
 bytemuck = { version = "1.21", features = ["derive"] }
 
+# Shared codec traits
+zencodec-types = { path = "../zencodec-types" }
+
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
 quantizr = { version = "1.4", optional = true }
