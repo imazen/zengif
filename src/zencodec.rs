@@ -13,12 +13,55 @@ use alloc::vec::Vec;
 
 use zencodec_types::{
     DecodeOutput, Decoding, DecodingJob, EncodeOutput, Encoding, EncodingJob, ImageFormat,
-    ImageInfo, ImageMetadata, ImgRef, ImgVec, PixelData, Stop,
+    ImageInfo, ImageMetadata, ImgRef, ImgVec, PixelData, ResourceLimits, Stop,
 };
 
 use crate::encode::{EncoderConfig, EncodeRequest};
 use crate::types::{FrameInput, Repeat};
 use crate::{Decoder, GifError, Limits};
+
+/// Build a zengif [`Limits`] from a [`ResourceLimits`], starting from zengif defaults.
+fn limits_from_resource(rl: &ResourceLimits) -> Limits {
+    let mut limits = Limits::default();
+    if let Some(px) = rl.max_pixels {
+        limits.max_total_pixels = Some(px);
+    }
+    if let Some(mem) = rl.max_memory_bytes {
+        limits.max_memory = Some(mem);
+    }
+    if let Some(w) = rl.max_width {
+        limits.max_width = Some(w.min(u16::MAX as u32) as u16);
+    }
+    if let Some(h) = rl.max_height {
+        limits.max_height = Some(h.min(u16::MAX as u32) as u16);
+    }
+    if let Some(fs) = rl.max_file_size {
+        limits.max_file_size = Some(fs);
+    }
+    limits
+}
+
+/// Merge a [`ResourceLimits`] into an existing zengif [`Limits`], overriding
+/// only fields that are `Some` in the `ResourceLimits`.
+fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
+    let mut limits = base.clone();
+    if let Some(px) = rl.max_pixels {
+        limits.max_total_pixels = Some(px);
+    }
+    if let Some(mem) = rl.max_memory_bytes {
+        limits.max_memory = Some(mem);
+    }
+    if let Some(w) = rl.max_width {
+        limits.max_width = Some(w.min(u16::MAX as u32) as u16);
+    }
+    if let Some(h) = rl.max_height {
+        limits.max_height = Some(h.min(u16::MAX as u32) as u16);
+    }
+    if let Some(fs) = rl.max_file_size {
+        limits.max_file_size = Some(fs);
+    }
+    limits
+}
 
 // ── Encoding ────────────────────────────────────────────────────────────────
 
@@ -35,9 +78,7 @@ use crate::{Decoder, GifError, Limits};
 pub struct GifEncoding {
     inner: EncoderConfig,
     quality: Option<f32>,
-    limit_pixels: Option<u64>,
-    limit_memory: Option<u64>,
-    limit_output: Option<u64>,
+    limits: ResourceLimits,
 }
 
 impl GifEncoding {
@@ -59,10 +100,41 @@ impl GifEncoding {
         Self {
             inner,
             quality: None,
-            limit_pixels: None,
-            limit_memory: None,
-            limit_output: None,
+            limits: ResourceLimits::default(),
         }
+    }
+
+    /// Set quality (0.0-100.0). Maps to the quantizer quality setting.
+    #[must_use]
+    pub fn with_quality(mut self, quality: f32) -> Self {
+        self.quality = Some(quality.clamp(0.0, 100.0));
+        #[cfg(any(
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        ))]
+        {
+            self.inner.quality = quality.clamp(0.0, 100.0) as u8;
+        }
+        self
+    }
+
+    /// Set effort/speed tradeoff.
+    ///
+    /// GIF doesn't have a meaningful effort setting; this is a no-op.
+    #[must_use]
+    pub fn with_effort(self, _effort: u32) -> Self {
+        self
+    }
+
+    /// Set lossless mode. When true, sets lossy tolerance to 0.
+    #[must_use]
+    pub fn with_lossless(mut self, lossless: bool) -> Self {
+        if lossless {
+            self.inner.lossy_tolerance = 0;
+        }
+        self
     }
 
     /// Set lossy frame differencing tolerance (0-255, 0=lossless).
@@ -101,50 +173,8 @@ impl Encoding for GifEncoding {
     type Error = GifError;
     type Job<'a> = GifEncodeJob<'a>;
 
-    fn with_quality(mut self, quality: f32) -> Self {
-        self.quality = Some(quality.clamp(0.0, 100.0));
-        // Map to inner quality if quantizer features are available
-        #[cfg(any(
-            feature = "imagequant",
-            feature = "quantizr",
-            feature = "exoquant-deprecated",
-            feature = "color_quant"
-        ))]
-        {
-            self.inner.quality = quality.clamp(0.0, 100.0) as u8;
-        }
-        self
-    }
-
-    fn with_effort(self, _effort: u32) -> Self {
-        // GIF doesn't have an effort/speed tradeoff
-        self
-    }
-
-    fn with_lossless(mut self, lossless: bool) -> Self {
-        if lossless {
-            self.inner.lossy_tolerance = 0;
-        }
-        self
-    }
-
-    fn with_alpha_quality(self, _quality: f32) -> Self {
-        // GIF alpha is 1-bit (transparent or not), no quality setting
-        self
-    }
-
-    fn with_limit_pixels(mut self, max: u64) -> Self {
-        self.limit_pixels = Some(max);
-        self
-    }
-
-    fn with_limit_memory(mut self, bytes: u64) -> Self {
-        self.limit_memory = Some(bytes);
-        self
-    }
-
-    fn with_limit_output(mut self, bytes: u64) -> Self {
-        self.limit_output = Some(bytes);
+    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
+        self.limits = limits.clone();
         self
     }
 
@@ -152,8 +182,7 @@ impl Encoding for GifEncoding {
         GifEncodeJob {
             config: self,
             stop: None,
-            limit_pixels: None,
-            limit_memory: None,
+            limits: None,
         }
     }
 }
@@ -162,20 +191,16 @@ impl Encoding for GifEncoding {
 pub struct GifEncodeJob<'a> {
     config: &'a GifEncoding,
     stop: Option<&'a dyn Stop>,
-    limit_pixels: Option<u64>,
-    limit_memory: Option<u64>,
+    limits: Option<ResourceLimits>,
 }
 
 impl<'a> GifEncodeJob<'a> {
     fn build_limits(&self) -> Limits {
-        let mut limits = Limits::default();
-        if let Some(px) = self.limit_pixels.or(self.config.limit_pixels) {
-            limits.max_total_pixels = Some(px);
+        let base = limits_from_resource(&self.config.limits);
+        match &self.limits {
+            Some(job_limits) => merge_resource_limits(&base, job_limits),
+            None => base,
         }
-        if let Some(mem) = self.limit_memory.or(self.config.limit_memory) {
-            limits.max_memory = Some(mem);
-        }
-        limits
     }
 
     fn do_encode(self, rgba_pixels: Vec<crate::Rgba>, w: u16, h: u16) -> Result<EncodeOutput, GifError> {
@@ -207,25 +232,8 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
         self
     }
 
-    fn with_icc(self, _icc: &'a [u8]) -> Self {
-        self
-    }
-
-    fn with_exif(self, _exif: &'a [u8]) -> Self {
-        self
-    }
-
-    fn with_xmp(self, _xmp: &'a [u8]) -> Self {
-        self
-    }
-
-    fn with_limit_pixels(mut self, max: u64) -> Self {
-        self.limit_pixels = Some(max);
-        self
-    }
-
-    fn with_limit_memory(mut self, bytes: u64) -> Self {
-        self.limit_memory = Some(bytes);
+    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
+        self.limits = Some(limits.clone());
         self
     }
 
@@ -275,8 +283,7 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
 /// use the native [`Decoder`] API directly.
 #[derive(Clone, Debug)]
 pub struct GifDecoding {
-    limits: Limits,
-    limit_file_size: Option<u64>,
+    limits: ResourceLimits,
 }
 
 impl GifDecoding {
@@ -284,20 +291,8 @@ impl GifDecoding {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            limits: Limits::default(),
-            limit_file_size: None,
+            limits: ResourceLimits::default(),
         }
-    }
-
-    /// Access the underlying [`Limits`].
-    #[must_use]
-    pub fn limits(&self) -> &Limits {
-        &self.limits
-    }
-
-    /// Mutably access the underlying [`Limits`].
-    pub fn limits_mut(&mut self) -> &mut Limits {
-        &mut self.limits
     }
 }
 
@@ -311,25 +306,8 @@ impl Decoding for GifDecoding {
     type Error = GifError;
     type Job<'a> = GifDecodeJob<'a>;
 
-    fn with_limit_pixels(mut self, max: u64) -> Self {
-        self.limits.max_total_pixels = Some(max);
-        self
-    }
-
-    fn with_limit_memory(mut self, bytes: u64) -> Self {
-        self.limits.max_memory = Some(bytes);
-        self
-    }
-
-    fn with_limit_dimensions(mut self, width: u32, height: u32) -> Self {
-        self.limits.max_width = Some(width.min(u16::MAX as u32) as u16);
-        self.limits.max_height = Some(height.min(u16::MAX as u32) as u16);
-        self
-    }
-
-    fn with_limit_file_size(mut self, bytes: u64) -> Self {
-        self.limit_file_size = Some(bytes);
-        self.limits.max_file_size = Some(bytes);
+    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
+        self.limits = limits.clone();
         self
     }
 
@@ -337,13 +315,12 @@ impl Decoding for GifDecoding {
         GifDecodeJob {
             config: self,
             stop: None,
-            limit_pixels: None,
-            limit_memory: None,
+            limits: None,
         }
     }
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
-        if let Some(max) = self.limit_file_size {
+        if let Some(max) = self.limits.max_file_size {
             if data.len() as u64 > max {
                 return Err(GifError::FileTooLarge {
                     size: data.len() as u64,
@@ -352,8 +329,9 @@ impl Decoding for GifDecoding {
             }
         }
 
+        let gif_limits = limits_from_resource(&self.limits);
         let cursor = std::io::Cursor::new(data);
-        let mut decoder = Decoder::new(cursor, self.limits.clone(), &enough::Unstoppable)
+        let mut decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)
             .map_err(|e| e.into_inner())?;
 
         let metadata = decoder.metadata().clone();
@@ -378,20 +356,16 @@ impl Decoding for GifDecoding {
 pub struct GifDecodeJob<'a> {
     config: &'a GifDecoding,
     stop: Option<&'a dyn Stop>,
-    limit_pixels: Option<u64>,
-    limit_memory: Option<u64>,
+    limits: Option<ResourceLimits>,
 }
 
 impl<'a> GifDecodeJob<'a> {
     fn build_limits(&self) -> Limits {
-        let mut limits = self.config.limits.clone();
-        if let Some(px) = self.limit_pixels {
-            limits.max_total_pixels = Some(px);
+        let base = limits_from_resource(&self.config.limits);
+        match &self.limits {
+            Some(job_limits) => merge_resource_limits(&base, job_limits),
+            None => base,
         }
-        if let Some(mem) = self.limit_memory {
-            limits.max_memory = Some(mem);
-        }
-        limits
     }
 }
 
@@ -403,24 +377,30 @@ impl<'a> DecodingJob<'a> for GifDecodeJob<'a> {
         self
     }
 
-    fn with_limit_pixels(mut self, max: u64) -> Self {
-        self.limit_pixels = Some(max);
-        self
-    }
-
-    fn with_limit_memory(mut self, bytes: u64) -> Self {
-        self.limit_memory = Some(bytes);
+    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
+        self.limits = Some(limits.clone());
         self
     }
 
     fn decode(self, data: &[u8]) -> Result<DecodeOutput, Self::Error> {
-        // Check file size
-        if let Some(max) = self.config.limit_file_size {
+        // Check file size from config limits
+        if let Some(max) = self.config.limits.max_file_size {
             if data.len() as u64 > max {
                 return Err(GifError::FileTooLarge {
                     size: data.len() as u64,
                     max,
                 });
+            }
+        }
+        // Also check job-level file size override
+        if let Some(ref job_limits) = self.limits {
+            if let Some(max) = job_limits.max_file_size {
+                if data.len() as u64 > max {
+                    return Err(GifError::FileTooLarge {
+                        size: data.len() as u64,
+                        max,
+                    });
+                }
             }
         }
 
