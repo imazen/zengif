@@ -12,8 +12,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use zencodec_types::{
-    DecodeOutput, Decoding, DecodingJob, EncodeOutput, Encoding, EncodingJob, ImageFormat,
-    ImageInfo, ImageMetadata, ImgRef, ImgVec, PixelData, ResourceLimits, Stop,
+    CodecCapabilities, DecodeOutput, Decoding, DecodingJob, EncodeOutput, Encoding, EncodingJob,
+    ImageFormat, ImageInfo, ImageMetadata, ImgRef, ImgVec, PixelData, ResourceLimits, Stop,
 };
 
 use crate::encode::{EncoderConfig, EncodeRequest};
@@ -21,7 +21,7 @@ use crate::types::{FrameInput, Repeat};
 use crate::{Decoder, GifError, Limits};
 
 /// Build a zengif [`Limits`] from a [`ResourceLimits`], starting from zengif defaults.
-fn limits_from_resource(rl: &ResourceLimits) -> Limits {
+fn limits_from_resource(rl: ResourceLimits) -> Limits {
     let mut limits = Limits::default();
     if let Some(px) = rl.max_pixels {
         limits.max_total_pixels = Some(px);
@@ -43,7 +43,7 @@ fn limits_from_resource(rl: &ResourceLimits) -> Limits {
 
 /// Merge a [`ResourceLimits`] into an existing zengif [`Limits`], overriding
 /// only fields that are `Some` in the `ResourceLimits`.
-fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
+fn merge_resource_limits(base: &Limits, rl: ResourceLimits) -> Limits {
     let mut limits = base.clone();
     if let Some(px) = rl.max_pixels {
         limits.max_total_pixels = Some(px);
@@ -77,7 +77,6 @@ fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
 #[derive(Clone, Debug)]
 pub struct GifEncoding {
     inner: EncoderConfig,
-    quality: Option<f32>,
     limits: ResourceLimits,
 }
 
@@ -99,15 +98,13 @@ impl GifEncoding {
         }
         Self {
             inner,
-            quality: None,
             limits: ResourceLimits::default(),
         }
     }
 
     /// Set quality (0.0-100.0). Maps to the quantizer quality setting.
     #[must_use]
-    pub fn with_quality(mut self, quality: f32) -> Self {
-        self.quality = Some(quality.clamp(0.0, 100.0));
+    pub fn with_quality(mut self, #[allow(unused)] quality: f32) -> Self {
         #[cfg(any(
             feature = "imagequant",
             feature = "quantizr",
@@ -117,6 +114,7 @@ impl GifEncoding {
         {
             self.inner.quality = quality.clamp(0.0, 100.0) as u8;
         }
+        let _ = &mut self; // suppress unused-mut when no quantizer feature
         self
     }
 
@@ -169,12 +167,20 @@ impl Default for GifEncoding {
     }
 }
 
+static ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new()
+    .with_encode_cancel(true)
+    .with_cheap_probe(true);
+
 impl Encoding for GifEncoding {
     type Error = GifError;
     type Job<'a> = GifEncodeJob<'a>;
 
-    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
-        self.limits = limits.clone();
+    fn capabilities() -> &'static CodecCapabilities {
+        &ENCODE_CAPS
+    }
+
+    fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -196,8 +202,8 @@ pub struct GifEncodeJob<'a> {
 
 impl<'a> GifEncodeJob<'a> {
     fn build_limits(&self) -> Limits {
-        let base = limits_from_resource(&self.config.limits);
-        match &self.limits {
+        let base = limits_from_resource(self.config.limits);
+        match self.limits {
             Some(job_limits) => merge_resource_limits(&base, job_limits),
             None => base,
         }
@@ -232,15 +238,25 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
         self
     }
 
-    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
-        self.limits = Some(limits.clone());
+    fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = Some(limits);
         self
     }
 
     fn encode_rgb8(self, img: ImgRef<'_, zencodec_types::Rgb<u8>>) -> Result<EncodeOutput, Self::Error> {
         let (buf, _, _) = img.to_contiguous_buf();
-        let w = img.width() as u16;
-        let h = img.height() as u16;
+        let w = u16::try_from(img.width()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let h = u16::try_from(img.height()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
         // Expand RGB to zengif RGBA
         let rgba: Vec<crate::Rgba> = buf
             .iter()
@@ -251,8 +267,18 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
 
     fn encode_rgba8(self, img: ImgRef<'_, zencodec_types::Rgba<u8>>) -> Result<EncodeOutput, Self::Error> {
         let (buf, _, _) = img.to_contiguous_buf();
-        let w = img.width() as u16;
-        let h = img.height() as u16;
+        let w = u16::try_from(img.width()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let h = u16::try_from(img.height()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
         let rgba: Vec<crate::Rgba> = buf
             .iter()
             .map(|p| crate::Rgba::new(p.r, p.g, p.b, p.a))
@@ -262,8 +288,18 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
 
     fn encode_gray8(self, img: ImgRef<'_, zencodec_types::Gray<u8>>) -> Result<EncodeOutput, Self::Error> {
         let (buf, _, _) = img.to_contiguous_buf();
-        let w = img.width() as u16;
-        let h = img.height() as u16;
+        let w = u16::try_from(img.width()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let h = u16::try_from(img.height()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
         let rgba: Vec<crate::Rgba> = buf
             .iter()
             .map(|g| {
@@ -302,12 +338,19 @@ impl Default for GifDecoding {
     }
 }
 
+static DECODE_CAPS: CodecCapabilities = CodecCapabilities::new()
+    .with_decode_cancel(true);
+
 impl Decoding for GifDecoding {
     type Error = GifError;
     type Job<'a> = GifDecodeJob<'a>;
 
-    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
-        self.limits = limits.clone();
+    fn capabilities() -> &'static CodecCapabilities {
+        &DECODE_CAPS
+    }
+
+    fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -319,7 +362,7 @@ impl Decoding for GifDecoding {
         }
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
+    fn probe_header(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
         if let Some(max) = self.limits.max_file_size {
             if data.len() as u64 > max {
                 return Err(GifError::FileTooLarge {
@@ -329,13 +372,40 @@ impl Decoding for GifDecoding {
             }
         }
 
-        let gif_limits = limits_from_resource(&self.limits);
+        let gif_limits = limits_from_resource(self.limits);
+        let cursor = std::io::Cursor::new(data);
+        let decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)
+            .map_err(|e| e.into_inner())?;
+
+        let metadata = decoder.metadata().clone();
+
+        // Header-only probe: return dimensions and format without counting frames.
+        Ok(ImageInfo::new(
+            metadata.width as u32,
+            metadata.height as u32,
+            ImageFormat::Gif,
+        )
+        .with_alpha(true)) // GIF always supports transparency
+    }
+
+    fn probe_full(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
+        if let Some(max) = self.limits.max_file_size {
+            if data.len() as u64 > max {
+                return Err(GifError::FileTooLarge {
+                    size: data.len() as u64,
+                    max,
+                });
+            }
+        }
+
+        let gif_limits = limits_from_resource(self.limits);
         let cursor = std::io::Cursor::new(data);
         let mut decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)
             .map_err(|e| e.into_inner())?;
 
         let metadata = decoder.metadata().clone();
-        // Count frames by decoding (GIF requires parsing to count)
+
+        // Full probe: walk all frames to count them. O(file_size).
         let mut frame_count = 0u32;
         while decoder.next_frame().map_err(|e| e.into_inner())?.is_some() {
             frame_count += 1;
@@ -361,8 +431,8 @@ pub struct GifDecodeJob<'a> {
 
 impl<'a> GifDecodeJob<'a> {
     fn build_limits(&self) -> Limits {
-        let base = limits_from_resource(&self.config.limits);
-        match &self.limits {
+        let base = limits_from_resource(self.config.limits);
+        match self.limits {
             Some(job_limits) => merge_resource_limits(&base, job_limits),
             None => base,
         }
@@ -377,8 +447,8 @@ impl<'a> DecodingJob<'a> for GifDecodeJob<'a> {
         self
     }
 
-    fn with_limits(mut self, limits: &ResourceLimits) -> Self {
-        self.limits = Some(limits.clone());
+    fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = Some(limits);
         self
     }
 
@@ -450,7 +520,13 @@ impl<'a> DecodingJob<'a> for GifDecodeJob<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zencodec_types::{Decoding, Encoding, Rgb, Rgba};
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    use zencodec_types::{Encoding, Rgb, Rgba};
 
     // Minimal valid GIF89a (1x1 red pixel)
     const MINIMAL_GIF: &[u8] = &[
@@ -482,13 +558,25 @@ mod tests {
     }
 
     #[test]
-    fn probe_minimal() {
+    fn probe_header_minimal() {
         let dec = GifDecoding::new();
-        let info = dec.probe(MINIMAL_GIF).unwrap();
+        let info = dec.probe_header(MINIMAL_GIF).unwrap();
+        assert_eq!(info.width, 1);
+        assert_eq!(info.height, 1);
+        assert_eq!(info.format, ImageFormat::Gif);
+        // Header probe doesn't count frames
+        assert_eq!(info.frame_count, None);
+    }
+
+    #[test]
+    fn probe_full_minimal() {
+        let dec = GifDecoding::new();
+        let info = dec.probe_full(MINIMAL_GIF).unwrap();
         assert_eq!(info.width, 1);
         assert_eq!(info.height, 1);
         assert_eq!(info.format, ImageFormat::Gif);
         assert!(!info.has_animation);
+        assert_eq!(info.frame_count, Some(1));
     }
 
     #[cfg(any(
