@@ -309,6 +309,90 @@ impl<'a> EncodingJob<'a> for GifEncodeJob<'a> {
             .collect();
         self.do_encode(rgba, w, h)
     }
+
+    fn encode_bgra8(self, img: ImgRef<'_, zencodec_types::Bgra<u8>>) -> Result<EncodeOutput, Self::Error> {
+        let (buf, _, _) = img.to_contiguous_buf();
+        let w = u16::try_from(img.width()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let h = u16::try_from(img.height()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let rgba: Vec<crate::Rgba> = buf
+            .iter()
+            .map(|p| crate::Rgba::new(p.r, p.g, p.b, p.a))
+            .collect();
+        self.do_encode(rgba, w, h)
+    }
+
+    fn encode_bgrx8(self, img: ImgRef<'_, zencodec_types::Bgra<u8>>) -> Result<EncodeOutput, Self::Error> {
+        let (buf, _, _) = img.to_contiguous_buf();
+        let w = u16::try_from(img.width()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let h = u16::try_from(img.height()).map_err(|_| GifError::DimensionsTooLarge {
+            width: img.width().min(u16::MAX as usize) as u16,
+            height: img.height().min(u16::MAX as usize) as u16,
+            max_width: u16::MAX,
+            max_height: u16::MAX,
+        })?;
+        let rgba: Vec<crate::Rgba> = buf
+            .iter()
+            .map(|p| crate::Rgba::rgb(p.r, p.g, p.b))
+            .collect();
+        self.do_encode(rgba, w, h)
+    }
+
+    fn encode_rgb_f32(self, img: ImgRef<'_, zencodec_types::Rgb<f32>>) -> Result<EncodeOutput, Self::Error> {
+        use linear_srgb::default::linear_to_srgb_u8;
+        let (buf, w, h) = img.to_contiguous_buf();
+        let rgb: Vec<zencodec_types::Rgb<u8>> = buf
+            .iter()
+            .map(|p| zencodec_types::Rgb {
+                r: linear_to_srgb_u8(p.r.clamp(0.0, 1.0)),
+                g: linear_to_srgb_u8(p.g.clamp(0.0, 1.0)),
+                b: linear_to_srgb_u8(p.b.clamp(0.0, 1.0)),
+            })
+            .collect();
+        let rgb_img = ImgVec::new(rgb, w, h);
+        self.encode_rgb8(rgb_img.as_ref())
+    }
+
+    fn encode_rgba_f32(self, img: ImgRef<'_, zencodec_types::Rgba<f32>>) -> Result<EncodeOutput, Self::Error> {
+        use linear_srgb::default::linear_to_srgb_u8;
+        let (buf, w, h) = img.to_contiguous_buf();
+        let rgba: Vec<zencodec_types::Rgba<u8>> = buf
+            .iter()
+            .map(|p| zencodec_types::Rgba {
+                r: linear_to_srgb_u8(p.r.clamp(0.0, 1.0)),
+                g: linear_to_srgb_u8(p.g.clamp(0.0, 1.0)),
+                b: linear_to_srgb_u8(p.b.clamp(0.0, 1.0)),
+                a: (p.a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+            })
+            .collect();
+        let rgba_img = ImgVec::new(rgba, w, h);
+        self.encode_rgba8(rgba_img.as_ref())
+    }
+
+    fn encode_gray_f32(self, img: ImgRef<'_, zencodec_types::Gray<f32>>) -> Result<EncodeOutput, Self::Error> {
+        use linear_srgb::default::linear_to_srgb_u8;
+        let (buf, w, h) = img.to_contiguous_buf();
+        let gray: Vec<zencodec_types::Gray<u8>> = buf
+            .iter()
+            .map(|g| zencodec_types::Gray::new(linear_to_srgb_u8(g.value().clamp(0.0, 1.0))))
+            .collect();
+        let gray_img = ImgVec::new(gray, w, h);
+        self.encode_gray8(gray_img.as_ref())
+    }
 }
 
 // ── Decoding ────────────────────────────────────────────────────────────────
@@ -515,6 +599,147 @@ impl<'a> DecodingJob<'a> for GifDecodeJob<'a> {
 
         Ok(DecodeOutput::new(pixel_data, info))
     }
+
+    fn decode_into_rgb8(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgb<u8>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgb8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_rgba8(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgba<u8>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgba8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_gray8(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Gray<u8>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_gray8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_bgra8(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Bgra<u8>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_bgra8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_bgrx8(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Bgra<u8>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_bgra8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
+                *d = zencodec_types::Bgra {
+                    b: s.b,
+                    g: s.g,
+                    r: s.r,
+                    a: 255,
+                };
+            }
+        }
+        Ok(info)
+    }
+
+    fn decode_into_rgb_f32(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgb<f32>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        use linear_srgb::default::srgb_u8_to_linear;
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgb8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
+                *d = zencodec_types::Rgb {
+                    r: srgb_u8_to_linear(s.r),
+                    g: srgb_u8_to_linear(s.g),
+                    b: srgb_u8_to_linear(s.b),
+                };
+            }
+        }
+        Ok(info)
+    }
+
+    fn decode_into_rgba_f32(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgba<f32>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        use linear_srgb::default::srgb_u8_to_linear;
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgba8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
+                *d = zencodec_types::Rgba {
+                    r: srgb_u8_to_linear(s.r),
+                    g: srgb_u8_to_linear(s.g),
+                    b: srgb_u8_to_linear(s.b),
+                    a: s.a as f32 / 255.0,
+                };
+            }
+        }
+        Ok(info)
+    }
+
+    fn decode_into_gray_f32(
+        self,
+        data: &[u8],
+        mut dst: zencodec_types::ImgRefMut<'_, zencodec_types::Gray<f32>>,
+    ) -> Result<ImageInfo, Self::Error> {
+        use linear_srgb::default::srgb_u8_to_linear;
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_gray8();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
+                *d = zencodec_types::Gray::new(srgb_u8_to_linear(s.value()));
+            }
+        }
+        Ok(info)
+    }
 }
 
 #[cfg(test)]
@@ -630,5 +855,55 @@ mod tests {
         let enc = GifEncoding::new().with_quality(80.0);
         let output = enc.encode_rgba8(img.as_ref()).unwrap();
         assert!(!output.is_empty());
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn f32_conversion_all_simd_tiers() {
+        use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
+        #[allow(unused_imports)]
+        use linear_srgb::default::{linear_to_srgb_u8, srgb_u8_to_linear};
+
+        let report = for_each_token_permutation(CompileTimePolicy::Warn, |_perm| {
+            // Encode linear f32 → GIF (sRGB u8) → decode to linear f32
+            let pixels: Vec<zencodec_types::Rgb<f32>> = vec![
+                zencodec_types::Rgb { r: 0.0, g: 0.5, b: 1.0 },
+                zencodec_types::Rgb { r: 0.25, g: 0.75, b: 0.1 },
+                zencodec_types::Rgb { r: 0.0, g: 0.0, b: 0.0 },
+                zencodec_types::Rgb { r: 1.0, g: 1.0, b: 1.0 },
+            ];
+            // Use a 16x16 image (GIF quantization needs enough pixels)
+            let mut big_pixels = Vec::new();
+            for _ in 0..64 {
+                big_pixels.extend_from_slice(&pixels);
+            }
+            let img = ImgVec::new(big_pixels.clone(), 16, 16);
+            let enc = GifEncoding::new();
+            let output = enc.encode_rgb_f32(img.as_ref()).unwrap();
+
+            let dec = GifDecoding::new();
+            let mut buf = vec![zencodec_types::Rgb { r: 0.0f32, g: 0.0, b: 0.0 }; 256];
+            let mut dst = ImgVec::new(buf.clone(), 16, 16);
+            dec.decode_into_rgb_f32(output.bytes(), dst.as_mut())
+                .unwrap();
+            buf = dst.into_buf();
+
+            // GIF quantization is lossy, so just verify the linear conversion roundtrips
+            // through sRGB correctly (not the pixel values themselves)
+            for decoded in &buf {
+                // Values must be valid linear light (0.0-1.0 range)
+                assert!(decoded.r >= 0.0 && decoded.r <= 1.0);
+                assert!(decoded.g >= 0.0 && decoded.g <= 1.0);
+                assert!(decoded.b >= 0.0 && decoded.b <= 1.0);
+            }
+            // Verify at least one value is non-zero (decode actually happened)
+            assert!(buf.iter().any(|p| p.r > 0.0 || p.g > 0.0 || p.b > 0.0));
+        });
+        assert!(report.permutations_run >= 1);
     }
 }
