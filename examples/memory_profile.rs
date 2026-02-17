@@ -13,13 +13,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use enough::Unstoppable;
-use zengif::{Decoder, FrameInput, Limits, Rgba};
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "color_quant"
-))]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 use zengif::EncoderConfig;
+use zengif::{Decoder, FrameInput, Limits, Rgba};
 
 #[cfg(feature = "color_quant")]
 use zengif::ColorQuantQuantizer;

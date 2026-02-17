@@ -20,10 +20,8 @@ use std::io::{self, Write};
 use std::time::Instant;
 
 use enough::Unstoppable;
-use zengif::{
-    heuristics::estimate_decode,
-    Decoder, FrameInput, Limits, Rgba,
-};
+#[cfg(any(feature = "imagequant", feature = "quantizr"))]
+use zengif::heuristics::{estimate_encode, QuantizerType};
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -31,8 +29,7 @@ use zengif::{
     feature = "exoquant-deprecated"
 ))]
 use zengif::EncoderConfig;
-#[cfg(any(feature = "imagequant", feature = "quantizr"))]
-use zengif::heuristics::{estimate_encode, QuantizerType};
+use zengif::{heuristics::estimate_decode, Decoder, FrameInput, Limits, Rgba};
 
 #[cfg(feature = "color_quant")]
 use zengif::ColorQuantQuantizer;

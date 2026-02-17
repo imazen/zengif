@@ -79,17 +79,13 @@ impl QuantizerTrait for ZenquantQuantizer {
         let zq_config = Self::make_config(config);
         let zq_pixels = Self::convert_pixels(pixels);
 
-        let result = zenquant::quantize_rgba(
-            zq_pixels,
-            width as usize,
-            height as usize,
-            &zq_config,
-        )
-        .map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "zenquant quantization failed"
-            })
-        })?;
+        let result =
+            zenquant::quantize_rgba(zq_pixels, width as usize, height as usize, &zq_config)
+                .map_err(|_| {
+                    at!(GifError::QuantizationFailed {
+                        message: "zenquant quantization failed"
+                    })
+                })?;
 
         let transparent_index = result.transparent_index();
 
@@ -126,12 +122,11 @@ impl QuantizerTrait for ZenquantQuantizer {
 
         stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
-        let result =
-            zenquant::build_palette_rgba(&img_refs, &zq_config).map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "zenquant palette building failed"
-                })
-            })?;
+        let result = zenquant::build_palette_rgba(&img_refs, &zq_config).map_err(|_| {
+            at!(GifError::QuantizationFailed {
+                message: "zenquant palette building failed"
+            })
+        })?;
 
         let palette_bytes = Self::palette_to_bytes(&result);
         self.cached_result = Some(result);

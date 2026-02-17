@@ -227,7 +227,10 @@ pub use types::{
 #[cfg(feature = "std")]
 mod zencodec;
 #[cfg(feature = "std")]
-pub use zencodec::{GifDecodeJob, GifDecoding, GifEncodeJob, GifEncoding};
+pub use zencodec::{
+    GifDecodeJob, GifDecoder, GifDecoderConfig, GifEncodeJob, GifEncoder, GifEncoderConfig,
+    GifFrameDecoder, GifFrameEncoder,
+};
 
 // Re-export enough for user convenience
 pub use enough::{Stop, Unstoppable};
