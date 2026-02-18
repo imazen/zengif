@@ -191,6 +191,10 @@ impl zencodec_types::EncoderConfig for GifEncoderConfig {
     type Error = GifError;
     type Job<'a> = GifEncodeJob<'a>;
 
+    fn format() -> ImageFormat {
+        ImageFormat::Gif
+    }
+
     fn supported_descriptors() -> &'static [PixelDescriptor] {
         ENCODE_DESCRIPTORS
     }
@@ -549,6 +553,10 @@ impl zencodec_types::DecoderConfig for GifDecoderConfig {
     type Error = GifError;
     type Job<'a> = GifDecodeJob<'a>;
 
+    fn format() -> ImageFormat {
+        ImageFormat::Gif
+    }
+
     fn supported_descriptors() -> &'static [PixelDescriptor] {
         DECODE_DESCRIPTORS
     }
@@ -747,6 +755,65 @@ impl GifDecoder<'_> {
     }
 }
 
+/// Extract the Rgba8 ImgVec from GIF decoder output.
+fn to_rgba8(pixels: PixelData) -> zencodec_types::ImgVec<zencodec_types::Rgba<u8>> {
+    match pixels {
+        PixelData::Rgba8(img) => img,
+        other => unreachable!("GIF decoder produced unexpected format: {other:?}"),
+    }
+}
+
+/// Convert GIF decoder output (Rgba8) to Rgb8 by stripping alpha.
+fn to_rgb8(pixels: PixelData) -> zencodec_types::ImgVec<zencodec_types::Rgb<u8>> {
+    let img = to_rgba8(pixels);
+    let w = img.width();
+    let h = img.height();
+    let buf: Vec<zencodec_types::Rgb<u8>> = img
+        .into_buf()
+        .into_iter()
+        .map(|p| zencodec_types::Rgb {
+            r: p.r,
+            g: p.g,
+            b: p.b,
+        })
+        .collect();
+    zencodec_types::ImgVec::new(buf, w, h)
+}
+
+/// Convert GIF decoder output (Rgba8) to Gray8 by luma calculation.
+fn to_gray8(pixels: PixelData) -> zencodec_types::ImgVec<rgb::Gray<u8>> {
+    let img = to_rgba8(pixels);
+    let w = img.width();
+    let h = img.height();
+    let buf: Vec<rgb::Gray<u8>> = img
+        .into_buf()
+        .into_iter()
+        .map(|p| {
+            let luma = ((p.r as u16 * 77 + p.g as u16 * 150 + p.b as u16 * 29) >> 8) as u8;
+            rgb::Gray::new(luma)
+        })
+        .collect();
+    zencodec_types::ImgVec::new(buf, w, h)
+}
+
+/// Convert GIF decoder output (Rgba8) to Bgra8 by swizzling.
+fn to_bgra8(pixels: PixelData) -> zencodec_types::ImgVec<rgb::alt::BGRA<u8>> {
+    let img = to_rgba8(pixels);
+    let w = img.width();
+    let h = img.height();
+    let buf: Vec<rgb::alt::BGRA<u8>> = img
+        .into_buf()
+        .into_iter()
+        .map(|p| rgb::alt::BGRA {
+            b: p.b,
+            g: p.g,
+            r: p.r,
+            a: p.a,
+        })
+        .collect();
+    zencodec_types::ImgVec::new(buf, w, h)
+}
+
 impl zencodec_types::Decoder for GifDecoder<'_> {
     type Error = GifError;
 
@@ -815,27 +882,28 @@ impl zencodec_types::Decoder for GifDecoder<'_> {
         let desc = dst.descriptor();
         let output = self.decode(data)?;
         let info = output.info().clone();
+        let pixels = output.into_pixels();
 
         match (desc.channel_type, desc.layout) {
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => {
-                let src = output.into_rgb8();
+                let src = to_rgb8(pixels);
                 copy_rows_u8(&src, &mut dst);
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgba) => {
-                let src = output.into_rgba8();
+                let src = to_rgba8(pixels);
                 copy_rows_u8(&src, &mut dst);
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Gray) => {
-                let src = output.into_gray8();
+                let src = to_gray8(pixels);
                 copy_rows_u8(&src, &mut dst);
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Bgra) => {
-                let src = output.into_bgra8();
+                let src = to_bgra8(pixels);
                 copy_rows_u8(&src, &mut dst);
             }
             (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgb) => {
                 use linear_srgb::default::srgb_u8_to_linear;
-                let src = output.into_rgb8();
+                let src = to_rgb8(pixels);
                 for y in 0..src.height().min(dst.rows() as usize) {
                     let src_row = &src.buf()[y * src.stride()..][..src.width()];
                     let dst_row = dst.row_mut(y as u32);
@@ -855,7 +923,7 @@ impl zencodec_types::Decoder for GifDecoder<'_> {
             }
             (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgba) => {
                 use linear_srgb::default::srgb_u8_to_linear;
-                let src = output.into_rgba8();
+                let src = to_rgba8(pixels);
                 for y in 0..src.height().min(dst.rows() as usize) {
                     let src_row = &src.buf()[y * src.stride()..][..src.width()];
                     let dst_row = dst.row_mut(y as u32);
@@ -877,7 +945,7 @@ impl zencodec_types::Decoder for GifDecoder<'_> {
             }
             (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Gray) => {
                 use linear_srgb::default::srgb_u8_to_linear;
-                let src = output.into_gray8();
+                let src = to_gray8(pixels);
                 for y in 0..src.height().min(dst.rows() as usize) {
                     let src_row = &src.buf()[y * src.stride()..][..src.width()];
                     let dst_row = dst.row_mut(y as u32);
