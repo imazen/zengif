@@ -49,7 +49,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 
 # Shared codec traits
 zencodec-types = { path = "../zencodec-types" }
-linear-srgb = { version = "0.5", path = "../linear-srgb" }
+linear-srgb = "0.5.5"
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
