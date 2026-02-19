@@ -49,7 +49,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 
 # Shared codec traits
 zencodec-types = { path = "../zencodec-types" }
-linear-srgb = "0.4"
+linear-srgb = { version = "0.5", path = "../linear-srgb" }
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
@@ -67,7 +67,7 @@ imgref = { version = "1.12", optional = true }
 almost-enough = "0.3"
 imgref = "1.12"
 codec-corpus = "1"
-archmage = { version = "0.7", features = ["std"] }
+archmage = { version = "0.8.4", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
