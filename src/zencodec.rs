@@ -691,7 +691,6 @@ impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
     type Error = GifError;
     type Decoder = GifDecoder<'a>;
     type FrameDecoder = GifFrameDecoder;
-
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = Some(stop);
         self
@@ -749,6 +748,7 @@ impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
             frame_index: 0,
         })
     }
+
 }
 
 // ── GifDecoder ───────────────────────────────────────────────────────
