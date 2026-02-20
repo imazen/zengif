@@ -305,6 +305,21 @@ impl GifEncoder<'_> {
         w: u16,
         h: u16,
     ) -> Result<EncodeOutput, GifError> {
+        // Pre-flight memory check: 4 bytes/pixel for RGBA
+        let effective_limits = match &self.limits {
+            Some(job_limits) => job_limits,
+            None => &self.config.limits,
+        };
+        let estimated_mem = w as u64 * h as u64 * 4;
+        if let Some(max_mem) = effective_limits.max_memory_bytes {
+            if estimated_mem > max_mem {
+                return Err(GifError::MemoryLimitExceeded {
+                    current: estimated_mem,
+                    limit: max_mem,
+                });
+            }
+        }
+
         let limits = self.build_limits();
         let stop: &dyn Stop = self.stop.unwrap_or(&enough::Unstoppable);
 
