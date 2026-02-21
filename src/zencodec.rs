@@ -987,7 +987,7 @@ impl zencodec_types::Decoder for GifDecoder<'_> {
     fn decode_rows(
         self,
         _data: &[u8],
-        _sink: &mut dyn FnMut(u32, PixelSlice<'_>),
+        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<ImageInfo, GifError> {
         Err(GifError::InvalidEncoderState {
             message: "GIF does not support row-level decode callback",
@@ -1064,7 +1064,7 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
 
     fn next_frame_rows(
         &mut self,
-        _sink: &mut dyn FnMut(u32, PixelSlice<'_>),
+        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<Option<ImageInfo>, GifError> {
         Err(GifError::InvalidEncoderState {
             message: "GIF does not support row-level frame decode",
