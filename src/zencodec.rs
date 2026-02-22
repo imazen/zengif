@@ -351,7 +351,7 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
     })?;
 
     let desc = pixels.descriptor();
-    let bytes = collect_contiguous_bytes(pixels);
+    let bytes = pixels.contiguous_bytes();
 
     let rgba = match (desc.channel_type, desc.layout) {
         (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => bytes
@@ -1054,20 +1054,6 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
 
 }
 // ── Helpers ──────────────────────────────────────────────────────────
-
-/// Collect contiguous bytes from a PixelSlice (handles stride).
-fn collect_contiguous_bytes(pixels: &PixelSlice<'_>) -> Vec<u8> {
-    let h = pixels.rows();
-    let w = pixels.width();
-    let bpp = pixels.descriptor().bytes_per_pixel();
-    let row_bytes = w as usize * bpp;
-
-    let mut out = Vec::with_capacity(row_bytes * h as usize);
-    for y in 0..h {
-        out.extend_from_slice(&pixels.row(y)[..row_bytes]);
-    }
-    out
-}
 
 /// Copy rows from a typed ImgVec into a PixelSliceMut.
 fn copy_rows_u8<P: Copy>(src: &zencodec_types::ImgVec<P>, dst: &mut PixelSliceMut<'_>)
