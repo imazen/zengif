@@ -1,7 +1,7 @@
 [package]
 name = "zengif"
 version = "0.6.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 description = "Server-side GIF codec with zero-trust design, memory bounds, streaming, and full animation transparency support"
@@ -42,7 +42,7 @@ gif = { version = "0.14", default-features = false }
 whereat = { version = "0.1", default-features = false }
 
 # Cooperative cancellation (no_std compatible)
-enough = { version = "0.3", default-features = false }
+enough = { version = "0.4", default-features = false }
 
 # Safe transmutes for pixel data (no_std compatible)
 bytemuck = { version = "1.21", features = ["derive"] }
@@ -64,7 +64,7 @@ imgref = { version = "1.12", optional = true }
 
 [dev-dependencies]
 # Testing
-almost-enough = "0.3"
+almost-enough = "0.4"
 imgref = "1.12"
 codec-corpus = "1"
 archmage = { version = "0.8.4", features = ["std"] }

@@ -2,7 +2,7 @@
 name = "zengif-fuzz"
 version = "0.0.0"
 publish = false
-edition = "2021"
+edition = "2024"
 
 [package.metadata]
 cargo-fuzz = true
@@ -17,11 +17,11 @@ features = ["std"]
 
 # Re-exported by zengif, but needed directly for fuzz targets
 [dependencies.enough]
-version = "0.3"
+version = "0.4"
 features = ["std"]
 
 [dependencies.almost-enough]
-version = "0.3"
+version = "0.4"
 
 # Explicit features for fuzzing
 [features]
