@@ -983,16 +983,6 @@ impl zencodec_types::Decoder for GifDecoder<'_> {
 
         Ok(info)
     }
-
-    fn decode_rows(
-        self,
-        _data: &[u8],
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
-    ) -> Result<ImageInfo, GifError> {
-        Err(GifError::InvalidEncoderState {
-            message: "GIF does not support row-level decode callback",
-        })
-    }
 }
 
 // ── GifFrameDecoder ──────────────────────────────────────────────────
@@ -1062,16 +1052,7 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
         })
     }
 
-    fn next_frame_rows(
-        &mut self,
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
-    ) -> Result<Option<ImageInfo>, GifError> {
-        Err(GifError::InvalidEncoderState {
-            message: "GIF does not support row-level frame decode",
-        })
-    }
 }
-
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /// Collect contiguous bytes from a PixelSlice (handles stride).
