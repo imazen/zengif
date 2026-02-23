@@ -67,7 +67,7 @@ imgref = { version = "1.12", optional = true }
 almost-enough = "0.4"
 imgref = "1.12"
 codec-corpus = "1"
-archmage = { version = "0.8.4", features = ["std"] }
+archmage = { version = "0.8.6", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
