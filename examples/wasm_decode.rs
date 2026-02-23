@@ -6,7 +6,7 @@
 //! the decoder compiles and runs on wasm32-unknown-unknown.
 
 use enough::Unstoppable;
-use zengif::{decode_gif, Limits};
+use zengif::{Limits, decode_gif};
 
 /// Decode a GIF and return frame count
 pub fn decode_and_count(data: &[u8]) -> Result<usize, String> {

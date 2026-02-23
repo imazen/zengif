@@ -4,8 +4,8 @@
 //! with proper disposal method handling.
 
 use std::io::Read;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use enough::Stop;
 use whereat::at;

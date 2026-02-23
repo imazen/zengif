@@ -271,11 +271,7 @@ mod quality_tests {
             .or_else(|_| std::env::var("USERPROFILE"))
             .ok()?;
         let path = PathBuf::from(home).join("work/codec-corpus");
-        if path.exists() {
-            Some(path)
-        } else {
-            None
-        }
+        if path.exists() { Some(path) } else { None }
     }
 
     /// Aggregate results across multiple images

@@ -748,7 +748,6 @@ impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
             frame_index: 0,
         })
     }
-
 }
 
 // ── GifDecoder ───────────────────────────────────────────────────────
@@ -999,11 +998,7 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
 
     fn frame_count(&self) -> Option<u32> {
         let count = self.decoder.metadata().frame_count;
-        if count > 0 {
-            Some(count as u32)
-        } else {
-            None
-        }
+        if count > 0 { Some(count as u32) } else { None }
     }
 
     fn next_frame(&mut self) -> Result<Option<DecodeFrame>, GifError> {
@@ -1051,7 +1046,6 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
             message: "GIF does not support next_frame_into yet",
         })
     }
-
 }
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -1231,7 +1225,7 @@ mod tests {
     ))]
     #[test]
     fn f32_conversion_all_simd_tiers() {
-        use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
+        use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
 
         let report = for_each_token_permutation(CompileTimePolicy::Warn, |_perm| {
             let pixels: Vec<zencodec_types::Rgb<f32>> = vec![

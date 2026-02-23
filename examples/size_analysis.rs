@@ -1,7 +1,7 @@
 //! Analyze file size impact of different thresholds.
 
 use std::fs;
-use zengif::{decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
+use zengif::{EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable, decode_gif};
 
 fn encode_with_threshold(orig_data: &[u8], threshold: Option<f32>) -> (usize, String) {
     let (meta, orig_frames, _) = decode_gif(orig_data, Limits::none(), &Unstoppable).unwrap();

@@ -1,7 +1,7 @@
 //! Encode request builder.
 
 use super::{Encoder, EncoderConfig};
-use crate::{types::FrameInput, GifError, Limits, Result};
+use crate::{GifError, Limits, Result, types::FrameInput};
 use enough::{Stop, Unstoppable};
 use std::io::Write;
 use whereat::at;

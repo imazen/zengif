@@ -1,6 +1,6 @@
 //! ColorQuant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
+use super::{QuantizeConfig, QuantizedFrame, QuantizerTrait, compute_sample_indices};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;

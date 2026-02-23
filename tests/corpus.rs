@@ -6,7 +6,7 @@
 use enough::Unstoppable;
 use std::fs;
 use std::path::Path;
-use zengif::{decode_gif, encode_gif, EncoderConfig, FrameInput, Limits};
+use zengif::{EncoderConfig, FrameInput, Limits, decode_gif, encode_gif};
 
 /// Path to local corpus files (committed to repo)
 const LOCAL_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/codec-corpus");

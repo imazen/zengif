@@ -366,14 +366,27 @@ fn measure_encode_color_quant(
 fn print_measurement(m: &Measurement) {
     println!(
         "{:<12} {:>4}x{:<4} {:>2} frames  {:>10} µs  {:>12} bytes peak  {:>6.1} Mpix/s  {:>5.1} B/pix",
-        m.name, m.width, m.height, m.frames, m.time_us, m.peak_bytes, m.throughput_mpixels, m.bytes_per_pixel
+        m.name,
+        m.width,
+        m.height,
+        m.frames,
+        m.time_us,
+        m.peak_bytes,
+        m.throughput_mpixels,
+        m.bytes_per_pixel
     );
 }
 
 fn main() {
-    println!("╔══════════════════════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                              ZENGIF MEMORY PROFILER (Tracking Allocator)                                 ║");
-    println!("╚══════════════════════════════════════════════════════════════════════════════════════════════════════════╝");
+    println!(
+        "╔══════════════════════════════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!(
+        "║                              ZENGIF MEMORY PROFILER (Tracking Allocator)                                 ║"
+    );
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
+    );
     println!();
 
     let test_configs = [

@@ -2,7 +2,7 @@
 
 use std::fs;
 use zengif::{
-    decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable,
+    EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, Unstoppable, decode_gif,
 };
 
 fn compute_frame_rmse(orig: &[Rgba], enc: &[Rgba]) -> f64 {

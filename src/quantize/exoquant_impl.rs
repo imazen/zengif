@@ -1,6 +1,6 @@
 //! Exoquant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
+use super::{QuantizeConfig, QuantizedFrame, QuantizerTrait, compute_sample_indices};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -132,7 +132,7 @@ impl QuantizerTrait for ExoquantQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
-        use exoquant::{ditherer, Color, Remapper, SimpleColorSpace};
+        use exoquant::{Color, Remapper, SimpleColorSpace, ditherer};
 
         let palette = self.shared_palette.as_ref().ok_or_else(|| {
             at!(GifError::QuantizationFailed {

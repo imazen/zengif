@@ -1,6 +1,6 @@
 //! Quantizr quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
+use super::{QuantizeConfig, QuantizedFrame, QuantizerTrait, compute_sample_indices};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -303,10 +303,12 @@ mod tests {
 
         // All pixels in each frame should map to the same index (uniform color)
         assert!(red_result.pixels.iter().all(|&p| p == red_result.pixels[0]));
-        assert!(blue_result
-            .pixels
-            .iter()
-            .all(|&p| p == blue_result.pixels[0]));
+        assert!(
+            blue_result
+                .pixels
+                .iter()
+                .all(|&p| p == blue_result.pixels[0])
+        );
 
         // Red and blue should map to different palette entries
         assert_ne!(red_result.pixels[0], blue_result.pixels[0]);

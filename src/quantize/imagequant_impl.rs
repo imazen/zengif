@@ -1,6 +1,6 @@
 //! Imagequant quantizer backend.
 
-use super::{compute_sample_indices, QuantizeConfig, QuantizedFrame, QuantizerTrait};
+use super::{QuantizeConfig, QuantizedFrame, QuantizerTrait, compute_sample_indices};
 use crate::error::{GifError, Result};
 use crate::types::Rgba;
 use enough::Stop;
@@ -289,10 +289,12 @@ mod tests {
         assert!(!result.palette.is_empty());
         assert_eq!(result.pixels.len(), 16);
         // Palette should contain red-ish color
-        assert!(result
-            .palette
-            .chunks(3)
-            .any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50));
+        assert!(
+            result
+                .palette
+                .chunks(3)
+                .any(|c| c[0] > 200 && c[1] < 50 && c[2] < 50)
+        );
     }
 
     #[test]

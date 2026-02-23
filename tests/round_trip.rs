@@ -7,7 +7,7 @@
 //! Round-trip tests: encode -> decode -> verify
 
 use enough::Unstoppable;
-use zengif::{decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
+use zengif::{Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, decode_gif, encode_gif};
 
 /// Create a solid color frame.
 fn solid_frame(width: u16, height: u16, color: Rgba, delay: u16) -> FrameInput {

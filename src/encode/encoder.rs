@@ -14,11 +14,11 @@ use super::config::default_buffer_frames;
     feature = "color_quant"
 ))]
 use super::palette::compute_remap_rmse;
-use super::palette::{compute_frame_diff_pooled, ScratchBuffer};
+use super::palette::{ScratchBuffer, compute_frame_diff_pooled};
 use super::{EncodeRequest, EncoderConfig};
 use crate::{
-    types::{FrameInput, Metadata, Repeat, Rgba},
     GifError, Limits, Result, Stats,
+    types::{FrameInput, Metadata, Repeat, Rgba},
 };
 use enough::Stop;
 use std::borrow::Cow;

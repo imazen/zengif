@@ -3,7 +3,7 @@
 //! Run with: cargo run --example basic
 
 use enough::Unstoppable;
-use zengif::{decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba};
+use zengif::{Decoder, EncoderConfig, FrameInput, Limits, Repeat, Rgba, decode_gif, encode_gif};
 
 fn main() {
     // Example 1: Create and encode a simple animation

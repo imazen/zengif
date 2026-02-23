@@ -20,8 +20,6 @@ use std::io::{self, Write};
 use std::time::Instant;
 
 use enough::Unstoppable;
-#[cfg(any(feature = "imagequant", feature = "quantizr"))]
-use zengif::heuristics::{estimate_encode, QuantizerType};
 #[cfg(any(
     feature = "imagequant",
     feature = "quantizr",
@@ -29,7 +27,9 @@ use zengif::heuristics::{estimate_encode, QuantizerType};
     feature = "exoquant-deprecated"
 ))]
 use zengif::EncoderConfig;
-use zengif::{heuristics::estimate_decode, Decoder, FrameInput, Limits, Rgba};
+#[cfg(any(feature = "imagequant", feature = "quantizr"))]
+use zengif::heuristics::{QuantizerType, estimate_encode};
+use zengif::{Decoder, FrameInput, Limits, Rgba, heuristics::estimate_decode};
 
 #[cfg(feature = "color_quant")]
 use zengif::ColorQuantQuantizer;
@@ -379,9 +379,15 @@ fn size_name(width: u32) -> &'static str {
 // =============================================================================
 
 fn main() {
-    println!("╔══════════════════════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                                    ZENGIF ALLOCATION PROFILER                                            ║");
-    println!("╚══════════════════════════════════════════════════════════════════════════════════════════════════════════╝");
+    println!(
+        "╔══════════════════════════════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!(
+        "║                                    ZENGIF ALLOCATION PROFILER                                            ║"
+    );
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════╝"
+    );
     println!();
     println!("For detailed heap profiling, run with heaptrack:");
     println!("  heaptrack cargo run --release --all-features --example alloc_profile");

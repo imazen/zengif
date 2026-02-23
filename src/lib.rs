@@ -178,9 +178,9 @@ mod types;
 
 // Public API
 #[cfg(feature = "std")]
-pub use decode::{decode_gif, Decoder, FrameIterator};
+pub use decode::{Decoder, FrameIterator, decode_gif};
 #[cfg(feature = "std")]
-pub use encode::{encode_gif, EncodeRequest, Encoder, EncoderConfig, PaletteStrategy};
+pub use encode::{EncodeRequest, Encoder, EncoderConfig, PaletteStrategy, encode_gif};
 #[cfg(all(
     feature = "std",
     any(
@@ -218,7 +218,7 @@ pub use quantize::ZenquantQuantizer;
 pub use quantize::{QuantizeConfig, QuantizedFrame, QuantizerBackend, QuantizerTrait};
 pub use screen::{Screen, ScreenBuilder};
 pub use stats::{
-    tracked_vec_filled, tracked_vec_with_capacity, Stats, StatsSnapshot, TrackedAlloc,
+    Stats, StatsSnapshot, TrackedAlloc, tracked_vec_filled, tracked_vec_with_capacity,
 };
 pub use types::{
     ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, RawFrame, Repeat, Rgba,
