@@ -71,12 +71,17 @@ static ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new()
     .with_encode_cancel(true)
     .with_cheap_probe(true)
     .with_lossless(true)
+    .with_native_alpha(true)
     .with_quality_range(0.0, 100.0)
     .with_encode_animation(true);
 
 static DECODE_CAPS: CodecCapabilities = CodecCapabilities::new()
     .with_decode_cancel(true)
-    .with_decode_animation(true);
+    .with_decode_animation(true)
+    .with_native_alpha(true)
+    .with_cheap_probe(true)
+    .with_decode_into(true)
+    .with_enforces_max_file_size(true);
 
 // ── Supported descriptors ────────────────────────────────────────────
 
@@ -1002,6 +1007,10 @@ impl zencodec_types::FrameDecoder for GifFrameDecoder {
     }
 
     fn next_frame(&mut self) -> Result<Option<DecodeFrame>, GifError> {
+        // GIF FrameDecoder returns fully composited RGBA frames — the internal
+        // compositor applies disposal before returning each frame. DecodeFrame
+        // defaults to FrameDisposal::None + FrameBlend::Source, which is correct:
+        // the caller gets ready-to-display frames with no further compositing needed.
         let frame = self.decoder.next_frame().map_err(|e| e.into_inner())?;
 
         let frame = match frame {
