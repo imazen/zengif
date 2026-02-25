@@ -174,6 +174,36 @@ impl GifEncoderConfig {
         self
     }
 
+    /// Set dithering level (0.0 = none, 1.0 = full).
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_dithering(mut self, dithering: f32) -> Self {
+        self.inner = self.inner.dithering(dithering);
+        self
+    }
+
+    /// Use a shared palette across all frames (faster, less optimal per-frame).
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_shared_palette(mut self, shared: bool) -> Self {
+        self.inner = self.inner.shared_palette(shared);
+        self
+    }
+
     /// Access the underlying [`EncoderConfig`].
     #[must_use]
     pub fn inner(&self) -> &EncoderConfig {
