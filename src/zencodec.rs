@@ -14,7 +14,8 @@ use alloc::vec::Vec;
 
 use zencodec_types::{
     DecodeFrame, DecodeOutput, EncodeOutput, ImageFormat, ImageInfo, MetadataView, OutputInfo,
-    PixelBuffer, PixelDescriptor, PixelSlice, PixelSliceMut, ResourceLimits, Stop,
+    PixelBuffer, PixelBufferConvertExt as _, PixelDescriptor, PixelSlice, PixelSliceMut,
+    ResourceLimits, Stop,
 };
 // Import trait names (as _ to avoid conflict with crate::encode::EncoderConfig).
 use zencodec_types::DecodeJob as _;
@@ -432,7 +433,7 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
     let desc = pixels.descriptor();
     let bytes = pixels.contiguous_bytes();
 
-    let rgba = match (desc.channel_type, desc.layout) {
+    let rgba = match (desc.channel_type(), desc.layout()) {
         (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => bytes
             .chunks_exact(3)
             .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
@@ -975,7 +976,7 @@ impl GifDecoder<'_> {
         let info = output.info().clone();
         let pixels = output.into_pixels();
 
-        match (desc.channel_type, desc.layout) {
+        match (desc.channel_type(), desc.layout()) {
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => {
                 let src = pixels.to_rgb8();
                 copy_pixel_rows(&src, &mut dst);
