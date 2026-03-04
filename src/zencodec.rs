@@ -14,9 +14,9 @@ use alloc::vec::Vec;
 
 use zencodec_types::{
     DecodeFrame, DecodeOutput, EncodeOutput, ImageFormat, ImageInfo, MetadataView, OutputInfo,
-    PixelBuffer, PixelBufferConvertExt as _, PixelDescriptor, PixelSlice, PixelSliceMut,
-    ResourceLimits, Stop,
+    PixelBufferConvertExt as _, ResourceLimits, Stop,
 };
+use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice, PixelSliceMut};
 // Import trait names (as _ to avoid conflict with crate::encode::EncoderConfig).
 use zencodec_types::DecodeJob as _;
 use zencodec_types::DecoderConfig as _;
@@ -434,22 +434,22 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
     let bytes = pixels.contiguous_bytes();
 
     let rgba = match (desc.channel_type(), desc.layout()) {
-        (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => bytes
+        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgb) => bytes
             .chunks_exact(3)
             .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
             .collect(),
-        (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgba) => bytes
+        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => bytes
             .chunks_exact(4)
             .map(|c| crate::Rgba::new(c[0], c[1], c[2], c[3]))
             .collect(),
-        (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Gray) => {
+        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Gray) => {
             bytes.iter().map(|&v| crate::Rgba::rgb(v, v, v)).collect()
         }
-        (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Bgra) => bytes
+        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Bgra) => bytes
             .chunks_exact(4)
             .map(|c| crate::Rgba::new(c[2], c[1], c[0], c[3]))
             .collect(),
-        (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgb) => {
+        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgb) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
                 .chunks_exact(12)
@@ -465,7 +465,7 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
                 })
                 .collect()
         }
-        (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgba) => {
+        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgba) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
                 .chunks_exact(16)
@@ -483,7 +483,7 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
                 })
                 .collect()
         }
-        (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Gray) => {
+        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Gray) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
                 .chunks_exact(4)
@@ -693,7 +693,7 @@ impl GifDecoderConfig {
     /// Convenience: decode with default job settings.
     pub fn decode(&self, data: &[u8]) -> Result<DecodeOutput, GifError> {
         use zencodec_types::Decode;
-        self.job().decoder()?.decode(data, &[])
+        self.job().decoder(data, &[])?.decode()
     }
 
     /// Convenience: decode into a caller-provided RGB8 buffer.
@@ -702,8 +702,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgb<u8>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 
     /// Convenience: decode into a caller-provided RGBA8 buffer.
@@ -712,8 +712,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgba<u8>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 
     /// Convenience: decode into a caller-provided Gray8 buffer.
@@ -722,8 +722,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, rgb::Gray<u8>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 
     /// Convenience: decode into a caller-provided RGB f32 buffer.
@@ -732,8 +732,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgb<f32>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 
     /// Convenience: decode into a caller-provided RGBA f32 buffer.
@@ -742,8 +742,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, zencodec_types::Rgba<f32>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 
     /// Convenience: decode into a caller-provided grayscale f32 buffer.
@@ -752,8 +752,8 @@ impl GifDecoderConfig {
         data: &[u8],
         dst: zencodec_types::ImgRefMut<'_, rgb::Gray<f32>>,
     ) -> Result<ImageInfo, GifError> {
-        let decoder = self.job().decoder()?;
-        decoder.decode_into(data, PixelSliceMut::from(dst).into())
+        let decoder = self.job().decoder(data, &[])?;
+        decoder.decode_into(PixelSliceMut::from(dst).into())
     }
 }
 
@@ -828,6 +828,7 @@ impl<'a> GifDecodeJob<'a> {
 impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
     type Error = GifError;
     type Dec = GifDecoder<'a>;
+    type StreamDec = GifStreamingDecoder;
     type FrameDec = GifFrameDecoder;
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
@@ -912,15 +913,33 @@ impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
         .with_alpha(true))
     }
 
-    fn decoder(self) -> Result<GifDecoder<'a>, GifError> {
+    fn decoder(
+        self,
+        data: &'a [u8],
+        preferred: &[PixelDescriptor],
+    ) -> Result<GifDecoder<'a>, GifError> {
         Ok(GifDecoder {
             config: self.config,
             stop: self.stop,
             limits: self.limits,
+            data,
+            _preferred: preferred.to_vec(),
         })
     }
 
-    fn frame_decoder(self, data: &[u8]) -> Result<GifFrameDecoder, GifError> {
+    fn streaming_decoder(
+        self,
+        _data: &'a [u8],
+        _preferred: &[PixelDescriptor],
+    ) -> Result<GifStreamingDecoder, GifError> {
+        Err(zencodec_types::UnsupportedOperation::RowLevelDecode.into())
+    }
+
+    fn frame_decoder(
+        self,
+        data: &'a [u8],
+        preferred: &[PixelDescriptor],
+    ) -> Result<GifFrameDecoder, GifError> {
         self.check_file_size(data)?;
         let limits = self.build_limits();
         // Use 'static Unstoppable — cancellation not yet supported for frame decoding
@@ -942,6 +961,7 @@ impl<'a> zencodec_types::DecodeJob<'a> for GifDecodeJob<'a> {
             decoder,
             shared_info,
             frame_index: 0,
+            _preferred: preferred.to_vec(),
         })
     }
 }
@@ -953,6 +973,8 @@ pub struct GifDecoder<'a> {
     config: &'a GifDecoderConfig,
     stop: Option<&'a dyn Stop>,
     limits: Option<ResourceLimits>,
+    data: &'a [u8],
+    _preferred: Vec<PixelDescriptor>,
 }
 
 impl GifDecoder<'_> {
@@ -967,33 +989,32 @@ impl GifDecoder<'_> {
     /// Decode into a caller-provided buffer. Inherent method preserving old API.
     pub fn decode_into(
         self,
-        data: &[u8],
         mut dst: PixelSliceMut<'_>,
     ) -> Result<ImageInfo, GifError> {
         use zencodec_types::Decode;
         let desc = dst.descriptor();
-        let output = self.decode(data, &[])?;
+        let output = self.decode()?;
         let info = output.info().clone();
-        let pixels = output.into_pixels();
+        let pixels = output.into_buffer();
 
         match (desc.channel_type(), desc.layout()) {
-            (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => {
+            (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgb) => {
                 let src = pixels.to_rgb8();
                 copy_pixel_rows(&src, &mut dst);
             }
-            (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgba) => {
+            (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => {
                 let src = pixels.to_rgba8();
                 copy_pixel_rows(&src, &mut dst);
             }
-            (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Gray) => {
+            (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Gray) => {
                 let src = pixels.to_gray8();
                 copy_pixel_rows(&src, &mut dst);
             }
-            (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Bgra) => {
+            (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Bgra) => {
                 let src = pixels.to_bgra8();
                 copy_pixel_rows(&src, &mut dst);
             }
-            (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgb) => {
+            (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgb) => {
                 use linear_srgb::default::srgb_u8_to_linear;
                 let src = pixels.to_rgb8();
                 let src = src.as_imgref();
@@ -1014,7 +1035,7 @@ impl GifDecoder<'_> {
                     }
                 }
             }
-            (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgba) => {
+            (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgba) => {
                 use linear_srgb::default::srgb_u8_to_linear;
                 let src = pixels.to_rgba8();
                 let src = src.as_imgref();
@@ -1037,7 +1058,7 @@ impl GifDecoder<'_> {
                     }
                 }
             }
-            (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Gray) => {
+            (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Gray) => {
                 use linear_srgb::default::srgb_u8_to_linear;
                 let src = pixels.to_gray8();
                 let src = src.as_imgref();
@@ -1080,7 +1101,9 @@ fn copy_pixel_rows<P>(src: &PixelBuffer<P>, dst: &mut PixelSliceMut<'_>) {
 impl zencodec_types::Decode for GifDecoder<'_> {
     type Error = GifError;
 
-    fn decode(self, data: &[u8], _preferred: &[PixelDescriptor]) -> Result<DecodeOutput, GifError> {
+    fn decode(self) -> Result<DecodeOutput, GifError> {
+        let data = self.data;
+
         // Check file size limits
         if let Some(max) = self.config.limits.max_file_size {
             if data.len() as u64 > max {
@@ -1141,6 +1164,28 @@ impl zencodec_types::Decode for GifDecoder<'_> {
     }
 }
 
+// ── GifStreamingDecoder ──────────────────────────────────────────────
+
+/// Stub streaming decoder — GIF does not support streaming decode.
+///
+/// [`DecodeJob::streaming_decoder()`](zencodec_types::DecodeJob::streaming_decoder)
+/// always returns an error before this type is constructed.
+pub struct GifStreamingDecoder {
+    _private: (),
+}
+
+impl zencodec_types::StreamingDecode for GifStreamingDecoder {
+    type Error = GifError;
+
+    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, GifError> {
+        Err(zencodec_types::UnsupportedOperation::RowLevelDecode.into())
+    }
+
+    fn info(&self) -> &ImageInfo {
+        unreachable!("GifStreamingDecoder is never constructed")
+    }
+}
+
 // ── GifFrameDecoder ──────────────────────────────────────────────────
 
 /// Animation GIF decoder — yields frames one at a time.
@@ -1148,6 +1193,7 @@ pub struct GifFrameDecoder {
     decoder: Decoder<'static, std::io::Cursor<Vec<u8>>>,
     shared_info: Arc<ImageInfo>,
     frame_index: u32,
+    _preferred: Vec<PixelDescriptor>,
 }
 
 impl zencodec_types::FrameDecode for GifFrameDecoder {
@@ -1158,10 +1204,7 @@ impl zencodec_types::FrameDecode for GifFrameDecoder {
         if count > 0 { Some(count as u32) } else { None }
     }
 
-    fn next_frame(
-        &mut self,
-        _preferred: &[PixelDescriptor],
-    ) -> Result<Option<DecodeFrame>, GifError> {
+    fn next_frame(&mut self) -> Result<Option<DecodeFrame>, GifError> {
         // GIF FrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. DecodeFrame
         // defaults to FrameDisposal::None + FrameBlend::Source, which is correct:
@@ -1350,9 +1393,9 @@ mod tests {
         let config = GifDecoderConfig::new();
         let decoded = config
             .job()
-            .decoder()
+            .decoder(MINIMAL_GIF, &[])
             .unwrap()
-            .decode(MINIMAL_GIF, &[])
+            .decode()
             .unwrap();
         assert_eq!(decoded.width(), 1);
         assert_eq!(decoded.height(), 1);
