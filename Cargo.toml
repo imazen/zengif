@@ -106,6 +106,3 @@ required-features = ["quantizr"]
 [[bench]]
 name = "codec"
 harness = false
-
-[patch.crates-io]
-imagequant = { git = "https://github.com/imazen/libimagequant", branch = "wasm-simd128" }
