@@ -67,6 +67,14 @@ impl<R: Read> Read for StopCheckingRead<'_, R> {
     }
 }
 
+/// Check if a gif crate DecodingError is an unexpected EOF.
+///
+/// Used to tolerate GIF files missing the trailer byte (0x3B).
+/// Many real-world GIFs lack this byte, and browsers display them fine.
+fn is_unexpected_eof(err: &gif::DecodingError) -> bool {
+    matches!(err, gif::DecodingError::UnexpectedEof)
+}
+
 /// GIF header size: magic (6) + logical screen descriptor (7) = 13 bytes
 const GIF_HEADER_SIZE: usize = 13;
 
@@ -328,6 +336,14 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Ok(None);
             }
             Err(e) => {
+                // Tolerate missing trailer: if we already decoded frames and hit EOF
+                // between frames, treat it as end-of-stream. This matches browser
+                // behavior for GIFs without the 0x3B trailer byte.
+                // See: https://github.com/image-rs/image-gif/issues/138
+                if self.frame_index > 0 && is_unexpected_eof(&e) {
+                    self.finished = true;
+                    return Ok(None);
+                }
                 return Err(at!(GifError::from(e)));
             }
         };
@@ -432,6 +448,11 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Ok(None);
             }
             Err(e) => {
+                // Tolerate missing trailer (same as next_frame)
+                if self.frame_index > 0 && is_unexpected_eof(&e) {
+                    self.finished = true;
+                    return Ok(None);
+                }
                 return Err(at!(GifError::from(e)));
             }
         };

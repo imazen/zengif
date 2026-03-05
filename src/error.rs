@@ -344,6 +344,19 @@ impl From<gif::DecodingError> for GifError {
                 kind: io_err.kind(),
                 context: Some("during GIF decoding"),
             },
+            DecodingError::UnexpectedEof => GifError::UnexpectedEof,
+            DecodingError::OutOfMemory | DecodingError::MemoryLimit => {
+                GifError::AllocationFailed { requested: 0 }
+            }
+            DecodingError::LzwError(e) => GifError::GifCrate {
+                message: e.to_string(),
+            },
+            DecodingError::EndCodeNotFound => GifError::GifCrate {
+                message: "LZW end code not found".to_string(),
+            },
+            DecodingError::DecoderNotFound => GifError::GifCrate {
+                message: "decoder not found".to_string(),
+            },
             // Handle future variants of non-exhaustive enum
             #[allow(unreachable_patterns)]
             _ => GifError::GifCrate {

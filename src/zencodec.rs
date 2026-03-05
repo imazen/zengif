@@ -987,10 +987,7 @@ impl GifDecoder<'_> {
     }
 
     /// Decode into a caller-provided buffer. Inherent method preserving old API.
-    pub fn decode_into(
-        self,
-        mut dst: PixelSliceMut<'_>,
-    ) -> Result<ImageInfo, GifError> {
+    pub fn decode_into(self, mut dst: PixelSliceMut<'_>) -> Result<ImageInfo, GifError> {
         use zencodec_types::Decode;
         let desc = dst.descriptor();
         let output = self.decode()?;
@@ -1148,7 +1145,9 @@ impl zencodec_types::Decode for GifDecoder<'_> {
             .collect();
 
         let buf = PixelBuffer::from_pixels(rgba, metadata.width as u32, metadata.height as u32)
-            .map_err(|_| GifError::InvalidEncoderState { message: "frame size mismatch" })?
+            .map_err(|_| GifError::InvalidEncoderState {
+                message: "frame size mismatch",
+            })?
             .with_descriptor(PixelDescriptor::RGBA8_SRGB);
 
         let info = ImageInfo::new(
@@ -1228,7 +1227,9 @@ impl zencodec_types::FrameDecode for GifFrameDecoder {
             .collect();
 
         let buf = PixelBuffer::from_pixels(rgba, frame.width as u32, frame.height as u32)
-            .map_err(|_| GifError::InvalidEncoderState { message: "frame size mismatch" })?
+            .map_err(|_| GifError::InvalidEncoderState {
+                message: "frame size mismatch",
+            })?
             .with_descriptor(PixelDescriptor::RGBA8_SRGB);
         let duration_ms = frame.delay as u32 * 10;
 
@@ -1245,7 +1246,6 @@ impl zencodec_types::FrameDecode for GifFrameDecoder {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-
 
 // ── Tests ────────────────────────────────────────────────────────────
 

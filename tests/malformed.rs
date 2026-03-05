@@ -209,3 +209,126 @@ fn very_large_declared_dimensions() {
     // With default limits (16384x16384), this should fail
     assert!(result.is_err());
 }
+
+#[test]
+fn missing_trailer_single_frame() {
+    // Valid 1x1 GIF with frame data but no trailing 0x3B byte.
+    // Browsers display these fine. We should too.
+    // See: https://github.com/image-rs/image-gif/issues/138
+    let data = vec![
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+        0x01, 0x00, 0x01, 0x00, // 1x1
+        0x80, // Global color table flag, 2 colors
+        0x00, // Background color index
+        0x00, // Pixel aspect ratio
+        0xFF, 0x00, 0x00, // Color 0: Red
+        0x00, 0x00, 0x00, // Color 1: Black
+        0x2C, // Image descriptor
+        0x00, 0x00, 0x00, 0x00, // Left, Top
+        0x01, 0x00, 0x01, 0x00, // Width, Height
+        0x00, // No local color table
+        0x02, // LZW minimum code size
+        0x02, // Block size
+        0x44, 0x01, // LZW data
+        0x00, // Block terminator
+              // NOTE: no 0x3B trailer
+    ];
+
+    let limits = Limits::default();
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+
+    // First frame should decode successfully
+    let frame = decoder.next_frame().unwrap().expect("should get one frame");
+    assert_eq!(frame.width, 1);
+    assert_eq!(frame.height, 1);
+    // Red pixel
+    assert_eq!(frame.pixels[0].r, 255);
+    assert_eq!(frame.pixels[0].g, 0);
+    assert_eq!(frame.pixels[0].b, 0);
+
+    // Should signal end-of-stream, not error
+    assert!(decoder.next_frame().unwrap().is_none());
+    assert!(decoder.is_finished());
+}
+
+#[test]
+fn missing_trailer_multi_frame() {
+    // Two-frame 1x1 GIF without trailer byte.
+    let data = vec![
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+        0x01, 0x00, 0x01, 0x00, // 1x1
+        0x80, // Global color table flag, 2 colors
+        0x00, // Background color index
+        0x00, // Pixel aspect ratio
+        0xFF, 0x00, 0x00, // Color 0: Red
+        0x00, 0xFF, 0x00, // Color 1: Green
+        // Frame 1 (color index 0 = red)
+        0x2C, // Image descriptor
+        0x00, 0x00, 0x00, 0x00, // Left, Top
+        0x01, 0x00, 0x01, 0x00, // Width, Height
+        0x00, // No local color table
+        0x02, // LZW minimum code size
+        0x02, // Block size
+        0x44, 0x01, // LZW data (index 0)
+        0x00, // Block terminator
+        // Frame 2 (color index 1 = green)
+        0x2C, // Image descriptor
+        0x00, 0x00, 0x00, 0x00, // Left, Top
+        0x01, 0x00, 0x01, 0x00, // Width, Height
+        0x00, // No local color table
+        0x02, // LZW minimum code size
+        0x02, // Block size
+        0x4C, 0x01, // LZW data (index 1)
+        0x00, // Block terminator
+              // NOTE: no 0x3B trailer
+    ];
+
+    let limits = Limits::default();
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+
+    // Both frames should decode
+    let frame1 = decoder.next_frame().unwrap().expect("should get frame 1");
+    assert_eq!(frame1.pixels[0].r, 255);
+
+    let frame2 = decoder.next_frame().unwrap().expect("should get frame 2");
+    assert_eq!(frame2.pixels[0].g, 255);
+
+    // Should signal end-of-stream, not error
+    assert!(decoder.next_frame().unwrap().is_none());
+}
+
+#[test]
+fn missing_trailer_zero_frames_still_errors() {
+    // A GIF header with no frame data and no trailer.
+    // With zero frames decoded, UnexpectedEof should still be an error
+    // (we can't silently succeed with nothing).
+    let data = vec![
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+        0x01, 0x00, 0x01, 0x00, // 1x1
+        0x80, // Global color table flag, 2 colors
+        0x00, // Background color index
+        0x00, // Pixel aspect ratio
+        0xFF, 0x00, 0x00, // Color 0: Red
+        0x00, 0x00,
+        0x00, // Color 1: Black
+              // No image descriptor, no trailer — just ends
+    ];
+
+    let limits = Limits::default();
+    let cursor = std::io::Cursor::new(data);
+    // This can fail at Decoder::new or at next_frame — either is fine
+    match Decoder::new(cursor, limits, &Unstoppable) {
+        Ok(mut decoder) => {
+            let result = decoder.next_frame();
+            assert!(
+                result.is_err(),
+                "should error with zero frames and no trailer"
+            );
+        }
+        Err(_) => {
+            // Also acceptable — failing early is fine
+        }
+    }
+}
