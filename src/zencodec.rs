@@ -1331,7 +1331,7 @@ mod tests {
         assert_eq!(output.format(), ImageFormat::Gif);
 
         let dec = GifDecoderConfig::new();
-        let decoded = dec.decode(output.bytes()).unwrap();
+        let decoded = dec.decode(output.data()).unwrap();
         assert_eq!(decoded.width(), 16);
         assert_eq!(decoded.height(), 16);
     }
@@ -1384,7 +1384,7 @@ mod tests {
             .encode(slice.into())
             .unwrap();
         assert_eq!(output.format(), ImageFormat::Gif);
-        assert!(!output.bytes().is_empty());
+        assert!(!output.data().is_empty());
     }
 
     #[test]
@@ -1452,7 +1452,7 @@ mod tests {
                 256
             ];
             let mut dst = zencodec_types::ImgVec::new(buf.clone(), 16, 16);
-            dec.decode_into_rgb_f32(output.bytes(), dst.as_mut())
+            dec.decode_into_rgb_f32(output.data(), dst.as_mut())
                 .unwrap();
             buf = dst.into_buf();
 
