@@ -52,7 +52,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 # Shared codec traits
 zencodec-types = { path = "../zencodec-types" }
 zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["buffer"] }
-linear-srgb = "0.5.5"
+linear-srgb = "0.6"
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4", optional = true }
