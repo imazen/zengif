@@ -21,6 +21,7 @@ use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice, PixelSliceMut};
 use zencodec_types::DecodeJob as _;
 use zencodec_types::DecoderConfig as _;
 use zencodec_types::EncodeJob as _;
+use zencodec_types::Encoder as _;
 use zencodec_types::EncoderConfig as _;
 
 use crate::encode::{EncodeRequest, EncoderConfig};
@@ -408,8 +409,12 @@ impl GifEncoder<'_> {
         Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 
-    /// Encode from a type-erased PixelSlice. Inherent method preserving old API.
-    pub fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, GifError> {
+}
+
+impl zencodec_types::Encoder for GifEncoder<'_> {
+    type Error = GifError;
+
+    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, GifError> {
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         self.do_encode(rgba, w, h)
     }
@@ -1476,5 +1481,181 @@ mod tests {
     fn decoding_clone_send_sync() {
         fn assert_traits<T: Clone + Send + Sync>() {}
         assert_traits::<GifDecoderConfig>();
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_rgba8() {
+        use zencodec_types::{Encoder, Rgba};
+
+        let pixels: Vec<Rgba<u8>> = (0..16 * 16)
+            .map(|i| Rgba {
+                r: (i % 256) as u8,
+                g: 128,
+                b: 64,
+                a: 255,
+            })
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_rgb8() {
+        use zencodec_types::{Encoder, Rgb};
+
+        let pixels: Vec<Rgb<u8>> = (0..16 * 16)
+            .map(|i| Rgb {
+                r: (i % 256) as u8,
+                g: 128,
+                b: 64,
+            })
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_gray8() {
+        use zencodec_types::{Encoder, Gray};
+
+        let pixels: Vec<Gray<u8>> = (0..16 * 16)
+            .map(|i| Gray((i % 256) as u8))
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_rgb_f32() {
+        use zencodec_types::{Encoder, Rgb};
+
+        let pixels: Vec<Rgb<f32>> = (0..16 * 16)
+            .map(|i| Rgb {
+                r: (i % 256) as f32 / 255.0,
+                g: 0.5,
+                b: 0.25,
+            })
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_rgba_f32() {
+        use zencodec_types::{Encoder, Rgba};
+
+        let pixels: Vec<Rgba<f32>> = (0..16 * 16)
+            .map(|i| Rgba {
+                r: (i % 256) as f32 / 255.0,
+                g: 0.5,
+                b: 0.25,
+                a: 1.0,
+            })
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_gray_f32() {
+        use zencodec_types::{Encoder, Gray};
+
+        let pixels: Vec<Gray<f32>> = (0..16 * 16)
+            .map(|i| Gray((i % 256) as f32 / 255.0))
+            .collect();
+        let img = zencodec_types::ImgVec::new(pixels, 16, 16);
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder
+            .encode(PixelSlice::from(img.as_ref()).into())
+            .unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encoder_trait_dyn_encoder() {
+        use zencodec_types::{EncodeJob, Rgba};
+
+        let pixels: Vec<Rgba<u8>> =
+            vec![Rgba { r: 100, g: 150, b: 200, a: 255 }; 32 * 32];
+        let img = zencodec_types::ImgVec::new(pixels, 32, 32);
+        let config = GifEncoderConfig::new();
+        let dyn_enc = config.job().dyn_encoder().unwrap();
+        let output = dyn_enc(PixelSlice::from(img.as_ref()).into()).unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
     }
 }
