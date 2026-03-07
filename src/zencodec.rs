@@ -78,16 +78,13 @@ static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
+    PixelDescriptor::RGBF32_LINEAR,
+    PixelDescriptor::RGBAF32_LINEAR,
+    PixelDescriptor::GRAYF32_LINEAR,
 ];
 
 static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGBA8_SRGB,
-    PixelDescriptor::RGB8_SRGB,
-    PixelDescriptor::GRAY8_SRGB,
-    PixelDescriptor::BGRA8_SRGB,
-    PixelDescriptor::RGBF32_LINEAR,
-    PixelDescriptor::RGBAF32_LINEAR,
-    PixelDescriptor::GRAYF32_LINEAR,
 ];
 
 // ── Capabilities ─────────────────────────────────────────────────────
@@ -213,6 +210,84 @@ impl GifEncoderConfig {
     #[must_use]
     pub fn with_shared_palette(mut self, shared: bool) -> Self {
         self.inner = self.inner.shared_palette(shared);
+        self
+    }
+
+    /// Set the quantizer backend.
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_quantizer(mut self, quantizer: crate::Quantizer) -> Self {
+        self.inner = self.inner.quantizer(quantizer);
+        self
+    }
+
+    /// Set maximum frames to buffer for shared palette building.
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_max_buffer_frames(mut self, max: usize) -> Self {
+        self.inner = self.inner.max_buffer_frames(max);
+        self
+    }
+
+    /// Set maximum bytes to buffer for shared palette building.
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_max_buffer_bytes(mut self, max: usize) -> Self {
+        self.inner = self.inner.max_buffer_bytes(max);
+        self
+    }
+
+    /// Set per-frame palette error threshold for hybrid palette mode.
+    ///
+    /// When shared palette is enabled, frames whose RMSE exceeds this
+    /// threshold get their own local palette. Set to `None` to always
+    /// use the shared palette.
+    ///
+    /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
+    #[cfg(any(
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "exoquant-deprecated",
+        feature = "color_quant"
+    ))]
+    #[must_use]
+    pub fn with_palette_error_threshold(mut self, threshold: Option<f32>) -> Self {
+        self.inner = self.inner.palette_error_threshold(threshold);
+        self
+    }
+
+    /// Set a global palette for all frames.
+    #[must_use]
+    pub fn with_global_palette(mut self, palette: Vec<crate::Rgba>) -> Self {
+        self.inner = self.inner.global_palette(palette);
+        self
+    }
+
+    /// Enable or disable transparency optimization for unchanged pixels.
+    #[must_use]
+    pub fn with_transparency(mut self, enabled: bool) -> Self {
+        self.inner = self.inner.use_transparency(enabled);
         self
     }
 
@@ -383,14 +458,14 @@ impl GifEncoder<'_> {
             None => &self.config.limits,
         };
         let estimated_mem = w as u64 * h as u64 * 4;
-        if let Some(max_mem) = effective_limits.max_memory_bytes {
-            if estimated_mem > max_mem {
-                return Err(GifError::MemoryLimitExceeded {
-                    current: estimated_mem,
-                    limit: max_mem,
-                }
-                .start_at());
+        if let Some(max_mem) = effective_limits.max_memory_bytes
+            && estimated_mem > max_mem
+        {
+            return Err(GifError::MemoryLimitExceeded {
+                current: estimated_mem,
+                limit: max_mem,
             }
+            .start_at());
         }
 
         let limits = self.build_limits();
@@ -450,10 +525,10 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
             .chunks_exact(3)
             .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
             .collect(),
-        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => bytes
-            .chunks_exact(4)
-            .map(|c| crate::Rgba::new(c[0], c[1], c[2], c[3]))
-            .collect(),
+        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => {
+            // Zero-copy reinterpret: Rgba is repr(C) Pod {r,g,b,a} — same as raw RGBA8 bytes
+            bytemuck::cast_slice::<u8, crate::Rgba>(&bytes).to_vec()
+        }
         (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Gray) => {
             bytes.iter().map(|&v| crate::Rgba::rgb(v, v, v)).collect()
         }
@@ -544,8 +619,8 @@ impl GifFrameEncoder<'_> {
         duration_ms: u32,
     ) -> Result<(), At<GifError>> {
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
-        // GIF uses centiseconds
-        let delay_cs = (duration_ms / 10).max(1) as u16;
+        // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
+        let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
         let frame = FrameInput::new(w, h, delay_cs, rgba);
         self.frames.push(frame);
         Ok(())
@@ -690,25 +765,17 @@ impl<'a> GifDecodeJob<'a> {
     }
 
     fn check_file_size(&self, data: &[u8]) -> Result<(), At<GifError>> {
-        if let Some(max) = self.config.limits.max_input_bytes {
-            if data.len() as u64 > max {
-                return Err(GifError::FileTooLarge {
-                    size: data.len() as u64,
-                    max,
-                }
-                .start_at());
-            }
+        let size = data.len() as u64;
+        if let Some(max) = self.config.limits.max_input_bytes
+            && size > max
+        {
+            return Err(GifError::FileTooLarge { size, max }.start_at());
         }
-        if let Some(ref job_limits) = self.limits {
-            if let Some(max) = job_limits.max_input_bytes {
-                if data.len() as u64 > max {
-                    return Err(GifError::FileTooLarge {
-                        size: data.len() as u64,
-                        max,
-                    }
-                    .start_at());
-                }
-            }
+        if let Some(ref job_limits) = self.limits
+            && let Some(max) = job_limits.max_input_bytes
+            && size > max
+        {
+            return Err(GifError::FileTooLarge { size, max }.start_at());
         }
         Ok(())
     }
@@ -731,15 +798,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     }
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, At<GifError>> {
-        if let Some(max) = self.config.limits.max_input_bytes {
-            if data.len() as u64 > max {
-                return Err(GifError::FileTooLarge {
-                    size: data.len() as u64,
-                    max,
-                }
-                .start_at());
-            }
-        }
+        self.check_file_size(data)?;
 
         let gif_limits = limits_from_resource(&self.config.limits);
         let cursor = std::io::Cursor::new(data);
@@ -757,15 +816,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     }
 
     fn probe_full(&self, data: &[u8]) -> Result<ImageInfo, At<GifError>> {
-        if let Some(max) = self.config.limits.max_input_bytes {
-            if data.len() as u64 > max {
-                return Err(GifError::FileTooLarge {
-                    size: data.len() as u64,
-                    max,
-                }
-                .start_at());
-            }
-        }
+        self.check_file_size(data)?;
 
         let gif_limits = limits_from_resource(&self.config.limits);
         let cursor = std::io::Cursor::new(data);
@@ -807,14 +858,13 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     fn decoder(
         self,
         data: &'a [u8],
-        preferred: &[PixelDescriptor],
+        _preferred: &[PixelDescriptor],
     ) -> Result<GifDecoder<'a>, At<GifError>> {
         Ok(GifDecoder {
             config: self.config,
             stop: self.stop,
             limits: self.limits,
             data,
-            _preferred: preferred.to_vec(),
         })
     }
 
@@ -829,7 +879,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     fn frame_decoder(
         self,
         data: &'a [u8],
-        preferred: &[PixelDescriptor],
+        _preferred: &[PixelDescriptor],
     ) -> Result<GifFrameDecoder, At<GifError>> {
         self.check_file_size(data)?;
         let limits = self.build_limits();
@@ -851,7 +901,6 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             decoder,
             shared_info,
             frame_index: 0,
-            _preferred: preferred.to_vec(),
         })
     }
 }
@@ -864,7 +913,6 @@ pub struct GifDecoder<'a> {
     stop: Option<&'a dyn zc::enough::Stop>,
     limits: Option<ResourceLimits>,
     data: &'a [u8],
-    _preferred: Vec<PixelDescriptor>,
 }
 
 impl GifDecoder<'_> {
@@ -877,13 +925,12 @@ impl GifDecoder<'_> {
     }
 }
 
-/// Convert a composed GIF frame to a raw RGBA8 byte vector.
-fn frame_to_rgba_bytes(frame: &crate::ComposedFrame) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(frame.pixels.len() * 4);
-    for p in &frame.pixels {
-        bytes.extend_from_slice(&[p.r, p.g, p.b, p.a]);
-    }
-    bytes
+/// Convert owned GIF RGBA pixels to raw bytes, zero-copy.
+///
+/// `Rgba` is `#[repr(C)]` `Pod` with layout `[r, g, b, a]` — identical to
+/// raw RGBA8 bytes. `bytemuck::cast_vec` reinterprets without copying.
+fn rgba_pixels_to_bytes(pixels: Vec<crate::Rgba>) -> Vec<u8> {
+    bytemuck::allocation::cast_vec(pixels)
 }
 
 impl zc::decode::Decode for GifDecoder<'_> {
@@ -891,27 +938,18 @@ impl zc::decode::Decode for GifDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, At<GifError>> {
         let data = self.data;
+        let size = data.len() as u64;
 
-        // Check file size limits
-        if let Some(max) = self.config.limits.max_input_bytes {
-            if data.len() as u64 > max {
-                return Err(GifError::FileTooLarge {
-                    size: data.len() as u64,
-                    max,
-                }
-                .start_at());
-            }
+        if let Some(max) = self.config.limits.max_input_bytes
+            && size > max
+        {
+            return Err(GifError::FileTooLarge { size, max }.start_at());
         }
-        if let Some(ref job_limits) = self.limits {
-            if let Some(max) = job_limits.max_input_bytes {
-                if data.len() as u64 > max {
-                    return Err(GifError::FileTooLarge {
-                        size: data.len() as u64,
-                        max,
-                    }
-                    .start_at());
-                }
-            }
+        if let Some(ref job_limits) = self.limits
+            && let Some(max) = job_limits.max_input_bytes
+            && size > max
+        {
+            return Err(GifError::FileTooLarge { size, max }.start_at());
         }
 
         let limits = self.build_limits();
@@ -925,7 +963,7 @@ impl zc::decode::Decode for GifDecoder<'_> {
             .next_frame()?
             .ok_or_else(|| GifError::UnexpectedEof.start_at())?;
 
-        let rgba_bytes = frame_to_rgba_bytes(&frame);
+        let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
         let buf = PixelBuffer::from_vec(
             rgba_bytes,
             metadata.width as u32,
@@ -981,7 +1019,6 @@ pub struct GifFrameDecoder {
     decoder: Decoder<'static, std::io::Cursor<Vec<u8>>>,
     shared_info: Arc<ImageInfo>,
     frame_index: u32,
-    _preferred: Vec<PixelDescriptor>,
 }
 
 impl zc::decode::FrameDecode for GifFrameDecoder {
@@ -1012,11 +1049,14 @@ impl zc::decode::FrameDecode for GifFrameDecoder {
             None => return Ok(None),
         };
 
-        let rgba_bytes = frame_to_rgba_bytes(&frame);
+        let w = frame.width as u32;
+        let h = frame.height as u32;
+        let duration_ms = frame.delay as u32 * 10;
+        let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
         let buf = PixelBuffer::from_vec(
             rgba_bytes,
-            frame.width as u32,
-            frame.height as u32,
+            w,
+            h,
             PixelDescriptor::RGBA8_SRGB,
         )
         .map_err(|_| {
@@ -1025,7 +1065,6 @@ impl zc::decode::FrameDecode for GifFrameDecoder {
             }
             .start_at()
         })?;
-        let duration_ms = frame.delay as u32 * 10;
 
         let index = self.frame_index;
         self.frame_index += 1;

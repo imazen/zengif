@@ -47,7 +47,7 @@ whereat = { version = "0.1", default-features = false }
 enough = { version = "0.4", default-features = false }
 
 # Safe transmutes for pixel data (no_std compatible)
-bytemuck = { version = "1.21", features = ["derive"] }
+bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
 
 # Derive Error/Display for error types (no_std compatible)
 thiserror = { version = "2", default-features = false }
