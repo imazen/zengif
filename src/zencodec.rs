@@ -11,6 +11,7 @@
 //! Requires `zencodec` feature (GIF codec uses `std::io`).
 
 extern crate alloc;
+use alloc::borrow::Cow;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -372,7 +373,7 @@ pub struct GifEncodeJob<'a> {
 impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
     type Error = At<GifError>;
     type Enc = GifEncoder<'a>;
-    type FrameEnc = GifFrameEncoder<'a>;
+    type FrameEnc = GifFrameEncoder;
 
     fn with_stop(mut self, stop: &'a dyn zc::enough::Stop) -> Self {
         self.stop = Some(stop);
@@ -407,7 +408,7 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
         })
     }
 
-    fn frame_encoder(self) -> Result<GifFrameEncoder<'a>, At<GifError>> {
+    fn frame_encoder(self) -> Result<GifFrameEncoder, At<GifError>> {
         // Map loop_count to GIF repeat
         let mut inner_config = self.config.inner.clone();
         if let Some(count) = self.loop_count {
@@ -418,9 +419,8 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
             };
         }
         Ok(GifFrameEncoder {
-            config: self.config,
+            config: self.config.clone(),
             inner_config,
-            stop: self.stop,
             limits: self.limits,
             canvas_size: self.canvas_size,
             frames: Vec::new(),
@@ -595,16 +595,15 @@ fn pixels_to_gif_rgba(pixels: &PixelSlice<'_>) -> Result<(Vec<crate::Rgba>, u16,
 // ── GifFrameEncoder ──────────────────────────────────────────────────
 
 /// Animation GIF encoder — collects frames, then encodes on finish.
-pub struct GifFrameEncoder<'a> {
-    config: &'a GifEncoderConfig,
+pub struct GifFrameEncoder {
+    config: GifEncoderConfig,
     inner_config: EncoderConfig,
-    stop: Option<&'a dyn zc::enough::Stop>,
     limits: Option<ResourceLimits>,
     canvas_size: Option<(u32, u32)>,
     frames: Vec<FrameInput>,
 }
 
-impl GifFrameEncoder<'_> {
+impl GifFrameEncoder {
     fn build_limits(&self) -> Limits {
         let base = limits_from_resource(&self.config.limits);
         match self.limits {
@@ -635,7 +634,7 @@ impl GifFrameEncoder<'_> {
         }
 
         let limits = self.build_limits();
-        let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let stop: &dyn enough::Stop = &enough::Unstoppable;
 
         // Use explicit canvas size if provided, otherwise first frame's dimensions
         let (w, h) = self.canvas_size.map_or_else(
@@ -653,7 +652,7 @@ impl GifFrameEncoder<'_> {
     }
 }
 
-impl zc::encode::FrameEncoder for GifFrameEncoder<'_> {
+impl zc::encode::FrameEncoder for GifFrameEncoder {
     type Error = At<GifError>;
 
     fn reject(op: zc::UnsupportedOperation) -> At<GifError> {
@@ -711,7 +710,7 @@ impl GifDecoderConfig {
     /// Convenience: decode with default job settings.
     pub fn decode(&self, data: &[u8]) -> Result<DecodeOutput, At<GifError>> {
         use zc::decode::{Decode as _, DecodeJob as _};
-        self.job().decoder(data, &[])?.decode()
+        self.job().decoder(Cow::Borrowed(data), &[])?.decode()
     }
 }
 
@@ -857,7 +856,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
     fn decoder(
         self,
-        data: &'a [u8],
+        data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<GifDecoder<'a>, At<GifError>> {
         Ok(GifDecoder {
@@ -870,7 +869,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
     fn streaming_decoder(
         self,
-        _data: &'a [u8],
+        _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<GifStreamingDecoder, At<GifError>> {
         Err(GifError::from(zc::UnsupportedOperation::RowLevelDecode).start_at())
@@ -878,12 +877,12 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
     fn frame_decoder(
         self,
-        data: &'a [u8],
+        data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<GifFrameDecoder, At<GifError>> {
-        self.check_file_size(data)?;
+        self.check_file_size(&data)?;
         let limits = self.build_limits();
-        let cursor = std::io::Cursor::new(data.to_vec());
+        let cursor = std::io::Cursor::new(data.into_owned());
         let decoder =
             Decoder::new(cursor, limits, &enough::Unstoppable)?;
         let metadata = decoder.metadata().clone();
@@ -912,7 +911,7 @@ pub struct GifDecoder<'a> {
     config: &'a GifDecoderConfig,
     stop: Option<&'a dyn zc::enough::Stop>,
     limits: Option<ResourceLimits>,
-    data: &'a [u8],
+    data: Cow<'a, [u8]>,
 }
 
 impl GifDecoder<'_> {
@@ -937,8 +936,7 @@ impl zc::decode::Decode for GifDecoder<'_> {
     type Error = At<GifError>;
 
     fn decode(self) -> Result<DecodeOutput, At<GifError>> {
-        let data = self.data;
-        let size = data.len() as u64;
+        let size = self.data.len() as u64;
 
         if let Some(max) = self.config.limits.max_input_bytes
             && size > max
@@ -954,7 +952,7 @@ impl zc::decode::Decode for GifDecoder<'_> {
 
         let limits = self.build_limits();
         let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
-        let cursor = std::io::Cursor::new(data);
+        let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop)?;
 
         let metadata = decoder.metadata().clone();
@@ -1178,7 +1176,7 @@ mod tests {
         let config = GifDecoderConfig::new();
         let decoded = config
             .job()
-            .decoder(MINIMAL_GIF, &[])
+            .decoder(Cow::Borrowed(MINIMAL_GIF), &[])
             .unwrap()
             .decode()
             .unwrap();
@@ -1389,7 +1387,7 @@ mod tests {
         let dec_config = GifDecoderConfig::new();
         let mut frame_dec = dec_config
             .job()
-            .frame_decoder(output.data(), &[])
+            .frame_decoder(Cow::Borrowed(output.data()), &[])
             .unwrap();
         let mut count = 0;
         while frame_dec.next_frame().unwrap().is_some() {
@@ -1415,7 +1413,7 @@ mod tests {
         use zc::decode::{DecodeJob as _, FrameDecode as _};
 
         let dec = GifDecoderConfig::new();
-        let frame_dec = dec.job().frame_decoder(MINIMAL_GIF, &[]).unwrap();
+        let frame_dec = dec.job().frame_decoder(Cow::Borrowed(MINIMAL_GIF), &[]).unwrap();
         // Minimal GIF has no NETSCAPE extension, so loop count depends on decoder default
         let lc = frame_dec.loop_count();
         assert!(lc.is_some());

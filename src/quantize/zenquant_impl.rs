@@ -29,14 +29,14 @@ impl ZenquantQuantizer {
         let mut zq = zenquant::QuantizeConfig::new(zenquant::OutputFormat::Gif);
         // Map quality ranges to zenquant Quality enum
         zq = if config.quality >= 75 {
-            zq.quality(zenquant::Quality::Best)
+            zq.with_quality(zenquant::Quality::Best)
         } else if config.quality >= 40 {
-            zq.quality(zenquant::Quality::Balanced)
+            zq.with_quality(zenquant::Quality::Balanced)
         } else {
-            zq.quality(zenquant::Quality::Fast)
+            zq.with_quality(zenquant::Quality::Fast)
         };
         // Map dithering level
-        zq = zq._dither_strength(config.dithering);
+        zq = zq._with_dither_strength(config.dithering);
         zq
     }
 
