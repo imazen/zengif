@@ -193,7 +193,8 @@ pub enum GifError {
     },
 
     /// Unsupported codec operation.
-    UnsupportedOperation(zencodec_types::UnsupportedOperation),
+    #[cfg(feature = "zencodec")]
+    UnsupportedOperation(zc::UnsupportedOperation),
 }
 
 impl fmt::Display for GifError {
@@ -312,6 +313,7 @@ impl fmt::Display for GifError {
             }
             GifError::Cancelled => write!(f, "operation cancelled"),
             GifError::GifCrate { message } => write!(f, "gif crate error: {}", message),
+            #[cfg(feature = "zencodec")]
             GifError::UnsupportedOperation(op) => write!(f, "unsupported operation: {}", op),
         }
     }
@@ -394,8 +396,9 @@ impl From<enough::StopReason> for GifError {
     }
 }
 
-impl From<zencodec_types::UnsupportedOperation> for GifError {
-    fn from(op: zencodec_types::UnsupportedOperation) -> Self {
+#[cfg(feature = "zencodec")]
+impl From<zc::UnsupportedOperation> for GifError {
+    fn from(op: zc::UnsupportedOperation) -> Self {
         GifError::UnsupportedOperation(op)
     }
 }

@@ -516,12 +516,14 @@ pub trait QuantizerTrait: Send {
 /// Available quantizer backends.
 ///
 /// Used to select which quantizer implementation to use at runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// The `Default` impl picks the best *available* backend at compile time:
+/// zenquant > imagequant > quantizr > exoquant > color_quant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum QuantizerBackend {
     /// Use zenquant (best perceptual quality, AGPL-3.0-or-later).
     /// Requires `zenquant` feature.
-    #[default]
     Zenquant,
     /// Use imagequant (good quality, best compression, GPL licensed).
     /// Requires `imagequant` feature.
@@ -535,6 +537,33 @@ pub enum QuantizerBackend {
     /// Use color_quant (NEUQUANT algorithm, MIT licensed).
     /// Requires `color_quant` feature.
     ColorQuant,
+}
+
+impl Default for QuantizerBackend {
+    fn default() -> Self {
+        #[cfg(feature = "zenquant")]
+        { return Self::Zenquant; }
+        #[cfg(feature = "imagequant")]
+        { return Self::Imagequant; }
+        #[cfg(feature = "quantizr")]
+        { return Self::Quantizr; }
+        #[cfg(feature = "exoquant-deprecated")]
+        { return Self::Exoquant; }
+        #[cfg(feature = "color_quant")]
+        { return Self::ColorQuant; }
+        #[cfg(not(any(
+            feature = "zenquant",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        )))]
+        {
+            // No quantizer backend enabled — pick an arbitrary variant.
+            // `create_quantizer()` will return None at runtime.
+            Self::Quantizr
+        }
+    }
 }
 
 impl QuantizerBackend {
