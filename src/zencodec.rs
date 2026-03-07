@@ -807,7 +807,7 @@ impl<'a> GifDecodeJob<'a> {
 impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     type Error = At<GifError>;
     type Dec = GifDecoder<'a>;
-    type StreamDec = GifStreamingDecoder;
+    type StreamDec = zc::Unsupported<At<GifError>>;
     type FullFrameDec = GifFullFrameDecoder;
 
     fn with_stop(mut self, stop: &'a dyn zc::enough::Stop) -> Self {
@@ -911,7 +911,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<GifStreamingDecoder, At<GifError>> {
+    ) -> Result<zc::Unsupported<At<GifError>>, At<GifError>> {
         Err(GifError::from(zc::UnsupportedOperation::RowLevelDecode).start_at())
     }
 
@@ -1026,28 +1026,6 @@ impl zc::decode::Decode for GifDecoder<'_> {
         .with_frame_count(metadata.frame_count as u32);
 
         Ok(DecodeOutput::new(buf, info))
-    }
-}
-
-// ── GifStreamingDecoder ──────────────────────────────────────────────
-
-/// Stub streaming decoder — GIF does not support streaming decode.
-///
-/// [`DecodeJob::streaming_decoder()`](zc::decode::DecodeJob::streaming_decoder)
-/// always returns an error before this type is constructed.
-pub struct GifStreamingDecoder {
-    _private: (),
-}
-
-impl zc::decode::StreamingDecode for GifStreamingDecoder {
-    type Error = At<GifError>;
-
-    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, At<GifError>> {
-        Err(GifError::from(zc::UnsupportedOperation::RowLevelDecode).start_at())
-    }
-
-    fn info(&self) -> &ImageInfo {
-        unreachable!("GifStreamingDecoder is never constructed")
     }
 }
 
