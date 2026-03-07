@@ -414,12 +414,18 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
                 None => Repeat::Once,
             };
         }
+        // Pre-compute limits so they're ready when the encoder is created
+        let base = limits_from_resource(&self.config.limits);
+        let gif_limits = match self.limits {
+            Some(ref job_limits) => merge_resource_limits(&base, job_limits),
+            None => base,
+        };
         Ok(GifFullFrameEncoder {
-            config: self.config.clone(),
             inner_config,
-            limits: self.limits,
+            gif_limits,
             canvas_size: self.canvas_size,
-            frames: Vec::new(),
+            encoder: None,
+            has_frames: false,
         })
     }
 }
@@ -591,65 +597,62 @@ fn pixels_to_gif_rgba(
 
 // ── GifFullFrameEncoder ──────────────────────────────────────────────
 
-/// Animation GIF encoder — collects frames, then encodes on finish.
+/// Animation GIF encoder — streams frames to the underlying encoder.
+///
+/// Frames are encoded immediately on [`push_frame`](Self::push_frame)
+/// rather than buffered until [`finish`](Self::finish), keeping peak
+/// memory proportional to one frame instead of all frames combined.
+///
+/// The underlying `zengif::Encoder` is created lazily on the first
+/// `push_frame` call, using either the explicit canvas size (from
+/// [`with_canvas_size`](zc::encode::EncodeJob::with_canvas_size)) or
+/// the first frame's dimensions.
 pub struct GifFullFrameEncoder {
-    config: GifEncoderConfig,
+    /// Configuration (owned, leaked to `'static` when the encoder is created).
     inner_config: EncoderConfig,
-    limits: Option<ResourceLimits>,
+    /// Pre-computed zengif limits (built from config + job limits).
+    gif_limits: Limits,
+    /// Explicit canvas size (if provided before first frame).
     canvas_size: Option<(u32, u32)>,
-    frames: Vec<FrameInput>,
+    /// Streaming encoder — created lazily on first push_frame.
+    encoder: Option<crate::encode::Encoder<'static>>,
+    /// Whether at least one frame has been pushed.
+    has_frames: bool,
 }
 
 impl GifFullFrameEncoder {
-    fn build_limits(&self) -> Limits {
-        let base = limits_from_resource(&self.config.limits);
-        match self.limits {
-            Some(ref job_limits) => merge_resource_limits(&base, job_limits),
-            None => base,
-        }
-    }
-
-    fn push_frame_erased(
+    /// Ensure the underlying streaming encoder exists, creating it on first call.
+    fn ensure_encoder(
         &mut self,
-        pixels: PixelSlice<'_>,
-        duration_ms: u32,
-    ) -> Result<(), At<GifError>> {
-        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
-        // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
-        let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
-        let frame = FrameInput::new(w, h, delay_cs, rgba);
-        self.frames.push(frame);
-        Ok(())
-    }
-
-    fn do_finish(self) -> Result<EncodeOutput, At<GifError>> {
-        if self.frames.is_empty() {
-            return Err(GifError::InvalidEncoderState {
-                message: "no frames to encode",
-            }
-            .start_at());
-        }
-
-        let limits = self.build_limits();
-        let stop: &dyn enough::Stop = &enough::Unstoppable;
-
-        // Use explicit canvas size if provided, otherwise first frame's dimensions
-        let (w, h) = self.canvas_size.map_or_else(
-            || (self.frames[0].width, self.frames[0].height),
-            |(cw, ch)| {
+        frame_w: u16,
+        frame_h: u16,
+    ) -> Result<&mut crate::encode::Encoder<'static>, At<GifError>> {
+        if self.encoder.is_none() {
+            let (w, h) = self.canvas_size.map_or((frame_w, frame_h), |(cw, ch)| {
                 (
                     cw.min(u16::MAX as u32) as u16,
                     ch.min(u16::MAX as u32) as u16,
                 )
-            },
-        );
+            });
 
-        let data = EncodeRequest::new(&self.inner_config, w, h)
-            .limits(&limits)
-            .stop(stop)
-            .encode(self.frames)?;
+            // Leak config and limits to satisfy the 'static lifetime on Encoder.
+            // These are small structs (~100 + ~64 bytes) and this happens once
+            // per animation, matching the pattern in Encoder::from_metadata.
+            let config: &'static EncoderConfig =
+                Box::leak(Box::new(self.inner_config.clone()));
+            let limits: &'static Limits =
+                Box::leak(Box::new(self.gif_limits.clone()));
 
-        Ok(EncodeOutput::new(data, ImageFormat::Gif))
+            let stop: &'static dyn enough::Stop = &enough::Unstoppable;
+
+            let enc = EncodeRequest::new(config, w, h)
+                .limits(limits)
+                .stop(stop)
+                .build()?;
+
+            self.encoder = Some(enc);
+        }
+        Ok(self.encoder.as_mut().unwrap())
     }
 }
 
@@ -661,11 +664,37 @@ impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
     }
 
     fn push_frame(&mut self, pixels: PixelSlice<'_>, duration_ms: u32) -> Result<(), At<GifError>> {
-        self.push_frame_erased(pixels, duration_ms)
+        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
+        // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
+        let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
+        let frame = FrameInput::new(w, h, delay_cs, rgba);
+
+        let enc = self.ensure_encoder(w, h)?;
+        enc.add_frame(frame)?;
+        self.has_frames = true;
+        Ok(())
     }
 
     fn finish(self) -> Result<EncodeOutput, At<GifError>> {
-        self.do_finish()
+        let enc = match self.encoder {
+            Some(enc) => enc,
+            None => {
+                return Err(GifError::InvalidEncoderState {
+                    message: "no frames to encode",
+                }
+                .start_at());
+            }
+        };
+
+        if !self.has_frames {
+            return Err(GifError::InvalidEncoderState {
+                message: "no frames to encode",
+            }
+            .start_at());
+        }
+
+        let data = enc.finish()?;
+        Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 }
 
