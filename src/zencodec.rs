@@ -734,6 +734,7 @@ impl zc::decode::DecoderConfig for GifDecoderConfig {
             config: self,
             stop: None,
             limits: None,
+            start_frame_index: 0,
         }
     }
 }
@@ -745,6 +746,7 @@ pub struct GifDecodeJob<'a> {
     config: &'a GifDecoderConfig,
     stop: Option<&'a dyn zc::enough::Stop>,
     limits: Option<ResourceLimits>,
+    start_frame_index: u32,
 }
 
 impl<'a> GifDecodeJob<'a> {
@@ -786,6 +788,11 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.limits = Some(limits);
+        self
+    }
+
+    fn with_start_frame_index(mut self, index: u32) -> Self {
+        self.start_frame_index = index;
         self
     }
 
@@ -890,6 +897,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             shared_info,
             current_frame: None,
             frame_index: 0,
+            start_frame_index: self.start_frame_index,
         })
     }
 }
@@ -1010,6 +1018,9 @@ pub struct GifFullFrameDecoder {
     /// return a borrowing `FullFrame<'_>`.
     current_frame: Option<(PixelBuffer, u32, u32)>,
     frame_index: u32,
+    /// First frame index to yield. Frames before this are decoded (to maintain
+    /// correct compositing/disposal state) but not returned to the caller.
+    start_frame_index: u32,
 }
 
 impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
@@ -1044,34 +1055,45 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
         // compositor applies disposal before returning each frame. FullFrame
         // borrows the decoder's stored buffer, so callers get ready-to-display
         // frames with no further compositing needed.
-        let frame = self.decoder.next_frame()?;
+        //
+        // Frames before `start_frame_index` are decoded (to advance compositing
+        // and disposal state correctly) but not yielded to the caller.
+        loop {
+            let frame = self.decoder.next_frame()?;
 
-        let frame = match frame {
-            Some(f) => f,
-            None => {
-                self.current_frame = None;
-                return Ok(None);
-            }
-        };
-
-        let w = frame.width as u32;
-        let h = frame.height as u32;
-        let duration_ms = frame.delay as u32 * 10;
-        let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
-        let buf =
-            PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB).map_err(|_| {
-                GifError::InvalidEncoderState {
-                    message: "frame size mismatch",
+            let frame = match frame {
+                Some(f) => f,
+                None => {
+                    self.current_frame = None;
+                    return Ok(None);
                 }
-                .start_at()
-            })?;
+            };
 
-        let index = self.frame_index;
-        self.frame_index += 1;
+            let index = self.frame_index;
+            self.frame_index += 1;
 
-        self.current_frame = Some((buf, duration_ms, index));
-        let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
-        Ok(Some(FullFrame::new(buf.as_slice(), duration_ms, index)))
+            // Skip frames before start_frame_index — we must decode them for
+            // correct compositing state, but we don't yield them.
+            if index < self.start_frame_index {
+                continue;
+            }
+
+            let w = frame.width as u32;
+            let h = frame.height as u32;
+            let duration_ms = frame.delay as u32 * 10;
+            let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
+            let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
+                .map_err(|_| {
+                    GifError::InvalidEncoderState {
+                        message: "frame size mismatch",
+                    }
+                    .start_at()
+                })?;
+
+            self.current_frame = Some((buf, duration_ms, index));
+            let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
+            return Ok(Some(FullFrame::new(buf.as_slice(), duration_ms, index)));
+        }
     }
 }
 
