@@ -724,8 +724,8 @@ impl zc::decode::DecoderConfig for GifDecoderConfig {
     type Error = At<GifError>;
     type Job<'a> = GifDecodeJob<'a>;
 
-    fn format() -> ImageFormat {
-        ImageFormat::Gif
+    fn formats() -> &'static [ImageFormat] {
+        &[ImageFormat::Gif]
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
