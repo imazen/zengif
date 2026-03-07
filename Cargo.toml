@@ -49,6 +49,9 @@ enough = { version = "0.4", default-features = false }
 # Safe transmutes for pixel data (no_std compatible)
 bytemuck = { version = "1.21", features = ["derive"] }
 
+# Derive Error/Display for error types (no_std compatible)
+thiserror = { version = "2", default-features = false }
+
 # Shared codec traits (optional, gated on `zencodec` feature)
 zencodec-types = { path = "../zencodec-types", optional = true }
 zenpixels = { version = "0.1", default-features = false, features = ["buffer"] }

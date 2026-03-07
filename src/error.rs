@@ -3,8 +3,6 @@
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 
-use core::fmt;
-
 use whereat::At;
 
 /// Result type alias using `At<GifError>` for automatic location tracking.
@@ -16,25 +14,45 @@ pub type EncodeError = GifError;
 /// Type alias for decoding errors (for API clarity).
 pub type DecodeError = GifError;
 
+#[cfg(feature = "std")]
+fn io_display(kind: std::io::ErrorKind, context: Option<&'static str>) -> String {
+    match context {
+        Some(ctx) => format!("I/O error ({kind:?}): {ctx}"),
+        None => format!("I/O error: {kind:?}"),
+    }
+}
+
+#[cfg(not(feature = "std"))]
+fn io_display_no_std(context: Option<&'static str>) -> &'static str {
+    match context {
+        Some(ctx) => ctx,
+        None => "I/O error",
+    }
+}
+
 /// All possible errors in zengif operations.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum GifError {
     // === Header/Format Errors ===
     /// Invalid GIF header (not GIF87a or GIF89a).
+    #[error("invalid GIF header")]
     InvalidHeader,
 
     /// Unsupported GIF version.
+    #[error("unsupported GIF version: {}", core::str::from_utf8(version).unwrap_or("???"))]
     UnsupportedVersion {
         /// The version bytes found.
         version: [u8; 3],
     },
 
     /// Invalid logical screen descriptor.
+    #[error("invalid logical screen descriptor")]
     InvalidScreenDescriptor,
 
     // === Frame Errors ===
     /// Frame bounds exceed canvas size.
+    #[error("frame bounds ({frame_left}, {frame_top}, {frame_width}x{frame_height}) exceed canvas size ({canvas_width}x{canvas_height})")]
     InvalidFrameBounds {
         /// Frame left position.
         frame_left: u16,
@@ -51,12 +69,14 @@ pub enum GifError {
     },
 
     /// Frame is missing a required color palette.
+    #[error("frame {frame_index} is missing color palette")]
     MissingPalette {
         /// Frame index.
         frame_index: usize,
     },
 
     /// Invalid disposal method value.
+    #[error("invalid disposal method value: {value}")]
     InvalidDisposalMethod {
         /// The invalid value.
         value: u8,
@@ -64,12 +84,14 @@ pub enum GifError {
 
     // === LZW/Decompression Errors ===
     /// Malformed LZW data.
+    #[error("malformed LZW data: {message}")]
     MalformedLzw {
         /// Description of the error.
         message: &'static str,
     },
 
     /// LZW minimum code size is invalid.
+    #[error("invalid LZW minimum code size: {value}")]
     InvalidMinCodeSize {
         /// The invalid value.
         value: u8,
@@ -77,6 +99,7 @@ pub enum GifError {
 
     // === Limit Errors ===
     /// Image dimensions exceed configured limits.
+    #[error("dimensions {width}x{height} exceed limit {max_width}x{max_height}")]
     DimensionsTooLarge {
         /// Actual width.
         width: u16,
@@ -89,6 +112,7 @@ pub enum GifError {
     },
 
     /// Total pixel count exceeds limit.
+    #[error("total pixels {pixels} exceeds limit {max_pixels}")]
     TotalPixelsTooLarge {
         /// Actual pixel count.
         pixels: u64,
@@ -97,6 +121,7 @@ pub enum GifError {
     },
 
     /// Too many frames in animation.
+    #[error("frame count {count} exceeds limit {max}")]
     TooManyFrames {
         /// Actual frame count.
         count: u64,
@@ -105,6 +130,7 @@ pub enum GifError {
     },
 
     /// File size exceeds limit.
+    #[error("file size {size} bytes exceeds limit {max} bytes")]
     FileTooLarge {
         /// Actual size in bytes.
         size: u64,
@@ -113,6 +139,7 @@ pub enum GifError {
     },
 
     /// Memory limit exceeded during operation.
+    #[error("memory usage {current} bytes exceeds limit {limit} bytes")]
     MemoryLimitExceeded {
         /// Current memory usage in bytes.
         current: u64,
@@ -121,12 +148,14 @@ pub enum GifError {
     },
 
     /// Allocation failed.
+    #[error("allocation of {requested} bytes failed")]
     AllocationFailed {
         /// Requested size in bytes.
         requested: u64,
     },
 
     /// Decompression ratio exceeded (potential zip bomb).
+    #[error("decompression ratio {ratio:.1}x exceeds limit {max_ratio:.1}x", ratio = *decompressed as f64 / (*compressed).max(1) as f64)]
     DecompressionRatioExceeded {
         /// Compressed size.
         compressed: u64,
@@ -138,6 +167,7 @@ pub enum GifError {
 
     // === Encoding Errors ===
     /// Frame dimensions don't match encoder canvas.
+    #[error("frame size {actual_width}x{actual_height} doesn't match expected {expected_width}x{expected_height}")]
     FrameDimensionMismatch {
         /// Expected width.
         expected_width: u16,
@@ -150,12 +180,14 @@ pub enum GifError {
     },
 
     /// Color quantization failed.
+    #[error("color quantization failed: {message}")]
     QuantizationFailed {
         /// Description of the error.
         message: &'static str,
     },
 
     /// Encoder is in an invalid state.
+    #[error("encoder in invalid state: {message}")]
     InvalidEncoderState {
         /// Description of the state.
         message: &'static str,
@@ -163,10 +195,12 @@ pub enum GifError {
 
     // === I/O Errors ===
     /// Unexpected end of file.
+    #[error("unexpected end of file")]
     UnexpectedEof,
 
     /// I/O error during read or write.
     #[cfg(feature = "std")]
+    #[error("{}", io_display(*.kind, *context))]
     Io {
         /// The underlying I/O error kind.
         kind: std::io::ErrorKind,
@@ -176,6 +210,7 @@ pub enum GifError {
 
     /// I/O error during read or write (no_std version).
     #[cfg(not(feature = "std"))]
+    #[error("{}", io_display_no_std(*context))]
     Io {
         /// Optional context message.
         context: Option<&'static str>,
@@ -183,10 +218,12 @@ pub enum GifError {
 
     // === Cancellation ===
     /// Operation was cancelled via Stop trait.
+    #[error("operation cancelled")]
     Cancelled,
 
     // === Wrapped Errors ===
     /// Error from underlying gif crate.
+    #[error("gif crate error: {message}")]
     GifCrate {
         /// Description of the gif crate error.
         message: String,
@@ -194,132 +231,9 @@ pub enum GifError {
 
     /// Unsupported codec operation.
     #[cfg(feature = "zencodec")]
+    #[error("unsupported operation: {0}")]
     UnsupportedOperation(zc::UnsupportedOperation),
 }
-
-impl fmt::Display for GifError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GifError::InvalidHeader => write!(f, "invalid GIF header"),
-            GifError::UnsupportedVersion { version } => {
-                write!(
-                    f,
-                    "unsupported GIF version: {:?}",
-                    core::str::from_utf8(version).unwrap_or("???")
-                )
-            }
-            GifError::InvalidScreenDescriptor => write!(f, "invalid logical screen descriptor"),
-            GifError::InvalidFrameBounds {
-                frame_left,
-                frame_top,
-                frame_width,
-                frame_height,
-                canvas_width,
-                canvas_height,
-            } => {
-                write!(
-                    f,
-                    "frame bounds ({}, {}, {}x{}) exceed canvas size ({}x{})",
-                    frame_left, frame_top, frame_width, frame_height, canvas_width, canvas_height
-                )
-            }
-            GifError::MissingPalette { frame_index } => {
-                write!(f, "frame {} is missing color palette", frame_index)
-            }
-            GifError::InvalidDisposalMethod { value } => {
-                write!(f, "invalid disposal method value: {}", value)
-            }
-            GifError::MalformedLzw { message } => write!(f, "malformed LZW data: {}", message),
-            GifError::InvalidMinCodeSize { value } => {
-                write!(f, "invalid LZW minimum code size: {}", value)
-            }
-            GifError::DimensionsTooLarge {
-                width,
-                height,
-                max_width,
-                max_height,
-            } => {
-                write!(
-                    f,
-                    "dimensions {}x{} exceed limit {}x{}",
-                    width, height, max_width, max_height
-                )
-            }
-            GifError::TotalPixelsTooLarge { pixels, max_pixels } => {
-                write!(f, "total pixels {} exceeds limit {}", pixels, max_pixels)
-            }
-            GifError::TooManyFrames { count, max } => {
-                write!(f, "frame count {} exceeds limit {}", count, max)
-            }
-            GifError::FileTooLarge { size, max } => {
-                write!(f, "file size {} bytes exceeds limit {} bytes", size, max)
-            }
-            GifError::MemoryLimitExceeded { current, limit } => {
-                write!(
-                    f,
-                    "memory usage {} bytes exceeds limit {} bytes",
-                    current, limit
-                )
-            }
-            GifError::AllocationFailed { requested } => {
-                write!(f, "allocation of {} bytes failed", requested)
-            }
-            GifError::DecompressionRatioExceeded {
-                compressed,
-                decompressed,
-                max_ratio,
-            } => {
-                let ratio = *decompressed as f64 / (*compressed).max(1) as f64;
-                write!(
-                    f,
-                    "decompression ratio {:.1}x exceeds limit {:.1}x",
-                    ratio, max_ratio
-                )
-            }
-            GifError::FrameDimensionMismatch {
-                expected_width,
-                expected_height,
-                actual_width,
-                actual_height,
-            } => {
-                write!(
-                    f,
-                    "frame size {}x{} doesn't match expected {}x{}",
-                    actual_width, actual_height, expected_width, expected_height
-                )
-            }
-            GifError::QuantizationFailed { message } => {
-                write!(f, "color quantization failed: {}", message)
-            }
-            GifError::InvalidEncoderState { message } => {
-                write!(f, "encoder in invalid state: {}", message)
-            }
-            GifError::UnexpectedEof => write!(f, "unexpected end of file"),
-            #[cfg(feature = "std")]
-            GifError::Io { kind, context } => {
-                if let Some(ctx) = context {
-                    write!(f, "I/O error ({:?}): {}", kind, ctx)
-                } else {
-                    write!(f, "I/O error: {:?}", kind)
-                }
-            }
-            #[cfg(not(feature = "std"))]
-            GifError::Io { context } => {
-                if let Some(ctx) = context {
-                    write!(f, "I/O error: {}", ctx)
-                } else {
-                    write!(f, "I/O error")
-                }
-            }
-            GifError::Cancelled => write!(f, "operation cancelled"),
-            GifError::GifCrate { message } => write!(f, "gif crate error: {}", message),
-            #[cfg(feature = "zencodec")]
-            GifError::UnsupportedOperation(op) => write!(f, "unsupported operation: {}", op),
-        }
-    }
-}
-
-impl core::error::Error for GifError {}
 
 // Conversion from std::io::Error
 #[cfg(feature = "std")]
