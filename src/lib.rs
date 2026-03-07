@@ -229,7 +229,7 @@ mod zencodec;
 #[cfg(feature = "zencodec")]
 pub use zencodec::{
     GifDecodeJob, GifDecoder, GifDecoderConfig, GifEncodeJob, GifEncoder, GifEncoderConfig,
-    GifFrameDecoder, GifFrameEncoder,
+    GifFullFrameDecoder, GifFullFrameEncoder,
 };
 
 // Re-export enough for user convenience

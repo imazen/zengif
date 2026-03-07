@@ -5,7 +5,7 @@
 //! traits from zencodec-types.
 //!
 //! Supports both single-frame and animation encoding/decoding via the
-//! type-erased [`Encoder`](zc::encode::Encoder) and [`FrameEncoder`](zc::encode::FrameEncoder)
+//! type-erased [`Encoder`](zc::encode::Encoder) and [`FullFrameEncoder`](zc::encode::FullFrameEncoder)
 //! traits.
 //!
 //! Requires `zencodec` feature (GIF codec uses `std::io`).
@@ -15,7 +15,7 @@ use alloc::borrow::Cow;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use zc::decode::{DecodeFrame, DecodeOutput, OutputInfo};
+use zc::decode::{DecodeOutput, FullFrame, OutputInfo, SinkError};
 use zc::encode::EncodeOutput;
 use zc::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
 use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
@@ -369,7 +369,7 @@ pub struct GifEncodeJob<'a> {
 impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
     type Error = At<GifError>;
     type Enc = GifEncoder<'a>;
-    type FrameEnc = GifFrameEncoder;
+    type FullFrameEnc = GifFullFrameEncoder;
 
     fn with_stop(mut self, stop: &'a dyn zc::enough::Stop) -> Self {
         self.stop = Some(stop);
@@ -404,7 +404,7 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
         })
     }
 
-    fn frame_encoder(self) -> Result<GifFrameEncoder, At<GifError>> {
+    fn full_frame_encoder(self) -> Result<GifFullFrameEncoder, At<GifError>> {
         // Map loop_count to GIF repeat
         let mut inner_config = self.config.inner.clone();
         if let Some(count) = self.loop_count {
@@ -414,7 +414,7 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
                 None => Repeat::Once,
             };
         }
-        Ok(GifFrameEncoder {
+        Ok(GifFullFrameEncoder {
             config: self.config.clone(),
             inner_config,
             limits: self.limits,
@@ -589,10 +589,10 @@ fn pixels_to_gif_rgba(
     Ok((rgba, w, h))
 }
 
-// ── GifFrameEncoder ──────────────────────────────────────────────────
+// ── GifFullFrameEncoder ──────────────────────────────────────────────
 
 /// Animation GIF encoder — collects frames, then encodes on finish.
-pub struct GifFrameEncoder {
+pub struct GifFullFrameEncoder {
     config: GifEncoderConfig,
     inner_config: EncoderConfig,
     limits: Option<ResourceLimits>,
@@ -600,7 +600,7 @@ pub struct GifFrameEncoder {
     frames: Vec<FrameInput>,
 }
 
-impl GifFrameEncoder {
+impl GifFullFrameEncoder {
     fn build_limits(&self) -> Limits {
         let base = limits_from_resource(&self.config.limits);
         match self.limits {
@@ -653,7 +653,7 @@ impl GifFrameEncoder {
     }
 }
 
-impl zc::encode::FrameEncoder for GifFrameEncoder {
+impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
     type Error = At<GifError>;
 
     fn reject(op: zc::UnsupportedOperation) -> At<GifError> {
@@ -662,14 +662,6 @@ impl zc::encode::FrameEncoder for GifFrameEncoder {
 
     fn push_frame(&mut self, pixels: PixelSlice<'_>, duration_ms: u32) -> Result<(), At<GifError>> {
         self.push_frame_erased(pixels, duration_ms)
-    }
-
-    fn with_loop_count(&mut self, count: Option<u32>) {
-        self.inner_config.repeat = match count {
-            Some(0) => Repeat::Infinite,
-            Some(n) => Repeat::Count(n as u16),
-            None => Repeat::Once,
-        };
     }
 
     fn finish(self) -> Result<EncodeOutput, At<GifError>> {
@@ -785,7 +777,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     type Error = At<GifError>;
     type Dec = GifDecoder<'a>;
     type StreamDec = GifStreamingDecoder;
-    type FrameDec = GifFrameDecoder;
+    type FullFrameDec = GifFullFrameDecoder;
 
     fn with_stop(mut self, stop: &'a dyn zc::enough::Stop) -> Self {
         self.stop = Some(stop);
@@ -873,11 +865,11 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         Err(GifError::from(zc::UnsupportedOperation::RowLevelDecode).start_at())
     }
 
-    fn frame_decoder(
+    fn full_frame_decoder(
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<GifFrameDecoder, At<GifError>> {
+    ) -> Result<GifFullFrameDecoder, At<GifError>> {
         self.check_file_size(&data)?;
         let limits = self.build_limits();
         let cursor = std::io::Cursor::new(data.into_owned());
@@ -893,9 +885,10 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             .with_animation(metadata.frame_count > 1)
             .with_frame_count(metadata.frame_count as u32),
         );
-        Ok(GifFrameDecoder {
+        Ok(GifFullFrameDecoder {
             decoder,
             shared_info,
+            current_frame: None,
             frame_index: 0,
         })
     }
@@ -1007,17 +1000,31 @@ impl zc::decode::StreamingDecode for GifStreamingDecoder {
     }
 }
 
-// ── GifFrameDecoder ──────────────────────────────────────────────────
+// ── GifFullFrameDecoder ──────────────────────────────────────────────
 
 /// Animation GIF decoder — yields frames one at a time.
-pub struct GifFrameDecoder {
+pub struct GifFullFrameDecoder {
     decoder: Decoder<'static, std::io::Cursor<Vec<u8>>>,
     shared_info: Arc<ImageInfo>,
+    /// Stores the current frame's pixel data so `render_next_frame` can
+    /// return a borrowing `FullFrame<'_>`.
+    current_frame: Option<(PixelBuffer, u32, u32)>,
     frame_index: u32,
 }
 
-impl zc::decode::FrameDecode for GifFrameDecoder {
+impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
     type Error = At<GifError>;
+
+    fn wrap_sink_error(err: SinkError) -> At<GifError> {
+        GifError::GifCrate {
+            message: err.to_string(),
+        }
+        .start_at()
+    }
+
+    fn info(&self) -> &ImageInfo {
+        &self.shared_info
+    }
 
     fn frame_count(&self) -> Option<u32> {
         let count = self.decoder.metadata().frame_count;
@@ -1032,16 +1039,19 @@ impl zc::decode::FrameDecode for GifFrameDecoder {
         }
     }
 
-    fn next_frame(&mut self) -> Result<Option<DecodeFrame>, At<GifError>> {
-        // GIF FrameDecoder returns fully composited RGBA frames — the internal
-        // compositor applies disposal before returning each frame. DecodeFrame
-        // defaults to FrameDisposal::None + FrameBlend::Source, which is correct:
-        // the caller gets ready-to-display frames with no further compositing needed.
+    fn render_next_frame(&mut self) -> Result<Option<FullFrame<'_>>, At<GifError>> {
+        // GIF FullFrameDecoder returns fully composited RGBA frames — the internal
+        // compositor applies disposal before returning each frame. FullFrame
+        // borrows the decoder's stored buffer, so callers get ready-to-display
+        // frames with no further compositing needed.
         let frame = self.decoder.next_frame()?;
 
         let frame = match frame {
             Some(f) => f,
-            None => return Ok(None),
+            None => {
+                self.current_frame = None;
+                return Ok(None);
+            }
         };
 
         let w = frame.width as u32;
@@ -1059,12 +1069,9 @@ impl zc::decode::FrameDecode for GifFrameDecoder {
         let index = self.frame_index;
         self.frame_index += 1;
 
-        Ok(Some(DecodeFrame::new(
-            buf,
-            self.shared_info.clone(),
-            duration_ms,
-            index,
-        )))
+        self.current_frame = Some((buf, duration_ms, index));
+        let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
+        Ok(Some(FullFrame::new(buf.as_slice(), duration_ms, index)))
     }
 }
 
@@ -1344,9 +1351,9 @@ mod tests {
         feature = "color_quant"
     ))]
     #[test]
-    fn frame_encoder_roundtrip() {
-        use zc::decode::FrameDecode as _;
-        use zc::encode::{EncodeJob as _, FrameEncoder as _};
+    fn full_frame_encoder_roundtrip() {
+        use zc::decode::FullFrameDecoder as _;
+        use zc::encode::{EncodeJob as _, FullFrameEncoder as _};
 
         // Create two 8x8 frames
         let mut frame1_bytes = Vec::with_capacity(8 * 8 * 4);
@@ -1365,7 +1372,7 @@ mod tests {
         let mut enc = config
             .job()
             .with_loop_count(Some(0))
-            .frame_encoder()
+            .full_frame_encoder()
             .unwrap();
 
         enc.push_frame(buf1.as_slice(), 100).unwrap();
@@ -1377,10 +1384,10 @@ mod tests {
         let dec_config = GifDecoderConfig::new();
         let mut frame_dec = dec_config
             .job()
-            .frame_decoder(Cow::Borrowed(output.data()), &[])
+            .full_frame_decoder(Cow::Borrowed(output.data()), &[])
             .unwrap();
         let mut count = 0;
-        while frame_dec.next_frame().unwrap().is_some() {
+        while frame_dec.render_next_frame().unwrap().is_some() {
             count += 1;
         }
         assert_eq!(count, 2);
@@ -1399,13 +1406,13 @@ mod tests {
     }
 
     #[test]
-    fn frame_decoder_loop_count() {
-        use zc::decode::{DecodeJob as _, FrameDecode as _};
+    fn full_frame_decoder_loop_count() {
+        use zc::decode::{DecodeJob as _, FullFrameDecoder as _};
 
         let dec = GifDecoderConfig::new();
         let frame_dec = dec
             .job()
-            .frame_decoder(Cow::Borrowed(MINIMAL_GIF), &[])
+            .full_frame_decoder(Cow::Borrowed(MINIMAL_GIF), &[])
             .unwrap();
         // Minimal GIF has no NETSCAPE extension, so loop count depends on decoder default
         let lc = frame_dec.loop_count();
