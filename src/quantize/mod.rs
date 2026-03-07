@@ -542,15 +542,25 @@ pub enum QuantizerBackend {
 impl Default for QuantizerBackend {
     fn default() -> Self {
         #[cfg(feature = "zenquant")]
-        { return Self::Zenquant; }
+        {
+            return Self::Zenquant;
+        }
         #[cfg(feature = "imagequant")]
-        { return Self::Imagequant; }
+        {
+            return Self::Imagequant;
+        }
         #[cfg(feature = "quantizr")]
-        { return Self::Quantizr; }
+        {
+            return Self::Quantizr;
+        }
         #[cfg(feature = "exoquant-deprecated")]
-        { return Self::Exoquant; }
+        {
+            return Self::Exoquant;
+        }
         #[cfg(feature = "color_quant")]
-        { return Self::ColorQuant; }
+        {
+            return Self::ColorQuant;
+        }
         #[cfg(not(any(
             feature = "zenquant",
             feature = "imagequant",

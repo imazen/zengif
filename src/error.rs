@@ -52,7 +52,9 @@ pub enum GifError {
 
     // === Frame Errors ===
     /// Frame bounds exceed canvas size.
-    #[error("frame bounds ({frame_left}, {frame_top}, {frame_width}x{frame_height}) exceed canvas size ({canvas_width}x{canvas_height})")]
+    #[error(
+        "frame bounds ({frame_left}, {frame_top}, {frame_width}x{frame_height}) exceed canvas size ({canvas_width}x{canvas_height})"
+    )]
     InvalidFrameBounds {
         /// Frame left position.
         frame_left: u16,
@@ -167,7 +169,9 @@ pub enum GifError {
 
     // === Encoding Errors ===
     /// Frame dimensions don't match encoder canvas.
-    #[error("frame size {actual_width}x{actual_height} doesn't match expected {expected_width}x{expected_height}")]
+    #[error(
+        "frame size {actual_width}x{actual_height} doesn't match expected {expected_width}x{expected_height}"
+    )]
     FrameDimensionMismatch {
         /// Expected width.
         expected_width: u16,
