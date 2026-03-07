@@ -864,6 +864,20 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         })
     }
 
+    fn push_decoder(
+        self,
+        data: Cow<'a, [u8]>,
+        sink: &mut dyn zc::decode::DecodeRowSink,
+        preferred: &[PixelDescriptor],
+    ) -> Result<OutputInfo, Self::Error> {
+        zc::decode::push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+            GifError::GifCrate {
+                message: e.to_string(),
+            }
+            .start_at()
+        })
+    }
+
     fn streaming_decoder(
         self,
         _data: Cow<'a, [u8]>,
@@ -1094,6 +1108,13 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
             let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
             return Ok(Some(FullFrame::new(buf.as_slice(), duration_ms, index)));
         }
+    }
+
+    fn render_next_frame_to_sink(
+        &mut self,
+        sink: &mut dyn zc::decode::DecodeRowSink,
+    ) -> Result<Option<OutputInfo>, Self::Error> {
+        zc::decode::render_frame_to_sink_via_copy(self, sink)
     }
 }
 
