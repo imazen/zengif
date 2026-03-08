@@ -650,11 +650,11 @@ impl GifFullFrameEncoder {
             // Leak config and limits to satisfy the 'static lifetime on Encoder.
             // These are small structs (~100 + ~64 bytes) and this happens once
             // per animation, matching the pattern in Encoder::from_metadata.
-            let config: &'static EncoderConfig =
-                Box::leak(Box::new(self.inner_config.clone()));
-            let limits: &'static Limits =
-                Box::leak(Box::new(self.gif_limits.clone()));
+            let config: &'static EncoderConfig = Box::leak(Box::new(self.inner_config.clone()));
+            let limits: &'static Limits = Box::leak(Box::new(self.gif_limits.clone()));
 
+            // Encoder<'static> requires a 'static stop token. Per-frame
+            // stop checks are added in push_frame()/finish() instead.
             let stop: &'static dyn enough::Stop = &enough::Unstoppable;
 
             let enc = EncodeRequest::new(config, w, h)
@@ -675,7 +675,15 @@ impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
         GifError::from(op).start_at()
     }
 
-    fn push_frame(&mut self, pixels: PixelSlice<'_>, duration_ms: u32, _stop: Option<&dyn zc::enough::Stop>) -> Result<(), At<GifError>> {
+    fn push_frame(
+        &mut self,
+        pixels: PixelSlice<'_>,
+        duration_ms: u32,
+        stop: Option<&dyn zc::enough::Stop>,
+    ) -> Result<(), At<GifError>> {
+        if let Some(stop) = stop {
+            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+        }
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
         let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
@@ -687,7 +695,10 @@ impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
         Ok(())
     }
 
-    fn finish(self, _stop: Option<&dyn zc::enough::Stop>) -> Result<EncodeOutput, At<GifError>> {
+    fn finish(self, stop: Option<&dyn zc::enough::Stop>) -> Result<EncodeOutput, At<GifError>> {
+        if let Some(stop) = stop {
+            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+        }
         let enc = match self.encoder {
             Some(enc) => enc,
             None => {
@@ -859,7 +870,8 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let gif_limits = limits_from_resource(&self.config.limits);
         let cursor = std::io::Cursor::new(data);
-        let mut decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)?;
+        let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let mut decoder = Decoder::new(cursor, gif_limits, stop)?;
 
         let metadata = decoder.metadata().clone();
 
@@ -936,6 +948,9 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         self.check_file_size(&data)?;
         let limits = self.build_limits();
         let cursor = std::io::Cursor::new(data.into_owned());
+        // The underlying Decoder requires a 'static stop token because
+        // GifFullFrameDecoder stores Decoder<'static, _>. Per-frame stop
+        // checks are added in render_next_frame() instead.
         let decoder = Decoder::new(cursor, limits, &enough::Unstoppable)?;
         let metadata = decoder.metadata().clone();
         let shared_info = Arc::new(
@@ -1125,7 +1140,17 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
         }
     }
 
-    fn render_next_frame(&mut self, _stop: Option<&dyn zc::enough::Stop>) -> Result<Option<FullFrame<'_>>, At<GifError>> {
+    fn render_next_frame(
+        &mut self,
+        stop: Option<&dyn zc::enough::Stop>,
+    ) -> Result<Option<FullFrame<'_>>, At<GifError>> {
+        // Check stop before decoding the next frame.
+        // Note: the underlying Decoder<'static> uses Unstoppable internally
+        // (lifetime constraint prevents borrowing the job's stop token), so
+        // cancellation granularity is per-frame rather than mid-frame.
+        if let Some(stop) = stop {
+            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+        }
         // GIF FullFrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. FullFrame
         // borrows the decoder's stored buffer, so callers get ready-to-display
