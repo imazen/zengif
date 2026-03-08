@@ -857,12 +857,16 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let metadata = decoder.metadata().clone();
 
-        Ok(ImageInfo::new(
+        let mut info = ImageInfo::new(
             metadata.width as u32,
             metadata.height as u32,
             ImageFormat::Gif,
         )
-        .with_alpha(true))
+        .with_alpha(true);
+        if let Ok(probe) = crate::detect::probe(data) {
+            info = info.with_source_encoding_details(probe);
+        }
+        Ok(info)
     }
 
     fn probe_full(&self, data: &[u8]) -> Result<ImageInfo, At<GifError>> {
