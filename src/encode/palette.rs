@@ -152,6 +152,7 @@ pub(super) fn compute_frame_diff(
 /// Skips fully transparent pixels (alpha == 0) since they're invisible.
 /// Returns RMSE in 0-255 RGB space (0 = perfect, ~5 = invisible, ~20 = visible).
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",

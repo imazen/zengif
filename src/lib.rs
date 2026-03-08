@@ -184,6 +184,7 @@ pub use encode::{EncodeRequest, Encoder, EncoderConfig, PaletteStrategy, encode_
 #[cfg(all(
     feature = "std",
     any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",

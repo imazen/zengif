@@ -34,6 +34,7 @@
 //! implemented. This is an advanced feature that would require explicit opt-in.
 
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -48,6 +49,7 @@ use crate::error::{GifError, Result};
 use crate::limits::Limits;
 use crate::types::FrameInput;
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -125,6 +127,7 @@ pub fn encode_gif(
 /// For round-trip encoding (decode -> encode), this combined with zero dithering
 /// significantly reduces output bloat.
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -138,15 +141,23 @@ pub fn encode_gif_shared_palette(
     limits: Limits,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>> {
-    // Select quantizer based on available features (priority: imagequant > quantizr > color_quant > exoquant)
-    #[cfg(feature = "imagequant")]
+    // Select quantizer based on available features (priority: zenquant > imagequant > quantizr > color_quant > exoquant)
+    #[cfg(feature = "zenquant")]
+    let quantizer = crate::quantize::ZenquantQuantizer::new();
+
+    #[cfg(all(feature = "imagequant", not(feature = "zenquant")))]
     let quantizer = crate::quantize::ImagequantQuantizer::new();
 
-    #[cfg(all(feature = "quantizr", not(feature = "imagequant")))]
+    #[cfg(all(
+        feature = "quantizr",
+        not(feature = "zenquant"),
+        not(feature = "imagequant")
+    ))]
     let quantizer = crate::quantize::QuantizrQuantizer::new();
 
     #[cfg(all(
         feature = "color_quant",
+        not(feature = "zenquant"),
         not(feature = "imagequant"),
         not(feature = "quantizr")
     ))]
@@ -154,6 +165,7 @@ pub fn encode_gif_shared_palette(
 
     #[cfg(all(
         feature = "exoquant-deprecated",
+        not(feature = "zenquant"),
         not(feature = "imagequant"),
         not(feature = "quantizr"),
         not(feature = "color_quant")
@@ -170,6 +182,7 @@ pub fn encode_gif_shared_palette(
 ///
 /// See [`encode_gif_shared_palette`] for the default imagequant-based version.
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -279,6 +292,7 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
 #[cfg(test)]
 mod tests {
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -287,6 +301,7 @@ mod tests {
     use super::config::default_buffer_frames;
     use super::palette::compute_frame_diff;
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -304,6 +319,7 @@ mod tests {
 
     #[test]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -332,6 +348,7 @@ mod tests {
 
     #[test]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -379,6 +396,7 @@ mod tests {
 
     #[test]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -398,6 +416,7 @@ mod tests {
 
     #[test]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -521,6 +540,7 @@ mod tests {
 
     #[test]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -574,6 +594,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -624,6 +645,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -680,6 +702,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -729,6 +752,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -744,6 +768,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -782,6 +807,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -819,6 +845,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -896,6 +923,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -966,6 +994,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1007,6 +1036,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1030,6 +1060,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1046,6 +1077,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",

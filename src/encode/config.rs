@@ -17,6 +17,7 @@ pub struct EncoderConfig {
 
     /// Quality setting for quantization (1-100, higher = better quality).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -27,6 +28,7 @@ pub struct EncoderConfig {
     /// Dithering level (0.0-1.0). Lower values = less noise = better compression.
     /// Default is 0.5. Use 0.0 for re-encoding already-dithered content.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -42,6 +44,7 @@ pub struct EncoderConfig {
     /// reached, at which point the palette is computed and all buffered frames
     /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -52,6 +55,7 @@ pub struct EncoderConfig {
     /// Maximum frames to buffer before building shared palette.
     /// Default is 64. Only used when `shared_palette` is true.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -62,6 +66,7 @@ pub struct EncoderConfig {
     /// Maximum bytes to buffer before building shared palette.
     /// Default is 64MB. Only used when `shared_palette` is true.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -76,6 +81,7 @@ pub struct EncoderConfig {
     #[doc(hidden)]
     #[deprecated(since = "0.2.0", note = "Use the `quantizer` field instead")]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -97,6 +103,7 @@ pub struct EncoderConfig {
     ///     .quantizer(Quantizer::quantizr());
     /// ```
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -125,6 +132,7 @@ pub struct EncoderConfig {
     /// - `Some(2.0)`: strict — more frames get per-frame palettes
     /// - `Some(15.0)`: permissive — only severe outliers get per-frame palettes
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -160,6 +168,7 @@ pub struct EncoderConfig {
 /// | 512×512     | 262K   | 8             |
 /// | 1920×1080   | 2M     | 4             |
 #[cfg(any(
+    feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -189,6 +198,7 @@ impl EncoderConfig {
             global_palette: None,
             use_transparency: true,
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -196,6 +206,7 @@ impl EncoderConfig {
             ))]
             quality: 80,
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -207,6 +218,7 @@ impl EncoderConfig {
             // - Single-frame: negligible overhead (histogram from 1 image)
             // Round-trip encoding (from_metadata) overrides this to false.
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -214,6 +226,7 @@ impl EncoderConfig {
             ))]
             shared_palette: true,
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -221,6 +234,7 @@ impl EncoderConfig {
             ))]
             max_buffer_frames: 32, // Will be updated when encoder is created
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -228,6 +242,7 @@ impl EncoderConfig {
             ))]
             max_buffer_bytes: 64 * 1024 * 1024, // 64 MB
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -235,6 +250,7 @@ impl EncoderConfig {
             ))]
             quantizer_backend: crate::quantize::QuantizerBackend::default(),
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -242,6 +258,7 @@ impl EncoderConfig {
             ))]
             quantizer: None, // Use default auto-selection
             #[cfg(any(
+                feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "exoquant-deprecated",
@@ -273,6 +290,7 @@ impl EncoderConfig {
     #[doc(hidden)]
     #[deprecated(since = "0.2.0", note = "Use the `quantizer` method instead")]
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -308,6 +326,7 @@ impl EncoderConfig {
     ///     .quantizer(Quantizer::imagequant());
     /// ```
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -342,6 +361,7 @@ impl EncoderConfig {
 
     /// Set quality for quantization (1-100).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -359,6 +379,7 @@ impl EncoderConfig {
     /// Use 0.0 when re-encoding already-dithered content (round-trip).
     /// Default is 0.5.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -380,6 +401,7 @@ impl EncoderConfig {
     /// or `max_buffer_bytes`, then the palette is built and buffered frames
     /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -397,6 +419,7 @@ impl EncoderConfig {
     /// limit is reached, then the palette is computed and encoding begins.
     /// Default is 64 frames.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -414,6 +437,7 @@ impl EncoderConfig {
     /// memory limit is reached, then the palette is computed and encoding begins.
     /// Default is 64 MB.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -434,6 +458,7 @@ impl EncoderConfig {
     /// Default: `Some(15.0)` — barely visible errors use the shared palette,
     /// frames with very different colors get per-frame palettes automatically.
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -451,6 +476,7 @@ impl EncoderConfig {
     /// - Zero dithering (content is already dithered)
     /// - Shared palette (consistent colors across frames)
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",

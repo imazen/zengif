@@ -138,6 +138,7 @@ impl GifEncoderConfig {
         let mut inner = EncoderConfig::new();
         inner.repeat = Repeat::Once;
         #[cfg(any(
+            feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
             feature = "exoquant-deprecated",
@@ -158,6 +159,7 @@ impl GifEncoderConfig {
     #[must_use]
     pub fn with_quality(mut self, #[allow(unused)] quality: f32) -> Self {
         #[cfg(any(
+            feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
             feature = "exoquant-deprecated",
@@ -188,6 +190,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -203,6 +206,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -218,6 +222,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -233,6 +238,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -248,6 +254,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -267,6 +274,7 @@ impl GifEncoderConfig {
     ///
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1240,6 +1248,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1282,6 +1291,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1304,6 +1314,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1326,6 +1337,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1345,6 +1357,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1370,6 +1383,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1397,6 +1411,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1421,6 +1436,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
@@ -1443,6 +1459,7 @@ mod tests {
     }
 
     #[cfg(any(
+        feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
         feature = "exoquant-deprecated",
