@@ -163,6 +163,8 @@ whereat::define_at_crate_info!();
 // Internal modules
 #[cfg(feature = "std")]
 mod decode;
+/// GIF source analysis and re-encoding recommendations.
+pub mod detect;
 mod disposal;
 #[cfg(feature = "std")]
 mod encode;
