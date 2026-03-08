@@ -298,6 +298,20 @@ impl zc::SourceEncodingDetails for GifProbe {
         // from truecolor is lossy. Within GIF's own domain, it's lossless.
         true
     }
+
+    fn source_bits_per_pixel(&self) -> Option<u16> {
+        Some(8)
+    }
+
+    fn source_palette_size(&self) -> Option<u16> {
+        // Report the effective palette size (global, or max local if local palettes exist).
+        let size = if self.has_local_palettes {
+            self.max_local_palette_size.max(self.global_palette_size)
+        } else {
+            self.global_palette_size
+        };
+        Some(size)
+    }
 }
 
 #[cfg(test)]
@@ -324,8 +338,8 @@ mod tests {
         data.extend_from_slice(&10u16.to_le_bytes()); // width
         data.extend_from_slice(&10u16.to_le_bytes()); // height
         data.push(0x00); // packed: no global CT
-        data.push(0);    // bg color index
-        data.push(0);    // pixel aspect ratio
+        data.push(0); // bg color index
+        data.push(0); // pixel aspect ratio
         data.push(0x3B); // trailer
 
         let info = probe(&data).unwrap();
