@@ -84,7 +84,11 @@ static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::GRAYF32_LINEAR,
 ];
 
-static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[PixelDescriptor::RGBA8_SRGB];
+static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
+    PixelDescriptor::RGBA8_SRGB,
+    PixelDescriptor::RGB8_SRGB,
+    PixelDescriptor::BGRA8_SRGB,
+];
 
 // ── Capabilities ─────────────────────────────────────────────────────
 
@@ -663,7 +667,7 @@ impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
         GifError::from(op).start_at()
     }
 
-    fn push_frame(&mut self, pixels: PixelSlice<'_>, duration_ms: u32) -> Result<(), At<GifError>> {
+    fn push_frame(&mut self, pixels: PixelSlice<'_>, duration_ms: u32, _stop: Option<&dyn zc::enough::Stop>) -> Result<(), At<GifError>> {
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
         let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
@@ -675,7 +679,7 @@ impl zc::encode::FullFrameEncoder for GifFullFrameEncoder {
         Ok(())
     }
 
-    fn finish(self) -> Result<EncodeOutput, At<GifError>> {
+    fn finish(self, _stop: Option<&dyn zc::enough::Stop>) -> Result<EncodeOutput, At<GifError>> {
         let enc = match self.encoder {
             Some(enc) => enc,
             None => {
@@ -883,13 +887,14 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     fn decoder(
         self,
         data: Cow<'a, [u8]>,
-        _preferred: &[PixelDescriptor],
+        preferred: &[PixelDescriptor],
     ) -> Result<GifDecoder<'a>, At<GifError>> {
         Ok(GifDecoder {
             config: self.config,
             stop: self.stop,
             limits: self.limits,
             data,
+            preferred: preferred.to_vec(),
         })
     }
 
@@ -918,7 +923,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     fn full_frame_decoder(
         self,
         data: Cow<'a, [u8]>,
-        _preferred: &[PixelDescriptor],
+        preferred: &[PixelDescriptor],
     ) -> Result<GifFullFrameDecoder, At<GifError>> {
         self.check_file_size(&data)?;
         let limits = self.build_limits();
@@ -941,6 +946,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             current_frame: None,
             frame_index: 0,
             start_frame_index: self.start_frame_index,
+            preferred: preferred.to_vec(),
         })
     }
 }
@@ -953,6 +959,7 @@ pub struct GifDecoder<'a> {
     stop: Option<&'a dyn zc::enough::Stop>,
     limits: Option<ResourceLimits>,
     data: Cow<'a, [u8]>,
+    preferred: Vec<PixelDescriptor>,
 }
 
 impl GifDecoder<'_> {
@@ -963,6 +970,41 @@ impl GifDecoder<'_> {
             None => base,
         }
     }
+}
+
+/// Apply preferred format negotiation to decoded RGBA output.
+fn negotiate_format(pixels: PixelBuffer, preferred: &[PixelDescriptor]) -> PixelBuffer {
+    if preferred.is_empty() {
+        return pixels;
+    }
+    let desc = pixels.descriptor();
+    if desc != PixelDescriptor::RGBA8_SRGB {
+        return pixels;
+    }
+    let w = pixels.width();
+    let h = pixels.height();
+    // Check for RGB8 (strip alpha)
+    if preferred.contains(&PixelDescriptor::RGB8_SRGB) {
+        let raw = pixels.into_vec();
+        let rgb: Vec<u8> = raw
+            .chunks_exact(4)
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect();
+        return PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB)
+            .expect("negotiate_format: dimensions unchanged");
+    }
+    // Check for BGRA8 (swizzle)
+    if preferred.contains(&PixelDescriptor::BGRA8_SRGB) {
+        let mut raw = pixels.into_vec();
+        for chunk in raw.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+        return PixelBuffer::from_vec(raw, w, h, PixelDescriptor::BGRA8_SRGB)
+            .expect("negotiate_format: dimensions unchanged");
+    }
+    // Default: return as-is (RGBA8)
+    PixelBuffer::from_vec(pixels.into_vec(), w, h, PixelDescriptor::RGBA8_SRGB)
+        .expect("negotiate_format: dimensions unchanged")
 }
 
 /// Convert owned GIF RGBA pixels to raw bytes, zero-copy.
@@ -1025,6 +1067,8 @@ impl zc::decode::Decode for GifDecoder<'_> {
         .with_animation(metadata.frame_count > 1)
         .with_frame_count(metadata.frame_count as u32);
 
+        let buf = negotiate_format(buf, &self.preferred);
+
         Ok(DecodeOutput::new(buf, info))
     }
 }
@@ -1042,6 +1086,8 @@ pub struct GifFullFrameDecoder {
     /// First frame index to yield. Frames before this are decoded (to maintain
     /// correct compositing/disposal state) but not returned to the caller.
     start_frame_index: u32,
+    /// Preferred output pixel formats for format negotiation.
+    preferred: Vec<PixelDescriptor>,
 }
 
 impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
@@ -1071,7 +1117,7 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
         }
     }
 
-    fn render_next_frame(&mut self) -> Result<Option<FullFrame<'_>>, At<GifError>> {
+    fn render_next_frame(&mut self, _stop: Option<&dyn zc::enough::Stop>) -> Result<Option<FullFrame<'_>>, At<GifError>> {
         // GIF FullFrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. FullFrame
         // borrows the decoder's stored buffer, so callers get ready-to-display
@@ -1111,6 +1157,7 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
                     .start_at()
                 })?;
 
+            let buf = negotiate_format(buf, &self.preferred);
             self.current_frame = Some((buf, duration_ms, index));
             let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
             return Ok(Some(FullFrame::new(buf.as_slice(), duration_ms, index)));
@@ -1119,9 +1166,10 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
 
     fn render_next_frame_to_sink(
         &mut self,
+        stop: Option<&dyn zc::enough::Stop>,
         sink: &mut dyn zc::decode::DecodeRowSink,
     ) -> Result<Option<OutputInfo>, Self::Error> {
-        zc::decode::render_frame_to_sink_via_copy(self, sink)
+        zc::decode::render_frame_to_sink_via_copy(self, stop, sink)
     }
 }
 
@@ -1425,9 +1473,9 @@ mod tests {
             .full_frame_encoder()
             .unwrap();
 
-        enc.push_frame(buf1.as_slice(), 100).unwrap();
-        enc.push_frame(buf2.as_slice(), 100).unwrap();
-        let output = enc.finish().unwrap();
+        enc.push_frame(buf1.as_slice(), 100, None).unwrap();
+        enc.push_frame(buf2.as_slice(), 100, None).unwrap();
+        let output = enc.finish(None).unwrap();
         assert!(!output.is_empty());
 
         // Decode and verify frame count
@@ -1437,7 +1485,7 @@ mod tests {
             .full_frame_decoder(Cow::Borrowed(output.data()), &[])
             .unwrap();
         let mut count = 0;
-        while frame_dec.render_next_frame().unwrap().is_some() {
+        while frame_dec.render_next_frame(None).unwrap().is_some() {
             count += 1;
         }
         assert_eq!(count, 2);
