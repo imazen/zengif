@@ -289,28 +289,11 @@ impl GifProbe {
 #[cfg(feature = "zencodec")]
 impl zc::SourceEncodingDetails for GifProbe {
     fn source_generic_quality(&self) -> Option<f32> {
-        // GIF is palette-based — no quality level to report.
         None
     }
 
     fn is_lossless(&self) -> bool {
-        // GIF preserves palette colors exactly, but palette quantization
-        // from truecolor is lossy. Within GIF's own domain, it's lossless.
         true
-    }
-
-    fn source_bits_per_pixel(&self) -> Option<u16> {
-        Some(8)
-    }
-
-    fn source_palette_size(&self) -> Option<u16> {
-        // Report the effective palette size (global, or max local if local palettes exist).
-        let size = if self.has_local_palettes {
-            self.max_local_palette_size.max(self.global_palette_size)
-        } else {
-            self.global_palette_size
-        };
-        Some(size)
     }
 }
 
