@@ -1058,6 +1058,7 @@ impl zc::decode::Decode for GifDecoder<'_> {
 
         let limits = self.build_limits();
         let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let source_probe = crate::detect::probe(&self.data).ok();
         let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop)?;
 
@@ -1092,7 +1093,11 @@ impl zc::decode::Decode for GifDecoder<'_> {
 
         let buf = negotiate_format(buf, &self.preferred);
 
-        Ok(DecodeOutput::new(buf, info))
+        let mut output = DecodeOutput::new(buf, info);
+        if let Some(probe) = source_probe {
+            output = output.with_source_encoding_details(probe);
+        }
+        Ok(output)
     }
 }
 
