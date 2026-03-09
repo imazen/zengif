@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 
 use zc::decode::{DecodeOutput, FullFrame, OutputInfo, SinkError};
 use zc::encode::EncodeOutput;
-use zc::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
+use zc::{ImageFormat, ImageInfo, Metadata, ResourceLimits};
 use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
 
 // Import trait for inherent method forwarding
@@ -99,7 +99,7 @@ static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 // ── Capabilities ─────────────────────────────────────────────────────
 
 static GIF_ENCODE_CAPS: zc::encode::EncodeCapabilities = zc::encode::EncodeCapabilities::new()
-    .with_cancel(true)
+    .with_stop(true)
     .with_animation(true)
     .with_lossless(true)
     .with_lossy(true)
@@ -110,7 +110,7 @@ static GIF_ENCODE_CAPS: zc::encode::EncodeCapabilities = zc::encode::EncodeCapab
     .with_quality_range(0.0, 100.0);
 
 static GIF_DECODE_CAPS: zc::decode::DecodeCapabilities = zc::decode::DecodeCapabilities::new()
-    .with_cancel(true)
+    .with_stop(true)
     .with_animation(true)
     .with_cheap_probe(true)
     .with_native_alpha(true)
@@ -394,7 +394,7 @@ impl<'a> zc::encode::EncodeJob<'a> for GifEncodeJob<'a> {
         self
     }
 
-    fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
+    fn with_metadata(self, _meta: &Metadata) -> Self {
         // GIF doesn't support ICC/EXIF/XMP metadata
         self
     }
