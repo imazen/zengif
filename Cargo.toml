@@ -54,7 +54,7 @@ thiserror = { version = "2", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
 zencodec-types = { path = "../zencodec-types", optional = true }
-zenpixels = { version = "0.1", default-features = false, features = ["buffer"] }
+zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["buffer"] }
 linear-srgb = "0.6"
 
 # Color quantization backends (optional)
