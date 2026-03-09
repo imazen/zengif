@@ -451,6 +451,17 @@ pub(crate) fn compute_sample_indices(
 /// - Shared palettes across frames
 /// - Frame-to-frame background optimization
 /// - Histogram accumulation
+///
+/// # Implementing
+///
+/// Only [`quantize_frame`](QuantizerTrait::quantize_frame) is required.
+/// The remaining methods have default implementations that either return
+/// an error (shared palette methods) or do nothing (`reset`). Override
+/// them to support shared-palette animation workflows.
+///
+/// New methods may be added to this trait in minor versions — they will
+/// always have default implementations, so existing implementations
+/// will continue to compile.
 pub trait QuantizerTrait: Send {
     /// Quantize a single frame.
     ///
@@ -483,14 +494,22 @@ pub trait QuantizerTrait: Send {
     ///
     /// If `config.max_palette_frames` is set, only a sample of frames
     /// will be used for histogram building (uniformly distributed).
+    ///
+    /// The default implementation returns an error. Override this to
+    /// support shared-palette workflows.
     fn build_shared_palette(
         &mut self,
-        frames: &[&[Rgba]],
-        width: u16,
-        height: u16,
-        config: &QuantizeConfig,
-        stop: &dyn Stop,
-    ) -> Result<Vec<u8>>;
+        _frames: &[&[Rgba]],
+        _width: u16,
+        _height: u16,
+        _config: &QuantizeConfig,
+        _stop: &dyn Stop,
+    ) -> Result<Vec<u8>> {
+        Err(crate::error::GifError::QuantizationFailed {
+            message: "shared palettes not supported by this quantizer",
+        }
+        .into())
+    }
 
     /// Quantize a frame using a pre-computed shared palette.
     ///
@@ -500,6 +519,9 @@ pub trait QuantizerTrait: Send {
     /// * `height` - Frame height
     /// * `background` - Optional previous frame for transparency optimization
     /// * `config` - Quantization settings
+    ///
+    /// The default implementation ignores the shared palette and falls
+    /// back to [`quantize_frame`](QuantizerTrait::quantize_frame).
     fn quantize_frame_with_palette(
         &mut self,
         pixels: &[Rgba],
@@ -507,10 +529,14 @@ pub trait QuantizerTrait: Send {
         height: u16,
         background: Option<&[Rgba]>,
         config: &QuantizeConfig,
-    ) -> Result<QuantizedFrame>;
+    ) -> Result<QuantizedFrame> {
+        self.quantize_frame(pixels, width, height, background, config)
+    }
 
     /// Reset any accumulated state (e.g., shared palette).
-    fn reset(&mut self);
+    ///
+    /// The default implementation does nothing.
+    fn reset(&mut self) {}
 }
 
 /// Available quantizer backends.
