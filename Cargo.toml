@@ -16,7 +16,7 @@ default = ["std"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
 std = ["gif/std", "enough/std", "whereat/std"]
-# zencodec-types trait implementations (requires std for I/O)
+# zencodec trait implementations (requires std for I/O)
 zencodec = ["std", "dep:zc"]
 
 # Color quantization backends (choose one or more)

@@ -1,8 +1,8 @@
-//! zencodec-types trait implementations for zengif.
+//! zencodec trait implementations for zengif.
 //!
 //! Provides [`GifEncoderConfig`] and [`GifDecoderConfig`] types that implement the
 //! [`EncoderConfig`](zc::encode::EncoderConfig) / [`DecoderConfig`](zc::decode::DecoderConfig)
-//! traits from zencodec-types.
+//! traits from zencodec.
 //!
 //! Supports both single-frame and animation encoding/decoding via the
 //! type-erased [`Encoder`](zc::encode::Encoder) and [`FullFrameEncoder`](zc::encode::FullFrameEncoder)
