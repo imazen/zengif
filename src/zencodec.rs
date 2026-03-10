@@ -953,7 +953,7 @@ impl<'a> zc::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         sink: &mut dyn zc::decode::DecodeRowSink,
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
-        zc::decode::push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+        zc::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
             GifError::GifCrate {
                 message: e.to_string(),
             }
@@ -1241,7 +1241,7 @@ impl zc::decode::FullFrameDecoder for GifFullFrameDecoder {
         stop: Option<&dyn zc::enough::Stop>,
         sink: &mut dyn zc::decode::DecodeRowSink,
     ) -> Result<Option<OutputInfo>, Self::Error> {
-        zc::decode::render_frame_to_sink_via_copy(self, stop, sink)
+        zc::helpers::copy_frame_to_sink(self, stop, sink)
     }
 }
 
@@ -1606,13 +1606,13 @@ mod tests {
 
         let enc_caps = GifEncoderConfig::capabilities();
         assert!(enc_caps.animation());
-        assert!(enc_caps.cancel());
+        assert!(enc_caps.stop());
         assert!(enc_caps.native_alpha());
 
         let dec_caps = GifDecoderConfig::capabilities();
         assert!(dec_caps.animation());
         assert!(dec_caps.cheap_probe());
-        assert!(dec_caps.cancel());
+        assert!(dec_caps.stop());
     }
 
     // ── Helper: build a minimal GIF with N frames ──────────────────────
