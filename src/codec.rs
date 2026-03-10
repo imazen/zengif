@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 
 use zencodec::decode::{DecodeOutput, FullFrame, OutputInfo, SinkError};
 use zencodec::encode::EncodeOutput;
-use zencodec::{ImageFormat, ImageInfo, Metadata, ResourceLimits};
+use zencodec::{ImageFormat, ImageInfo, ImageSequence, Metadata, ResourceLimits};
 use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
 
 // Import trait for inherent method forwarding
@@ -875,9 +875,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         .with_alpha(has_alpha);
 
         if let Some(ref p) = probe {
-            info = info
-                .with_animation(p.is_animated)
-                .with_frame_count(p.frame_count);
+            info = info.with_sequence(if p.is_animated {
+                ImageSequence::Animation {
+                    frame_count: Some(p.frame_count),
+                    loop_count: None,
+                    random_access: false,
+                }
+            } else {
+                ImageSequence::Single
+            });
         }
         if let Some(p) = probe {
             info = info.with_source_encoding_details(p);
@@ -910,8 +916,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             ImageFormat::Gif,
         )
         .with_alpha(has_alpha)
-        .with_animation(frame_count > 1)
-        .with_frame_count(frame_count))
+        .with_sequence(if frame_count > 1 {
+            ImageSequence::Animation {
+                frame_count: Some(frame_count),
+                loop_count: None,
+                random_access: false,
+            }
+        } else {
+            ImageSequence::Single
+        }))
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<GifError>> {
@@ -992,8 +1005,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
                 ImageFormat::Gif,
             )
             .with_alpha(has_alpha)
-            .with_animation(metadata.frame_count > 1)
-            .with_frame_count(metadata.frame_count as u32),
+            .with_sequence(if metadata.frame_count > 1 {
+                ImageSequence::Animation {
+                    frame_count: Some(metadata.frame_count as u32),
+                    loop_count: None,
+                    random_access: false,
+                }
+            } else {
+                ImageSequence::Single
+            }),
         );
         Ok(GifFullFrameDecoder {
             decoder,
@@ -1122,8 +1142,15 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             ImageFormat::Gif,
         )
         .with_alpha(has_alpha)
-        .with_animation(metadata.frame_count > 1)
-        .with_frame_count(metadata.frame_count as u32);
+        .with_sequence(if metadata.frame_count > 1 {
+            ImageSequence::Animation {
+                frame_count: Some(metadata.frame_count as u32),
+                loop_count: None,
+                random_access: false,
+            }
+        } else {
+            ImageSequence::Single
+        });
 
         let buf = negotiate_format(buf, &self.preferred);
 
@@ -1290,7 +1317,7 @@ mod tests {
         assert_eq!(info.height, 1);
         assert_eq!(info.format, ImageFormat::Gif);
         // probe() now populates frame_count from GifProbe block scanning
-        assert_eq!(info.frame_count, Some(1));
+        assert_eq!(info.frame_count(), Some(1));
     }
 
     #[test]
@@ -1300,8 +1327,8 @@ mod tests {
         assert_eq!(info.width, 1);
         assert_eq!(info.height, 1);
         assert_eq!(info.format, ImageFormat::Gif);
-        assert!(!info.has_animation);
-        assert_eq!(info.frame_count, Some(1));
+        assert!(!info.is_animation());
+        assert_eq!(info.frame_count(), Some(1));
     }
 
     #[test]
@@ -1691,9 +1718,9 @@ mod tests {
     fn probe_returns_animation_info_single_frame() {
         let dec = GifDecoderConfig::new();
         let info = dec.probe_header(MINIMAL_GIF).unwrap();
-        assert!(!info.has_animation, "single frame should not be animated");
+        assert!(!info.is_animation(), "single frame should not be animated");
         assert_eq!(
-            info.frame_count,
+            info.frame_count(),
             Some(1),
             "single frame should have frame_count=1"
         );
@@ -1704,8 +1731,8 @@ mod tests {
         let gif = build_multi_frame_gif(3, false);
         let dec = GifDecoderConfig::new();
         let info = dec.probe_header(&gif).unwrap();
-        assert!(info.has_animation, "3 frames should be animated");
-        assert_eq!(info.frame_count, Some(3));
+        assert!(info.is_animation(), "3 frames should be animated");
+        assert_eq!(info.frame_count(), Some(3));
     }
 
     // ── Fix 2: probe() respects job-level limits ───────────────────────
