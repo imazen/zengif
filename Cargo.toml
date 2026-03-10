@@ -17,7 +17,7 @@ default = ["std"]
 # Disable for no_std+alloc environments (e.g., WASM)
 std = ["gif/std", "enough/std", "whereat/std"]
 # zencodec trait implementations (requires std for I/O)
-zencodec = ["std", "dep:zc"]
+zencodec = ["std", "dep:zencodec"]
 
 # Color quantization backends (choose one or more)
 # zenquant: Best perceptual quality (butteraugli/SSIMULACRA2), AGPL-3.0-or-later
@@ -53,7 +53,7 @@ bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
-zc = { path = "../zencodec", package = "zencodec", optional = true }
+zencodec = { path = "../zencodec", optional = true }
 zenpixels = { path = "../zenpixels/zenpixels", default-features = false }
 linear-srgb = "0.6.3"
 

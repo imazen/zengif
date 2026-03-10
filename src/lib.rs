@@ -228,9 +228,9 @@ pub use types::{
 };
 
 #[cfg(feature = "zencodec")]
-mod zencodec;
+mod codec;
 #[cfg(feature = "zencodec")]
-pub use zencodec::{
+pub use codec::{
     GifDecodeJob, GifDecoder, GifDecoderConfig, GifEncodeJob, GifEncoder, GifEncoderConfig,
     GifFullFrameDecoder, GifFullFrameEncoder,
 };

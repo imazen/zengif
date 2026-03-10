@@ -287,7 +287,7 @@ impl GifProbe {
 }
 
 #[cfg(feature = "zencodec")]
-impl zc::SourceEncodingDetails for GifProbe {
+impl zencodec::SourceEncodingDetails for GifProbe {
     fn source_generic_quality(&self) -> Option<f32> {
         None
     }

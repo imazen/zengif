@@ -236,7 +236,7 @@ pub enum GifError {
     /// Unsupported codec operation.
     #[cfg(feature = "zencodec")]
     #[error("unsupported operation: {0}")]
-    UnsupportedOperation(zc::UnsupportedOperation),
+    UnsupportedOperation(zencodec::UnsupportedOperation),
 }
 
 // Conversion from std::io::Error
@@ -315,8 +315,8 @@ impl From<enough::StopReason> for GifError {
 }
 
 #[cfg(feature = "zencodec")]
-impl From<zc::UnsupportedOperation> for GifError {
-    fn from(op: zc::UnsupportedOperation) -> Self {
+impl From<zencodec::UnsupportedOperation> for GifError {
+    fn from(op: zencodec::UnsupportedOperation) -> Self {
         GifError::UnsupportedOperation(op)
     }
 }
