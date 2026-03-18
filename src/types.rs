@@ -596,6 +596,19 @@ pub struct Metadata {
 
     /// Comments embedded in the GIF.
     pub comments: Vec<String>,
+
+    /// Pixel aspect ratio from the logical screen descriptor.
+    ///
+    /// If the raw byte in the header is non-zero, the aspect ratio is
+    /// `(byte + 15) / 64`. A value of `None` means square pixels (raw byte was 0).
+    ///
+    /// In practice, nearly all GIF files use square pixels (byte = 0).
+    pub pixel_aspect_ratio: Option<f32>,
+    // NOTE: GIF also supports Plain Text Extension (0x01) and arbitrary Application
+    // Extensions (0xFF). The underlying `gif` crate (0.14) parses NETSCAPE, XMP, and
+    // ICC application extensions internally but does not expose raw extension data or
+    // plain text blocks through its high-level Decoder API. Surfacing these would
+    // require either patches to the gif crate or a custom low-level parser.
 }
 
 impl Metadata {

@@ -81,12 +81,12 @@ const GIF_HEADER_SIZE: usize = 13;
 /// Pre-validate the GIF header before passing to the gif crate.
 ///
 /// This allows us to check dimensions before the gif crate allocates memory.
-/// Returns (header_bytes, width, height) on success. The header bytes must be
-/// chained back to the reader before passing to gif crate.
+/// Returns (header_bytes, width, height, pixel_aspect_ratio_byte) on success.
+/// The header bytes must be chained back to the reader before passing to gif crate.
 fn pre_validate_header<R: Read>(
     reader: &mut R,
     limits: &Limits,
-) -> Result<([u8; GIF_HEADER_SIZE], u16, u16)> {
+) -> Result<([u8; GIF_HEADER_SIZE], u16, u16, u8)> {
     let mut buf = [0u8; GIF_HEADER_SIZE];
     reader
         .read_exact(&mut buf)
@@ -108,10 +108,13 @@ fn pre_validate_header<R: Read>(
     let width = u16::from_le_bytes([buf[6], buf[7]]);
     let height = u16::from_le_bytes([buf[8], buf[9]]);
 
+    // Pixel aspect ratio byte (position 12 in the header)
+    let pixel_aspect_ratio_byte = buf[12];
+
     // Pre-check dimensions BEFORE the gif crate can allocate
     limits.check_dimensions(width, height)?;
 
-    Ok((buf, width, height))
+    Ok((buf, width, height, pixel_aspect_ratio_byte))
 }
 
 /// Reader type that chains the pre-read header bytes with the rest of the stream.
@@ -180,7 +183,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop);
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
-        let (header, width, height) = pre_validate_header(&mut stop_reader, &limits)?;
+        let (header, width, height, par_byte) = pre_validate_header(&mut stop_reader, &limits)?;
 
         // Chain header bytes back with the rest of the stream
         let chained = std::io::Cursor::new(header).chain(stop_reader);
@@ -208,6 +211,14 @@ impl<'a, R: Read> Decoder<'a, R> {
         let global_palette = gif_reader.global_palette().map(Palette::from_rgb_bytes);
         let background_index = gif_reader.bg_color().map(|c| c as u8);
 
+        // Pixel aspect ratio: if byte is 0, square pixels (None).
+        // Otherwise ratio = (byte + 15) / 64.
+        let pixel_aspect_ratio = if par_byte == 0 {
+            None
+        } else {
+            Some((par_byte as f32 + 15.0) / 64.0)
+        };
+
         let metadata = Metadata {
             width,
             height,
@@ -216,6 +227,7 @@ impl<'a, R: Read> Decoder<'a, R> {
             repeat: Repeat::Infinite, // Updated after first frame from NETSCAPE extension
             frame_count: 0,           // Unknown until we read all frames
             comments: Vec::new(),     // Note: gif crate doesn't expose comment extensions
+            pixel_aspect_ratio,
         };
 
         // Create the compositing screen
@@ -689,5 +701,54 @@ mod tests {
         // Should succeed
         let frame = decoder.next_frame().unwrap();
         assert!(frame.is_some());
+    }
+
+    #[test]
+    fn pixel_aspect_ratio_zero() {
+        // MINIMAL_GIF has pixel aspect ratio byte = 0 → square pixels
+        let limits = Limits::default();
+        let cursor = Cursor::new(MINIMAL_GIF);
+        let decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+        assert_eq!(decoder.metadata().pixel_aspect_ratio, None);
+    }
+
+    #[test]
+    fn pixel_aspect_ratio_nonzero() {
+        // Construct a GIF with pixel aspect ratio byte = 49
+        // Expected ratio: (49 + 15) / 64 = 64 / 64 = 1.0
+        let mut gif_data = MINIMAL_GIF.to_vec();
+        gif_data[12] = 49; // pixel aspect ratio byte
+        let limits = Limits::default();
+        let cursor = Cursor::new(&gif_data);
+        let decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+        let par = decoder.metadata().pixel_aspect_ratio.unwrap();
+        assert!((par - 1.0).abs() < f32::EPSILON, "expected 1.0, got {par}");
+    }
+
+    #[test]
+    fn pixel_aspect_ratio_wide() {
+        // Byte = 113 → ratio = (113 + 15) / 64 = 128 / 64 = 2.0
+        let mut gif_data = MINIMAL_GIF.to_vec();
+        gif_data[12] = 113;
+        let limits = Limits::default();
+        let cursor = Cursor::new(&gif_data);
+        let decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+        let par = decoder.metadata().pixel_aspect_ratio.unwrap();
+        assert!((par - 2.0).abs() < f32::EPSILON, "expected 2.0, got {par}");
+    }
+
+    #[test]
+    fn pixel_aspect_ratio_narrow() {
+        // Byte = 1 → ratio = (1 + 15) / 64 = 16 / 64 = 0.25
+        let mut gif_data = MINIMAL_GIF.to_vec();
+        gif_data[12] = 1;
+        let limits = Limits::default();
+        let cursor = Cursor::new(&gif_data);
+        let decoder = Decoder::new(cursor, limits, &Unstoppable).unwrap();
+        let par = decoder.metadata().pixel_aspect_ratio.unwrap();
+        assert!(
+            (par - 0.25).abs() < f32::EPSILON,
+            "expected 0.25, got {par}"
+        );
     }
 }
