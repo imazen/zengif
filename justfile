@@ -63,6 +63,17 @@ ci: fmt
     cargo test --all-features
     cargo doc --no-deps --all-features
 
+# Feature permutation checks (includes path-dep features that CI skips)
+feature-check:
+    cargo test --no-default-features
+    cargo test
+    cargo test --features quantizr
+    cargo test --features imagequant
+    cargo test --features color_quant
+    cargo test --features imgref-interop
+    cargo test --features zenquant
+    cargo test --features zencodec
+
 # === Fuzzing (requires nightly: rustup install nightly) ===
 
 # Run decode fuzzer (main target)

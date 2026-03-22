@@ -49,8 +49,20 @@ jobs:
       - name: Test (default)
         run: cargo test
 
+      - name: Test (no default features)
+        run: cargo test --no-default-features
+
       - name: Test (quantizr feature)
         run: cargo test --features quantizr
+
+      - name: Test (imagequant feature)
+        run: cargo test --features imagequant
+
+      - name: Test (color_quant feature)
+        run: cargo test --features color_quant
+
+      - name: Test (imgref-interop feature)
+        run: cargo test --features imgref-interop
 
   i686:
     name: Test (i686)
