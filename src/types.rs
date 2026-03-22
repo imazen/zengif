@@ -306,10 +306,10 @@ impl Palette {
         }
 
         // For transparent pixels, find a transparent palette entry if available
-        if color.a < 128 {
-            if let Some(idx) = self.find_transparent_index() {
-                return idx;
-            }
+        if color.a < 128
+            && let Some(idx) = self.find_transparent_index()
+        {
+            return idx;
         }
 
         // Find nearest by RGB distance

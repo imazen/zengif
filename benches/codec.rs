@@ -64,7 +64,7 @@ fn create_transparent_gif(width: u16, height: u16, frame_count: usize) -> Vec<u8
                 let x = i % width as usize;
                 let y = i / width as usize;
                 // Checkerboard with animation
-                if (x + y + frame_idx) % 2 == 0 {
+                if (x + y + frame_idx).is_multiple_of(2) {
                     Rgba::rgb(255, 0, 0)
                 } else {
                     Rgba::TRANSPARENT

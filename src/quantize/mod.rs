@@ -566,6 +566,7 @@ pub enum QuantizerBackend {
 }
 
 impl Default for QuantizerBackend {
+    #[allow(unreachable_code, clippy::needless_return)]
     fn default() -> Self {
         #[cfg(feature = "zenquant")]
         {

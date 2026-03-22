@@ -86,27 +86,26 @@ impl QuantizerTrait for ImagequantQuantizer {
             })?;
 
         // Set background for frame-aware transparency optimization
-        if config.use_background {
-            if let Some(bg_pixels) = background {
-                if bg_pixels.len() == pixels.len() {
-                    let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
-                    let bg_img = self
-                        .attr
-                        .new_image(bg_rgba, width as usize, height as usize, 0.0)
-                        .map_err(|_| {
-                            at!(GifError::QuantizationFailed {
-                                message: "failed to create background image"
-                            })
-                        })?;
+        if config.use_background
+            && let Some(bg_pixels) = background
+            && bg_pixels.len() == pixels.len()
+        {
+            let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
+            let bg_img = self
+                .attr
+                .new_image(bg_rgba, width as usize, height as usize, 0.0)
+                .map_err(|_| {
+                    at!(GifError::QuantizationFailed {
+                        message: "failed to create background image"
+                    })
+                })?;
 
-                    // set_background tells imagequant to make matching pixels transparent
-                    img.set_background(bg_img).map_err(|_| {
-                        at!(GifError::QuantizationFailed {
-                            message: "failed to set background"
-                        })
-                    })?;
-                }
-            }
+            // set_background tells imagequant to make matching pixels transparent
+            img.set_background(bg_img).map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to set background"
+                })
+            })?;
         }
 
         // Quantize
@@ -230,26 +229,25 @@ impl QuantizerTrait for ImagequantQuantizer {
             })?;
 
         // Set background for frame-aware transparency
-        if config.use_background {
-            if let Some(bg_pixels) = background {
-                if bg_pixels.len() == pixels.len() {
-                    let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
-                    let bg_img = self
-                        .attr
-                        .new_image(bg_rgba, width as usize, height as usize, 0.0)
-                        .map_err(|_| {
-                            at!(GifError::QuantizationFailed {
-                                message: "failed to create background image"
-                            })
-                        })?;
+        if config.use_background
+            && let Some(bg_pixels) = background
+            && bg_pixels.len() == pixels.len()
+        {
+            let bg_rgba = Self::to_imagequant_rgba(bg_pixels);
+            let bg_img = self
+                .attr
+                .new_image(bg_rgba, width as usize, height as usize, 0.0)
+                .map_err(|_| {
+                    at!(GifError::QuantizationFailed {
+                        message: "failed to create background image"
+                    })
+                })?;
 
-                    img.set_background(bg_img).map_err(|_| {
-                        at!(GifError::QuantizationFailed {
-                            message: "failed to set background"
-                        })
-                    })?;
-                }
-            }
+            img.set_background(bg_img).map_err(|_| {
+                at!(GifError::QuantizationFailed {
+                    message: "failed to set background"
+                })
+            })?;
         }
 
         // Remap using shared palette

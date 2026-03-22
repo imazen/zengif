@@ -98,25 +98,27 @@ static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 
 // ── Capabilities ─────────────────────────────────────────────────────
 
-static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities = zencodec::encode::EncodeCapabilities::new()
-    .with_stop(true)
-    .with_animation(true)
-    .with_lossless(true)
-    .with_lossy(true)
-    .with_native_alpha(true)
-    .with_native_gray(true)
-    .with_enforces_max_pixels(true)
-    .with_enforces_max_memory(true)
-    .with_quality_range(0.0, 100.0);
+static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
+    zencodec::encode::EncodeCapabilities::new()
+        .with_stop(true)
+        .with_animation(true)
+        .with_lossless(true)
+        .with_lossy(true)
+        .with_native_alpha(true)
+        .with_native_gray(true)
+        .with_enforces_max_pixels(true)
+        .with_enforces_max_memory(true)
+        .with_quality_range(0.0, 100.0);
 
-static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities = zencodec::decode::DecodeCapabilities::new()
-    .with_stop(true)
-    .with_animation(true)
-    .with_cheap_probe(true)
-    .with_native_alpha(true)
-    .with_enforces_max_pixels(true)
-    .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
+    zencodec::decode::DecodeCapabilities::new()
+        .with_stop(true)
+        .with_animation(true)
+        .with_cheap_probe(true)
+        .with_native_alpha(true)
+        .with_enforces_max_pixels(true)
+        .with_enforces_max_memory(true)
+        .with_enforces_max_input_bytes(true);
 
 // ── GifEncoderConfig ─────────────────────────────────────────────────
 
@@ -701,7 +703,10 @@ impl zencodec::encode::FullFrameEncoder for GifFullFrameEncoder {
         Ok(())
     }
 
-    fn finish(self, stop: Option<&dyn zencodec::enough::Stop>) -> Result<EncodeOutput, At<GifError>> {
+    fn finish(
+        self,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<EncodeOutput, At<GifError>> {
         if let Some(stop) = stop {
             stop.check().map_err(|_| GifError::Cancelled.start_at())?;
         }

@@ -135,36 +135,36 @@ impl Limits {
 
     /// Check if dimensions are within limits.
     pub fn check_dimensions(&self, width: u16, height: u16) -> Result<()> {
-        if let Some(max_w) = self.max_width {
-            if width > max_w {
-                return Err(at!(GifError::DimensionsTooLarge {
-                    width,
-                    height,
-                    max_width: max_w,
-                    max_height: self.max_height.unwrap_or(u16::MAX),
-                }));
-            }
+        if let Some(max_w) = self.max_width
+            && width > max_w
+        {
+            return Err(at!(GifError::DimensionsTooLarge {
+                width,
+                height,
+                max_width: max_w,
+                max_height: self.max_height.unwrap_or(u16::MAX),
+            }));
         }
 
-        if let Some(max_h) = self.max_height {
-            if height > max_h {
-                return Err(at!(GifError::DimensionsTooLarge {
-                    width,
-                    height,
-                    max_width: self.max_width.unwrap_or(u16::MAX),
-                    max_height: max_h,
-                }));
-            }
+        if let Some(max_h) = self.max_height
+            && height > max_h
+        {
+            return Err(at!(GifError::DimensionsTooLarge {
+                width,
+                height,
+                max_width: self.max_width.unwrap_or(u16::MAX),
+                max_height: max_h,
+            }));
         }
 
         let total_pixels = width as u64 * height as u64;
-        if let Some(max_pixels) = self.max_total_pixels {
-            if total_pixels > max_pixels {
-                return Err(at!(GifError::TotalPixelsTooLarge {
-                    pixels: total_pixels,
-                    max_pixels,
-                }));
-            }
+        if let Some(max_pixels) = self.max_total_pixels
+            && total_pixels > max_pixels
+        {
+            return Err(at!(GifError::TotalPixelsTooLarge {
+                pixels: total_pixels,
+                max_pixels,
+            }));
         }
 
         Ok(())
@@ -175,36 +175,36 @@ impl Limits {
     /// `count` is the 0-based index of the frame about to be added.
     /// So if max_frame_count is 1, we reject frame index 1 (the second frame).
     pub fn check_frame_count(&self, count: u64) -> Result<()> {
-        if let Some(max) = self.max_frame_count {
-            if count >= max {
-                return Err(at!(GifError::TooManyFrames { count, max }));
-            }
+        if let Some(max) = self.max_frame_count
+            && count >= max
+        {
+            return Err(at!(GifError::TooManyFrames { count, max }));
         }
         Ok(())
     }
 
     /// Check if file size is within limits.
     pub fn check_file_size(&self, size: u64) -> Result<()> {
-        if let Some(max) = self.max_file_size {
-            if size > max {
-                return Err(at!(GifError::FileTooLarge { size, max }));
-            }
+        if let Some(max) = self.max_file_size
+            && size > max
+        {
+            return Err(at!(GifError::FileTooLarge { size, max }));
         }
         Ok(())
     }
 
     /// Check if decompression ratio is within limits.
     pub fn check_decompression_ratio(&self, compressed: u64, decompressed: u64) -> Result<()> {
-        if let Some(max_ratio) = self.max_decompression_ratio {
-            if compressed > 0 {
-                let ratio = decompressed as f64 / compressed as f64;
-                if ratio > max_ratio {
-                    return Err(at!(GifError::DecompressionRatioExceeded {
-                        compressed,
-                        decompressed,
-                        max_ratio,
-                    }));
-                }
+        if let Some(max_ratio) = self.max_decompression_ratio
+            && compressed > 0
+        {
+            let ratio = decompressed as f64 / compressed as f64;
+            if ratio > max_ratio {
+                return Err(at!(GifError::DecompressionRatioExceeded {
+                    compressed,
+                    decompressed,
+                    max_ratio,
+                }));
             }
         }
         Ok(())

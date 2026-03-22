@@ -64,7 +64,7 @@ impl TrackingAllocator {
 
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc(layout);
+        let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
             let size = layout.size();
             let new_current = self.current.fetch_add(size, Ordering::SeqCst) + size;
@@ -98,12 +98,12 @@ unsafe impl GlobalAlloc for TrackingAllocator {
                 Some(v.saturating_sub(layout.size()))
             })
             .ok();
-        self.inner.dealloc(ptr, layout);
+        unsafe { self.inner.dealloc(ptr, layout) };
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let old_size = layout.size();
-        let new_ptr = self.inner.realloc(ptr, layout, new_size);
+        let new_ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
         if !new_ptr.is_null() {
             // Adjust current: subtract old, add new using saturating arithmetic
             if new_size > old_size {
