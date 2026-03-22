@@ -37,8 +37,6 @@ exoquant-deprecated = ["dep:exoquant"]
 
 # RGB/imgref ecosystem interop
 imgref-interop = ["imgref"]
-# zennode node definitions (EncodeGif schema with RIAPI keys)
-zennode = ["dep:zennode"]
 
 [dependencies]
 # Core GIF codec (no_std compatible with alloc)
@@ -69,9 +67,6 @@ quantette = { version = "0.5", optional = true, default-features = false, featur
 exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
 
-# zennode node definitions (optional)
-zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-
 # RGB/imgref ecosystem interop (optional)
 rgb = "0.8"
 imgref = { version = "1.12", optional = true }
@@ -81,13 +76,13 @@ imgref = { version = "1.12", optional = true }
 almost-enough = "0.4"
 imgref = "1.12"
 codec-corpus = "1"
-archmage = { version = "0.9.9", features = ["std"] }
+archmage = { version = "0.9.12", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
 # Quality metrics for quantizer comparison tests
-fast-ssim2 = { version = "0.6", features = ["imgref"] }
+fast-ssim2 = { version = "0.7", features = ["imgref"] }
 # PNG decoding for quantizer quality tests
 png = "0.18"
 

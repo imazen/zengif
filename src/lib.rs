@@ -235,5 +235,9 @@ pub use codec::{
     GifFullFrameDecoder, GifFullFrameEncoder,
 };
 
+// zennode node definitions
+#[cfg(feature = "zennode")]
+pub mod zenode_defs;
+
 // Re-export enough for user convenience
 pub use enough::{Stop, Unstoppable};
