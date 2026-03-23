@@ -364,7 +364,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         self.lossless
     }
 
-    fn job(&self) -> GifEncodeJob<'_> {
+    fn job(self) -> GifEncodeJob<'static> {
         GifEncodeJob {
             config: self,
             stop: None,
@@ -379,7 +379,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
 
 /// Per-operation GIF encode job.
 pub struct GifEncodeJob<'a> {
-    config: &'a GifEncoderConfig,
+    config: GifEncoderConfig,
     stop: Option<&'a dyn zencodec::enough::Stop>,
     limits: Option<ResourceLimits>,
     canvas_size: Option<(u32, u32)>,
@@ -454,7 +454,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for GifEncodeJob<'a> {
 
 /// Single-image GIF encoder.
 pub struct GifEncoder<'a> {
-    config: &'a GifEncoderConfig,
+    config: GifEncoderConfig,
     stop: Option<&'a dyn zencodec::enough::Stop>,
     limits: Option<ResourceLimits>,
 }
