@@ -76,13 +76,13 @@ imgref = { version = "1.12", optional = true }
 almost-enough = "0.4"
 imgref = "1.12"
 codec-corpus = "1"
-archmage = { version = "0.9.9", features = ["std"] }
+archmage = { version = "0.9.12", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
 # Quality metrics for quantizer comparison tests
-fast-ssim2 = { version = "0.6", features = ["imgref"] }
+fast-ssim2 = { version = "0.7", features = ["imgref"] }
 # PNG decoding for quantizer quality tests
 png = "0.18"
 
