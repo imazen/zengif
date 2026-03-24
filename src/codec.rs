@@ -364,7 +364,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         self.lossless
     }
 
-    fn job(self) -> GifEncodeJob<'static> {
+    fn job<'a>(self) -> GifEncodeJob<'a> {
         GifEncodeJob {
             config: self,
             stop: None,
