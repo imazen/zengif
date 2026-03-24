@@ -7,13 +7,6 @@
 //!
 //! Use [`Quantizer`] to select and configure your quantization backend:
 //!
-//! | Feature | Quality | Speed | File Size | License | Use Case |
-//! |---------|---------|-------|-----------|---------|----------|
-//! | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later | **Default** — best quality |
-//! | `quantette` | Very Good | Fast | Small | MIT/Apache-2.0 | Best permissive-license quality |
-//! | `imagequant` | Good | Medium | **Smallest** | GPL-3.0-or-later | Best compression |
-//! | `quantizr` | Good | Fast | Medium | MIT | Fast MIT option |
-//! | `color_quant` | Decent | **Fastest** | Large | MIT | High-throughput servers |
 //!
 //! # Frame-Aware Quantization
 //!
@@ -127,15 +120,6 @@ impl QuantizeConfig {
 }
 
 /// Quantizer selection with backend-specific configuration.
-///
-/// Each backend has different trade-offs for quality, speed, and file size:
-///
-/// | Feature | Quality | Speed | File Size | License |
-/// |---------|---------|-------|-----------|---------|
-/// | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later |
-/// | `imagequant` | Good | Medium | **Smallest** | GPL-3.0-or-later |
-/// | `quantizr` | Good | Fast | Medium | MIT |
-/// | `color_quant` | Decent | **Fastest** | Large | MIT |
 ///
 /// # Example
 ///
