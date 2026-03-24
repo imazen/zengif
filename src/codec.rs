@@ -810,7 +810,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 /// Per-operation GIF decode job.
 pub struct GifDecodeJob<'a> {
     config: &'a GifDecoderConfig,
-    stop: Option<&'a dyn zencodec::enough::Stop>,
+    stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
     start_frame_index: u32,
 }
@@ -847,7 +847,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     type StreamDec = zencodec::Unsupported<At<GifError>>;
     type FullFrameDec = GifFullFrameDecoder;
 
-    fn with_stop(mut self, stop: &'a dyn zencodec::enough::Stop) -> Self {
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
         self
     }
@@ -1042,7 +1042,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 /// Single-image GIF decoder (decodes first frame).
 pub struct GifDecoder<'a> {
     config: &'a GifDecoderConfig,
-    stop: Option<&'a dyn zencodec::enough::Stop>,
+    stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
     data: Cow<'a, [u8]>,
     preferred: Vec<PixelDescriptor>,
