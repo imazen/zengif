@@ -9,9 +9,10 @@
 //!
 //! | Feature | Quality | Speed | File Size | License | Use Case |
 //! |---------|---------|-------|-----------|---------|----------|
-//! | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later | **Recommended** for quality |
+//! | `zenquant` | **Best** | Medium | Small | AGPL-3.0-or-later | **Default** — best quality |
+//! | `quantette` | Very Good | Fast | Small | MIT/Apache-2.0 | Best permissive-license quality |
 //! | `imagequant` | Good | Medium | **Smallest** | GPL-3.0-or-later | Best compression |
-//! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
+//! | `quantizr` | Good | Fast | Medium | MIT | Fast MIT option |
 //! | `color_quant` | Decent | **Fastest** | Large | MIT | High-throughput servers |
 //!
 //! # Frame-Aware Quantization
@@ -37,6 +38,8 @@ mod color_quant_impl;
 mod exoquant_impl;
 #[cfg(feature = "imagequant")]
 mod imagequant_impl;
+#[cfg(feature = "quantette")]
+mod quantette_impl;
 #[cfg(feature = "quantizr")]
 mod quantizr_impl;
 #[cfg(feature = "zenquant")]
@@ -49,6 +52,8 @@ pub use color_quant_impl::ColorQuantQuantizer;
 pub use exoquant_impl::ExoquantQuantizer;
 #[cfg(feature = "imagequant")]
 pub use imagequant_impl::ImagequantQuantizer;
+#[cfg(feature = "quantette")]
+pub use quantette_impl::QuantetteQuantizer;
 #[cfg(feature = "quantizr")]
 pub use quantizr_impl::QuantizrQuantizer;
 #[cfg(feature = "zenquant")]
@@ -157,6 +162,7 @@ impl QuantizeConfig {
 #[non_exhaustive]
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "exoquant-deprecated",
@@ -169,6 +175,17 @@ pub enum Quantizer {
     /// AGPL-3.0-or-later licensed.
     #[cfg(feature = "zenquant")]
     Zenquant {
+        /// Dithering level (0.0 = none, 1.0 = full).
+        /// Default: 0.5
+        dithering: f32,
+    },
+
+    /// quantette: Oklab k-means, high quality, fast, MIT/Apache-2.0 licensed.
+    ///
+    /// Uses the Oklab color space for perceptually accurate quantization.
+    /// K-means clustering produces high-quality palettes with fast convergence.
+    #[cfg(feature = "quantette")]
+    Quantette {
         /// Dithering level (0.0 = none, 1.0 = full).
         /// Default: 0.5
         dithering: f32,
@@ -260,9 +277,27 @@ impl Quantizer {
         }
     }
 
+    /// Create a quantette quantizer with default settings.
+    ///
+    /// Oklab k-means — high quality, fast, MIT/Apache-2.0 licensed.
+    #[cfg(feature = "quantette")]
+    #[must_use]
+    pub fn quantette() -> Self {
+        Self::Quantette { dithering: 0.5 }
+    }
+
+    /// Create a quantette quantizer with custom dithering.
+    #[cfg(feature = "quantette")]
+    #[must_use]
+    pub fn quantette_with_dithering(dithering: f32) -> Self {
+        Self::Quantette {
+            dithering: dithering.clamp(0.0, 1.0),
+        }
+    }
+
     /// Create a Quantizr quantizer with default settings.
     ///
-    /// Best MIT-licensed option with good quality/speed balance.
+    /// Good quality, fast, MIT licensed.
     #[cfg(feature = "quantizr")]
     #[must_use]
     pub fn quantizr() -> Self {
@@ -330,7 +365,7 @@ impl Quantizer {
 
     /// Create the default quantizer based on available features.
     ///
-    /// Priority: zenquant > imagequant > quantizr > color_quant > exoquant-deprecated
+    /// Priority: zenquant > quantette > imagequant > quantizr > color_quant > exoquant-deprecated
     #[must_use]
     #[allow(clippy::needless_return)] // Returns needed for conditional compilation branches
     pub fn auto() -> Self {
@@ -338,13 +373,22 @@ impl Quantizer {
         {
             return Self::zenquant();
         }
-        #[cfg(all(feature = "imagequant", not(feature = "zenquant")))]
+        #[cfg(all(feature = "quantette", not(feature = "zenquant")))]
+        {
+            return Self::quantette();
+        }
+        #[cfg(all(
+            feature = "imagequant",
+            not(feature = "zenquant"),
+            not(feature = "quantette")
+        ))]
         {
             return Self::imagequant();
         }
         #[cfg(all(
             feature = "quantizr",
             not(feature = "zenquant"),
+            not(feature = "quantette"),
             not(feature = "imagequant")
         ))]
         {
@@ -353,6 +397,7 @@ impl Quantizer {
         #[cfg(all(
             feature = "color_quant",
             not(feature = "zenquant"),
+            not(feature = "quantette"),
             not(feature = "imagequant"),
             not(feature = "quantizr")
         ))]
@@ -377,6 +422,8 @@ impl Quantizer {
         match self {
             #[cfg(feature = "zenquant")]
             Self::Zenquant { .. } => Box::new(ZenquantQuantizer::new()),
+            #[cfg(feature = "quantette")]
+            Self::Quantette { .. } => Box::new(QuantetteQuantizer::new()),
             #[cfg(feature = "quantizr")]
             Self::Quantizr { .. } => Box::new(QuantizrQuantizer::new()),
             #[cfg(feature = "imagequant")]

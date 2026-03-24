@@ -22,6 +22,8 @@ zencodec = ["std", "dep:zencodec"]
 # Color quantization backends (choose one or more)
 # zenquant: Best perceptual quality (butteraugli/SSIMULACRA2), AGPL-3.0-or-later
 zenquant = ["dep:zenquant"]
+# quantette: Oklab k-means, high quality, fast, MIT/Apache-2.0
+quantette = ["dep:quantette"]
 # quantizr: Fast, MIT licensed
 quantizr = ["dep:quantizr"]
 # imagequant: Good compression (smallest files), GPL-3.0-or-later licensed
@@ -61,6 +63,7 @@ linear-srgb = "0.6.3"
 imagequant = { version = "4.4", optional = true }
 quantizr = { version = "1.4", optional = true }
 zenquant = { path = "../zenquant", optional = true, default-features = false, features = ["std"] }
+quantette = { version = "0.5", optional = true, default-features = false, features = ["kmeans", "std"] }
 exoquant = { version = "0.2", optional = true }
 color_quant = { version = "1.1", optional = true }
 
