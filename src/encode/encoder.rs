@@ -216,12 +216,14 @@ impl<'a> Encoder<'a> {
             .quantizer
             .as_ref()
             .map(|q| q.create_backend())
-            .unwrap_or_else(|| {
-                req.config
-                    .quantizer_backend
-                    .create_quantizer()
-                    .expect("quantizer feature should be enabled")
-            });
+            .or_else(|| req.config.quantizer_backend.create_quantizer())
+            .or_else(|| Some(crate::quantize::Quantizer::auto().create_backend()))
+            .ok_or_else(|| {
+                at!(GifError::QuantizationFailed {
+                    message: "requested quantizer backend is not available \
+                              (its feature may not be enabled)"
+                })
+            })?;
 
         Ok(Self {
             encoder,
