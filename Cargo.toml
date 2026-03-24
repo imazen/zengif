@@ -12,7 +12,7 @@ categories = ["multimedia::images", "encoding"]
 readme = "README.md"
 
 [features]
-default = ["std"]
+default = ["std", "zenquant"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
 std = ["gif/std", "enough/std", "whereat/std"]
