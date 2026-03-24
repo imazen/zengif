@@ -328,7 +328,7 @@ impl Default for GifEncoderConfig {
 
 impl zencodec::encode::EncoderConfig for GifEncoderConfig {
     type Error = At<GifError>;
-    type Job<'a> = GifEncodeJob<'a>;
+    type Job = GifEncodeJob;
 
     fn format() -> ImageFormat {
         ImageFormat::Gif
@@ -364,7 +364,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         self.lossless
     }
 
-    fn job<'a>(self) -> GifEncodeJob<'a> {
+    fn job(self) -> GifEncodeJob {
         GifEncodeJob {
             config: self,
             stop: None,
@@ -378,20 +378,20 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
 // ── GifEncodeJob ─────────────────────────────────────────────────────
 
 /// Per-operation GIF encode job.
-pub struct GifEncodeJob<'a> {
+pub struct GifEncodeJob {
     config: GifEncoderConfig,
-    stop: Option<&'a dyn zencodec::enough::Stop>,
+    stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
     canvas_size: Option<(u32, u32)>,
     loop_count: Option<Option<u32>>,
 }
 
-impl<'a> zencodec::encode::EncodeJob<'a> for GifEncodeJob<'a> {
+impl zencodec::encode::EncodeJob for GifEncodeJob {
     type Error = At<GifError>;
-    type Enc = GifEncoder<'a>;
+    type Enc = GifEncoder;
     type FullFrameEnc = GifFullFrameEncoder;
 
-    fn with_stop(mut self, stop: &'a dyn zencodec::enough::Stop) -> Self {
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
         self
     }
@@ -416,7 +416,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for GifEncodeJob<'a> {
         self
     }
 
-    fn encoder(self) -> Result<GifEncoder<'a>, At<GifError>> {
+    fn encoder(self) -> Result<GifEncoder, At<GifError>> {
         Ok(GifEncoder {
             config: self.config,
             stop: self.stop,
@@ -453,13 +453,13 @@ impl<'a> zencodec::encode::EncodeJob<'a> for GifEncodeJob<'a> {
 // ── GifEncoder ───────────────────────────────────────────────────────
 
 /// Single-image GIF encoder.
-pub struct GifEncoder<'a> {
+pub struct GifEncoder {
     config: GifEncoderConfig,
-    stop: Option<&'a dyn zencodec::enough::Stop>,
+    stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
 }
 
-impl GifEncoder<'_> {
+impl GifEncoder {
     fn build_limits(&self) -> Limits {
         let base = limits_from_resource(&self.config.limits);
         match self.limits {
@@ -491,7 +491,10 @@ impl GifEncoder<'_> {
         }
 
         let limits = self.build_limits();
-        let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
 
         let frame = FrameInput::new(w, h, 0, rgba_pixels);
 
@@ -504,7 +507,7 @@ impl GifEncoder<'_> {
     }
 }
 
-impl zencodec::encode::Encoder for GifEncoder<'_> {
+impl zencodec::encode::Encoder for GifEncoder {
     type Error = At<GifError>;
 
     fn reject(op: zencodec::UnsupportedOperation) -> At<GifError> {
@@ -901,7 +904,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let gif_limits = self.build_limits();
         let cursor = std::io::Cursor::new(data);
-        let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
         let mut decoder = Decoder::new(cursor, gif_limits, stop)?;
 
         let metadata = decoder.metadata().clone();
@@ -1114,7 +1120,10 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         }
 
         let limits = self.build_limits();
-        let stop: &dyn enough::Stop = self.stop.unwrap_or(&enough::Unstoppable);
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
         let source_probe = crate::detect::probe(&self.data).ok();
         let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop)?;
