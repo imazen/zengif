@@ -20,8 +20,8 @@ use zencodec::encode::EncodeOutput;
 use zencodec::{ImageFormat, ImageInfo, ImageSequence, Metadata, ResourceLimits};
 use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
 
-// Import trait for inherent method forwarding
-use zencodec::decode::DecoderConfig as _;
+// Import traits for inherent method forwarding
+use zencodec::decode::{Decode as _, DecoderConfig as _};
 
 use crate::encode::{EncodeRequest, EncoderConfig};
 use crate::types::{FrameInput, Repeat};
@@ -883,10 +883,54 @@ impl<'a> GifDecodeJob<'a> {
     }
 }
 
+/// Buffered streaming decoder for GIF.
+///
+/// GIF is frame-based, not row-based — this decodes the first frame fully on
+/// construction, then yields rows in batches via [`StreamingDecode::next_batch`].
+pub struct GifStreamingDecoder {
+    /// Decoded RGBA pixel data (contiguous, no padding).
+    data: Vec<u8>,
+    descriptor: PixelDescriptor,
+    info: ImageInfo,
+    /// Bytes per row (width * bpp, no padding).
+    stride: usize,
+    /// Row offset for next batch.
+    y: u32,
+    /// Rows per batch.
+    batch_size: u32,
+}
+
+impl GifStreamingDecoder {
+    const DEFAULT_BATCH: u32 = 16;
+}
+
+impl zencodec::decode::StreamingDecode for GifStreamingDecoder {
+    type Error = At<GifError>;
+
+    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, At<GifError>> {
+        let h = self.info.height;
+        if self.y >= h {
+            return Ok(None);
+        }
+        let rows = self.batch_size.min(h - self.y);
+        let start = self.y as usize * self.stride;
+        let end = start + rows as usize * self.stride;
+        let slice = PixelSlice::new(&self.data[start..end], self.info.width, rows, self.stride, self.descriptor)
+            .map_err(|_| GifError::InvalidEncoderState { message: "streaming slice" }.start_at())?;
+        let y = self.y;
+        self.y += rows;
+        Ok(Some((y, slice)))
+    }
+
+    fn info(&self) -> &ImageInfo {
+        &self.info
+    }
+}
+
 impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
     type Error = At<GifError>;
     type Dec = GifDecoder<'a>;
-    type StreamDec = zencodec::Unsupported<At<GifError>>;
+    type StreamDec = GifStreamingDecoder;
     type AnimationFrameDec = GifAnimationFrameDecoder;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
@@ -1046,10 +1090,26 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
     fn streaming_decoder(
         self,
-        _data: Cow<'a, [u8]>,
-        _preferred: &[PixelDescriptor],
-    ) -> Result<zencodec::Unsupported<At<GifError>>, At<GifError>> {
-        Err(GifError::from(zencodec::UnsupportedOperation::RowLevelDecode).start_at())
+        data: Cow<'a, [u8]>,
+        preferred: &[PixelDescriptor],
+    ) -> Result<GifStreamingDecoder, At<GifError>> {
+        // Decode first frame fully, then yield rows via next_batch().
+        let decoder_obj = self.decoder(data, preferred)?;
+        let output = decoder_obj.decode()?;
+        let info = output.info().clone();
+        let buf = output.into_buffer();
+        let descriptor = buf.descriptor();
+        let w = buf.width();
+        let stride = w as usize * descriptor.bytes_per_pixel();
+        let pixel_data = buf.copy_to_contiguous_bytes();
+        Ok(GifStreamingDecoder {
+            data: pixel_data,
+            descriptor,
+            info,
+            stride,
+            y: 0,
+            batch_size: GifStreamingDecoder::DEFAULT_BATCH,
+        })
     }
 
     fn animation_frame_decoder(
