@@ -19,6 +19,7 @@ default = ["std", "zenquant"]
 std = ["gif/std", "enough/std", "whereat/std"]
 # zencodec trait implementations (requires std for I/O)
 zencodec = ["std", "dep:zencodec"]
+zennode = ["dep:zennode", "zencodec"]
 
 # Color quantization backends (choose one or more)
 # zenquant: Best perceptual quality (butteraugli/SSIMULACRA2), AGPL-3.0-or-later
@@ -57,6 +58,9 @@ thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
 zencodec = { version = "0.1.1", optional = true }
+
+# Node definitions (optional)
+zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
 zenpixels = { version = "0.2.0", default-features = false }
 linear-srgb = "0.6.5"
 

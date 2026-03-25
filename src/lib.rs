@@ -227,6 +227,9 @@ pub use types::{
     ComposedFrame, DisposalMethod, FrameInput, Metadata, Palette, RawFrame, Repeat, Rgba,
 };
 
+#[cfg(feature = "zennode")]
+pub mod zennode_defs;
+
 #[cfg(feature = "zencodec")]
 mod codec;
 #[cfg(feature = "zencodec")]
