@@ -231,8 +231,8 @@ pub use types::{
 mod codec;
 #[cfg(feature = "zencodec")]
 pub use codec::{
-    GifDecodeJob, GifDecoder, GifDecoderConfig, GifEncodeJob, GifEncoder, GifEncoderConfig,
-    GifFullFrameDecoder, GifFullFrameEncoder,
+    GifAnimationFrameDecoder, GifAnimationFrameEncoder, GifDecodeJob, GifDecoder, GifDecoderConfig,
+    GifEncodeJob, GifEncoder, GifEncoderConfig,
 };
 
 // Re-export enough for user convenience
