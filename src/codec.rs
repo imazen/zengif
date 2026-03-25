@@ -98,6 +98,14 @@ static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 
 // ── Capabilities ─────────────────────────────────────────────────────
 
+#[cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+))]
 static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     zencodec::encode::EncodeCapabilities::new()
         .with_stop(true)
@@ -110,6 +118,26 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_quality_range(0.0, 100.0);
+
+#[cfg(not(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "exoquant-deprecated",
+    feature = "color_quant"
+)))]
+static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
+    zencodec::encode::EncodeCapabilities::new()
+        .with_stop(true)
+        .with_animation(true)
+        .with_lossless(true)
+        .with_lossy(true)
+        .with_native_alpha(true)
+        .with_native_gray(true)
+        .with_native_f32(true)
+        .with_enforces_max_pixels(true)
+        .with_enforces_max_memory(true);
 
 static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
     zencodec::decode::DecodeCapabilities::new()
@@ -370,6 +398,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
             config: self,
             stop: None,
             limits: None,
+            policy: None,
             canvas_size: None,
             loop_count: None,
         }
@@ -383,6 +412,9 @@ pub struct GifEncodeJob {
     config: GifEncoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
+    /// Encode policy. Stored for completeness but has no effect —
+    /// GIF has no embeddable metadata (no ICC, EXIF, or XMP).
+    policy: Option<zencodec::encode::EncodePolicy>,
     canvas_size: Option<(u32, u32)>,
     loop_count: Option<Option<u32>>,
 }
@@ -394,6 +426,13 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
+        self
+    }
+
+    fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
+        // GIF has no embeddable metadata (no ICC, EXIF, or XMP), so this
+        // is stored for completeness but has no behavioral effect.
+        self.policy = Some(policy);
         self
     }
 
@@ -801,6 +840,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
             config: self,
             stop: None,
             limits: None,
+            policy: None,
             start_frame_index: 0,
         }
     }
@@ -813,6 +853,7 @@ pub struct GifDecodeJob<'a> {
     config: &'a GifDecoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
+    policy: Option<zencodec::decode::DecodePolicy>,
     start_frame_index: u32,
 }
 
@@ -858,6 +899,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         self
     }
 
+    fn with_policy(mut self, policy: zencodec::decode::DecodePolicy) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
     fn with_start_frame_index(mut self, index: u32) -> Self {
         self.start_frame_index = index;
         self
@@ -868,7 +914,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let gif_limits = self.build_limits();
         let cursor = std::io::Cursor::new(data);
-        let decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)?;
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
+        let decoder = Decoder::new(cursor, gif_limits, stop)?;
 
         let metadata = decoder.metadata().clone();
 
@@ -1007,6 +1057,12 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         data: Cow<'a, [u8]>,
         preferred: &[PixelDescriptor],
     ) -> Result<GifAnimationFrameDecoder, At<GifError>> {
+        // Policy: reject animation decode if policy disallows it
+        if let Some(ref policy) = self.policy
+            && !policy.resolve_animation(true)
+        {
+            return Err(GifError::from(zencodec::UnsupportedOperation::AnimationDecode).start_at());
+        }
         self.check_file_size(&data)?;
         let has_alpha = crate::detect::probe(&data)
             .ok()
