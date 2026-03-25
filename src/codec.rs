@@ -1001,15 +1001,17 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         .with_alpha(has_alpha);
 
         if let Some(ref p) = probe {
-            info = info.with_sequence(if p.is_animated {
-                ImageSequence::Animation {
-                    frame_count: Some(p.frame_count),
-                    loop_count: p.repeat.map(|r| r as u32),
-                    random_access: false,
-                }
-            } else {
-                ImageSequence::Single
-            });
+            info = info
+                .with_sequence(if p.is_animated {
+                    ImageSequence::Animation {
+                        frame_count: Some(p.frame_count),
+                        loop_count: p.repeat.map(|r| r as u32),
+                        random_access: false,
+                    }
+                } else {
+                    ImageSequence::Single
+                })
+                .with_progressive(p.has_interlacing);
         }
         if let Some(p) = probe {
             info = info.with_source_encoding_details(p);
@@ -1041,12 +1043,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let loop_count = probe.as_ref().and_then(|p| p.repeat.map(|r| r as u32));
 
+        let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
+
         let mut info = ImageInfo::new(
             metadata.width as u32,
             metadata.height as u32,
             ImageFormat::Gif,
         )
         .with_alpha(has_alpha)
+        .with_progressive(has_interlacing)
         .with_sequence(if frame_count > 1 {
             ImageSequence::Animation {
                 frame_count: Some(frame_count),
@@ -1147,9 +1152,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             return Err(GifError::from(zencodec::UnsupportedOperation::AnimationDecode).start_at());
         }
         self.check_file_size(&data)?;
-        let has_alpha = crate::detect::probe(&data)
-            .ok()
-            .is_none_or(|p| p.has_transparency);
+        let probe = crate::detect::probe(&data).ok();
+        let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
+        let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
         let limits = self.build_limits();
         let cursor = std::io::Cursor::new(data.into_owned());
         // The underlying Decoder requires a 'static stop token because
@@ -1164,6 +1169,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
                 ImageFormat::Gif,
             )
             .with_alpha(has_alpha)
+            .with_progressive(has_interlacing)
             .with_sequence(if metadata.frame_count > 1 {
                 ImageSequence::Animation {
                     frame_count: Some(metadata.frame_count as u32),
@@ -1297,6 +1303,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         })?;
 
         let has_alpha = source_probe.as_ref().is_none_or(|p| p.has_transparency);
+        let has_interlacing = source_probe.as_ref().is_some_and(|p| p.has_interlacing);
 
         let info = ImageInfo::new(
             metadata.width as u32,
@@ -1304,6 +1311,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             ImageFormat::Gif,
         )
         .with_alpha(has_alpha)
+        .with_progressive(has_interlacing)
         .with_sequence(if metadata.frame_count > 1 {
             ImageSequence::Animation {
                 frame_count: Some(metadata.frame_count as u32),
