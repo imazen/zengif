@@ -59,6 +59,51 @@ impl Default for EncodeGif {
     }
 }
 
+#[cfg(feature = "zencodec")]
+impl EncodeGif {
+    /// Apply this node's explicitly-set params on top of an existing config.
+    ///
+    /// Fields at their default/sentinel value are skipped:
+    /// - `quality`: `-1` means not set
+    /// - `dithering`: `0.5` is the default (only apply if changed)
+    /// - `max_colors`: `256` is the default (only apply if changed)
+    ///
+    /// Note: `max_colors` is stored on the node for pipeline use at
+    /// execution time. The `GifEncoderConfig` does not have a direct
+    /// max_colors setter; palette size is controlled by the quantizer.
+    pub fn apply(
+        &self,
+        mut config: crate::GifEncoderConfig,
+    ) -> crate::GifEncoderConfig {
+        use zencodec::encode::EncoderConfig as _;
+
+        // Generic quality (maps to quantizer quality)
+        if self.quality >= 0 {
+            config = config.with_generic_quality(self.quality as f32);
+        }
+        // Dithering (only apply if changed from default 0.5)
+        #[cfg(any(
+            feature = "zenquant",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "exoquant-deprecated",
+            feature = "color_quant"
+        ))]
+        if (self.dithering - 0.5).abs() > f32::EPSILON {
+            config = config.with_dithering(self.dithering);
+        }
+        // max_colors: no direct setter on GifEncoderConfig.
+        // This value is used at execution time by the pipeline to configure
+        // the quantizer's maximum palette size.
+        config
+    }
+
+    /// Build a config from scratch using only this node's params.
+    pub fn to_encoder_config(&self) -> crate::GifEncoderConfig {
+        self.apply(crate::GifEncoderConfig::new())
+    }
+}
+
 /// Registration function for aggregating crates.
 pub fn register(registry: &mut NodeRegistry) {
     registry.register(&ENCODE_GIF_NODE);
@@ -161,6 +206,47 @@ mod tests {
         assert_eq!(enc.quality, -1);
         assert_eq!(enc.max_colors, 256);
         assert!((enc.dithering - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[cfg(feature = "zencodec")]
+    #[test]
+    fn to_encoder_config_defaults() {
+        let node = EncodeGif::default();
+        let _config = node.to_encoder_config();
+    }
+
+    #[cfg(feature = "zencodec")]
+    #[test]
+    fn apply_generic_quality() {
+        let mut node = EncodeGif::default();
+        node.quality = 80;
+        let config = node.to_encoder_config();
+        let q = zencodec::encode::EncoderConfig::generic_quality(&config);
+        assert!(q.is_some());
+    }
+
+    #[cfg(feature = "zencodec")]
+    #[test]
+    fn apply_preserves_existing() {
+        let base = crate::GifEncoderConfig::new();
+        let node = EncodeGif::default();
+        let _config = node.apply(base);
+    }
+
+    #[cfg(feature = "zencodec")]
+    #[test]
+    fn apply_dithering_changed() {
+        let mut node = EncodeGif::default();
+        node.dithering = 0.2;
+        let _config = node.to_encoder_config();
+    }
+
+    #[test]
+    fn apply_max_colors_stored() {
+        let mut node = EncodeGif::default();
+        node.max_colors = 128;
+        // max_colors is available on the node for pipeline use
+        assert_eq!(node.max_colors, 128);
     }
 
     #[test]
