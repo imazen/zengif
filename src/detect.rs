@@ -50,6 +50,13 @@ pub struct GifProbe {
     pub has_interlacing: bool,
     /// Background color index (if global palette present).
     pub background_color_index: Option<u8>,
+    /// Loop/repeat behavior from NETSCAPE extension.
+    ///
+    /// - `None` — no NETSCAPE extension found (GIF87a or single-frame GIF89a).
+    ///   Treat as play-once.
+    /// - `Some(0)` — loop forever.
+    /// - `Some(n)` — loop `n` times.
+    pub repeat: Option<u16>,
     /// Suggestions for re-encoding or format conversion.
     pub suggestions: Vec<FormatSuggestion>,
 }
@@ -143,6 +150,7 @@ pub fn probe(data: &[u8]) -> Result<GifProbe, ProbeError> {
     let mut has_local_palettes = false;
     let mut max_local_palette_size = 0u16;
     let mut has_interlacing = false;
+    let mut repeat: Option<u16> = None;
     let mut pending_gce_transparent = false;
     let mut pending_gce_delay = 0u16;
 
@@ -163,6 +171,21 @@ pub fn probe(data: &[u8]) -> Result<GifProbe, ProbeError> {
                         let gce_packed = data[pos + 1];
                         pending_gce_delay = u16::from_le_bytes([data[pos + 2], data[pos + 3]]);
                         pending_gce_transparent = (gce_packed & 0x01) != 0;
+                    }
+                }
+
+                if label == 0xFF {
+                    // Application Extension — check for NETSCAPE2.0 loop count.
+                    // Layout: block_size(1)=11, "NETSCAPE2.0"(11), sub-block_size(1)=3,
+                    //         sub-block_id(1)=1, loop_count(2 LE), terminator(1)=0.
+                    if pos + 14 <= data.len()
+                        && data[pos] == 11
+                        && &data[pos + 1..pos + 12] == b"NETSCAPE2.0"
+                        && pos + 17 <= data.len()
+                        && data[pos + 12] == 3
+                        && data[pos + 13] == 1
+                    {
+                        repeat = Some(u16::from_le_bytes([data[pos + 14], data[pos + 15]]));
                     }
                 }
 
@@ -267,6 +290,7 @@ pub fn probe(data: &[u8]) -> Result<GifProbe, ProbeError> {
         max_local_palette_size,
         has_interlacing,
         background_color_index,
+        repeat,
         suggestions,
     })
 }

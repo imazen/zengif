@@ -106,6 +106,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
         .with_lossy(true)
         .with_native_alpha(true)
         .with_native_gray(true)
+        .with_native_f32(true)
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_quality_range(0.0, 100.0);
@@ -114,7 +115,7 @@ static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
     zencodec::decode::DecodeCapabilities::new()
         .with_stop(true)
         .with_animation(true)
-        .with_cheap_probe(true)
+        .with_cheap_probe(false)
         .with_native_alpha(true)
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
@@ -886,7 +887,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
             info = info.with_sequence(if p.is_animated {
                 ImageSequence::Animation {
                     frame_count: Some(p.frame_count),
-                    loop_count: None,
+                    loop_count: p.repeat.map(|r| r as u32),
                     random_access: false,
                 }
             } else {
@@ -912,16 +913,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
 
         let metadata = decoder.metadata().clone();
 
-        let has_alpha = crate::detect::probe(data)
-            .ok()
-            .is_none_or(|p| p.has_transparency);
+        let probe = crate::detect::probe(data).ok();
+
+        let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
 
         let mut frame_count = 0u32;
         while decoder.next_frame()?.is_some() {
             frame_count += 1;
         }
 
-        Ok(ImageInfo::new(
+        let loop_count = probe.as_ref().and_then(|p| p.repeat.map(|r| r as u32));
+
+        let mut info = ImageInfo::new(
             metadata.width as u32,
             metadata.height as u32,
             ImageFormat::Gif,
@@ -930,12 +933,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
         .with_sequence(if frame_count > 1 {
             ImageSequence::Animation {
                 frame_count: Some(frame_count),
-                loop_count: None,
+                loop_count,
                 random_access: false,
             }
         } else {
             ImageSequence::Single
-        }))
+        });
+
+        if let Some(p) = probe {
+            info = info.with_source_encoding_details(p);
+        }
+
+        Ok(info)
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<GifError>> {
