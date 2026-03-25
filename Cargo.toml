@@ -58,7 +58,7 @@ thiserror = { version = "2.0.18", default-features = false }
 # Shared codec traits (optional, gated on `zencodec` feature)
 zencodec = { version = "0.1.1", optional = true }
 zenpixels = { version = "0.2.0", default-features = false }
-linear-srgb = "0.6.4"
+linear-srgb = "0.6.5"
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4.1", optional = true }
