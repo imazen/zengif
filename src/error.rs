@@ -324,6 +324,8 @@ impl From<zencodec::UnsupportedOperation> for GifError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::string::ToString;
 
     #[test]
     fn error_display() {

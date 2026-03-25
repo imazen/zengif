@@ -328,6 +328,8 @@ mod tests {
     use super::*;
     use crate::limits::Limits;
     use crate::stats::Stats;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     fn make_canvas(width: u16, height: u16, fill: Rgba) -> Vec<Rgba> {
         vec![fill; width as usize * height as usize]

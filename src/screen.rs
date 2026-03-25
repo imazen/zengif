@@ -378,6 +378,8 @@ impl ScreenBuilder {
 mod tests {
     use super::*;
     use crate::types::DisposalMethod;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     fn make_palette() -> Palette {
         Palette::from_rgba(vec![

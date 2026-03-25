@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 //! Corpus tests: test against real-world GIF files from codec-corpus
 //!
 //! These tests verify that zengif can correctly decode and round-trip

@@ -33,23 +33,46 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Test (default)
+      - name: Test (default features)
         run: cargo test
 
+  features:
+    name: Feature permutations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check (no default features)
+        run: cargo check --no-default-features
+
       - name: Test (no default features)
-        run: cargo test --no-default-features
+        run: cargo test --no-default-features --lib --tests
 
-      - name: Test (quantizr feature)
-        run: cargo test --features quantizr
+      - name: Test (std only, no quantizer)
+        run: cargo test --no-default-features --features std
 
-      - name: Test (imagequant feature)
+      - name: Test (zencodec)
+        run: cargo test --features zencodec
+
+      - name: Test (zencodec + quantizr)
+        run: cargo test --features "zencodec,quantizr"
+
+      - name: Test (quantette)
+        run: cargo test --features quantette
+
+      - name: Test (imagequant)
         run: cargo test --features imagequant
 
-      - name: Test (color_quant feature)
+      - name: Test (color_quant)
         run: cargo test --features color_quant
 
-      - name: Test (imgref-interop feature)
+      - name: Test (imgref-interop)
         run: cargo test --features imgref-interop
+
+      - name: Test (all features)
+        run: cargo test --all-features
 
   i686:
     name: Test (i686)
@@ -88,8 +111,11 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
 
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (all features)
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: Clippy (zencodec)
+        run: cargo clippy --features zencodec --all-targets -- -D warnings
 
   fmt:
     name: Format

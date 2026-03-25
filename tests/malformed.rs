@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 //! Tests for handling malformed GIF inputs.
 
 use enough::Unstoppable;

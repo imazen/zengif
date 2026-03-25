@@ -1,3 +1,4 @@
+#![cfg(feature = "std")]
 //! Tests for cancellation support via the enough crate.
 
 use almost_enough::{Stop, Stopper};
