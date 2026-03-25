@@ -396,7 +396,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
         self
     }
 
-    fn with_metadata(self, _meta: &Metadata) -> Self {
+    fn with_metadata(self, _meta: Metadata) -> Self {
         // GIF doesn't support ICC/EXIF/XMP metadata
         self
     }

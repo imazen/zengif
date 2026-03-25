@@ -46,7 +46,7 @@ gif = { version = "0.14", default-features = false }
 whereat = { version = "0.1", default-features = false }
 
 # Cooperative cancellation (no_std compatible)
-enough = { version = "0.4", default-features = false }
+enough = { version = "0.4.2", default-features = false }
 
 # Safe transmutes for pixel data (no_std compatible)
 bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
@@ -73,7 +73,7 @@ imgref = { version = "1.12", optional = true }
 
 [dev-dependencies]
 # Testing
-almost-enough = "0.4"
+almost-enough = "0.4.2"
 imgref = "1.12"
 codec-corpus = "1"
 archmage = { version = "0.9.12", features = ["std"] }
