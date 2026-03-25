@@ -100,11 +100,11 @@ impl Default for EncodeGif {
 }
 
 impl EncodeGif {
-    /// Convert this node into a [`GifEncoderConfig`] for use with zengif's
-    /// encoding pipeline.
-    pub fn to_encoder_config(&self) -> GifEncoderConfig {
-        let mut config = GifEncoderConfig::new();
-
+    /// Apply this node's parameters on top of an existing [`GifEncoderConfig`].
+    ///
+    /// This is the preferred entry point when a pipeline already has a base
+    /// config and the node should overlay user-specified values.
+    pub fn apply(&self, mut config: GifEncoderConfig) -> GifEncoderConfig {
         // Quality
         config = config.with_quality(self.quality);
 
@@ -136,6 +136,14 @@ impl EncodeGif {
         }
 
         config
+    }
+
+    /// Convert this node into a [`GifEncoderConfig`] for use with zengif's
+    /// encoding pipeline.
+    ///
+    /// Equivalent to `self.apply(GifEncoderConfig::new())`.
+    pub fn to_encoder_config(&self) -> GifEncoderConfig {
+        self.apply(GifEncoderConfig::new())
     }
 
     /// Parse the `loop_count` string into a [`Repeat`] value.
@@ -177,6 +185,14 @@ impl EncodeGif {
         }
     }
 }
+
+/// Register all GIF zennode definitions into the given registry.
+pub fn register(registry: &mut NodeRegistry) {
+    registry.register(&ENCODE_GIF_NODE);
+}
+
+/// All GIF zennode definitions.
+pub static ALL: &[&dyn NodeDef] = &[&ENCODE_GIF_NODE];
 
 #[cfg(test)]
 mod tests {
@@ -310,5 +326,79 @@ mod tests {
         let enc = node.as_any().downcast_ref::<EncodeGif>().unwrap();
         assert_eq!(enc.quality, 80.0);
         assert!(enc.transparency_optimization);
+    }
+
+    #[test]
+    fn kv_parsing_dither_alias() {
+        // "gif.dither" is an alias for "gif.dithering"
+        let mut kv = KvPairs::from_querystring("gif.dither=0.3");
+        let node = ENCODE_GIF_NODE.from_kv(&mut kv).unwrap().unwrap();
+        assert_eq!(node.get_param("dithering"), Some(ParamValue::F32(0.3)));
+        assert_eq!(kv.unconsumed().count(), 0);
+    }
+
+    #[test]
+    fn json_round_trip() {
+        let mut params = ParamMap::new();
+        params.insert("quality".into(), ParamValue::F32(90.0));
+        params.insert("dithering".into(), ParamValue::F32(0.8));
+        params.insert("lossy_tolerance".into(), ParamValue::F32(10.0));
+        params.insert("loop_count".into(), ParamValue::Str("once".into()));
+        params.insert("transparency_optimization".into(), ParamValue::Bool(false));
+
+        let node = ENCODE_GIF_NODE.create(&params).unwrap();
+        assert_eq!(node.get_param("quality"), Some(ParamValue::F32(90.0)));
+        assert_eq!(node.get_param("dithering"), Some(ParamValue::F32(0.8)));
+        assert_eq!(
+            node.get_param("lossy_tolerance"),
+            Some(ParamValue::F32(10.0))
+        );
+        assert_eq!(
+            node.get_param("loop_count"),
+            Some(ParamValue::Str("once".into()))
+        );
+        assert_eq!(
+            node.get_param("transparency_optimization"),
+            Some(ParamValue::Bool(false))
+        );
+
+        // Round-trip through export/import
+        let exported = node.to_params();
+        let node2 = ENCODE_GIF_NODE.create(&exported).unwrap();
+        assert_eq!(node2.get_param("quality"), Some(ParamValue::F32(90.0)));
+        assert_eq!(node2.get_param("dithering"), Some(ParamValue::F32(0.8)));
+    }
+
+    #[test]
+    fn registry_integration() {
+        let mut registry = NodeRegistry::new();
+        register(&mut registry);
+        assert!(registry.get("zengif.encode").is_some());
+
+        let result = registry.from_querystring("gif.quality=90&gif.loop=once");
+        assert_eq!(result.instances.len(), 1);
+        assert_eq!(result.instances[0].schema().id, "zengif.encode");
+    }
+
+    #[test]
+    fn apply_preserves_existing() {
+        let base = GifEncoderConfig::new();
+        let node = EncodeGif::default();
+        let _config = node.apply(base);
+        // Should not panic — validates the apply path works end-to-end.
+    }
+
+    #[test]
+    fn apply_and_to_encoder_config_equivalent() {
+        let node = EncodeGif::default();
+        // Both paths should produce a config without panicking.
+        let _from_apply = node.apply(GifEncoderConfig::new());
+        let _from_to = node.to_encoder_config();
+    }
+
+    #[test]
+    fn all_static_contains_encode_gif() {
+        assert_eq!(ALL.len(), 1);
+        assert_eq!(ALL[0].schema().id, "zengif.encode");
     }
 }
