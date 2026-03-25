@@ -81,7 +81,7 @@ impl QuantizerTrait for QuantetteQuantizer {
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
         let srgb_pixels = Self::pixels_to_srgb(pixels);
-        let image = ImageBuf::new(width as u32, height as u32, srgb_pixels).map_err(|e| {
+        let image = ImageBuf::new(width as u32, height as u32, srgb_pixels).map_err(|_e| {
             at!(GifError::QuantizationFailed {
                 message: "quantette image creation failed"
             })
@@ -126,7 +126,7 @@ impl QuantizerTrait for QuantetteQuantizer {
         }
 
         let w = all_srgb.len() as u32;
-        let image = ImageBuf::new(w, 1, all_srgb).map_err(|e| {
+        let image = ImageBuf::new(w, 1, all_srgb).map_err(|_e| {
             at!(GifError::QuantizationFailed {
                 message: "quantette shared palette failed"
             })
@@ -156,8 +156,8 @@ impl QuantizerTrait for QuantetteQuantizer {
     fn quantize_frame_with_palette(
         &mut self,
         pixels: &[Rgba],
-        width: u16,
-        height: u16,
+        _width: u16,
+        _height: u16,
         _background: Option<&[Rgba]>,
         _config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {

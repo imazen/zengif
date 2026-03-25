@@ -2,7 +2,7 @@
 name = "zengif"
 version = "0.6.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.93"
 license = "MIT OR Apache-2.0"
 description = "Server-side GIF codec with zero-trust design, memory bounds, streaming, and full animation transparency support"
 repository = "https://github.com/imazen/zengif"
@@ -10,6 +10,7 @@ documentation = "https://docs.rs/zengif"
 keywords = ["gif", "image", "animation", "codec", "server"]
 categories = ["multimedia::images", "encoding"]
 readme = "README.md"
+exclude = ["CLAUDE.md", "FEEDBACK.md", "api-feedback.md", "justfile", ".github/"]
 
 [features]
 default = ["std", "zenquant"]
@@ -40,19 +41,19 @@ imgref-interop = ["imgref"]
 
 [dependencies]
 # Core GIF codec (no_std compatible with alloc)
-gif = { version = "0.14", default-features = false }
+gif = { version = "0.14.1", default-features = false }
 
 # Error tracing for production debugging (no_std compatible)
-whereat = { version = "0.1", default-features = false }
+whereat = { version = "0.1.4", default-features = false }
 
 # Cooperative cancellation (no_std compatible)
 enough = { version = "0.4.2", default-features = false }
 
 # Safe transmutes for pixel data (no_std compatible)
-bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
+bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 
 # Derive Error/Display for error types (no_std compatible)
-thiserror = { version = "2", default-features = false }
+thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
 zencodec = { version = "0.1.1", optional = true }
@@ -60,31 +61,31 @@ zenpixels = { version = "0.2.0", default-features = false }
 linear-srgb = "0.6.4"
 
 # Color quantization backends (optional)
-imagequant = { version = "4.4", optional = true }
-quantizr = { version = "1.4", optional = true }
+imagequant = { version = "4.4.1", optional = true }
+quantizr = { version = "1.4.3", optional = true }
 zenquant = { version = "0.1.1", optional = true, default-features = false, features = ["std"] }
-quantette = { version = "0.5", optional = true, default-features = false, features = ["kmeans", "std"] }
-exoquant = { version = "0.2", optional = true }
-color_quant = { version = "1.1", optional = true }
+quantette = { version = "0.5.1", optional = true, default-features = false, features = ["kmeans", "std"] }
+exoquant = { version = "0.2.0", optional = true }
+color_quant = { version = "1.1.0", optional = true }
 
 # RGB/imgref ecosystem interop (optional)
-rgb = "0.8"
-imgref = { version = "1.12", optional = true }
+rgb = "0.8.50"
+imgref = { version = "1.12.0", optional = true }
 
 [dev-dependencies]
 # Testing
 almost-enough = "0.4.2"
-imgref = "1.12"
-codec-corpus = "1"
+imgref = "1.12.0"
+codec-corpus = "1.0.3"
 archmage = { version = "0.9.12", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 # Quality metrics for quantizer comparison tests
-fast-ssim2 = { version = "0.7", features = ["imgref"] }
+fast-ssim2 = { version = "0.7.0", features = ["imgref"] }
 # PNG decoding for quantizer quality tests
-png = "0.18"
+png = "0.18.1"
 
 [profile.release]
 lto = "thin"
@@ -94,20 +95,40 @@ debug = 1  # For profiling
 opt-level = 2  # Tests need speed for processing
 
 [[example]]
+name = "basic"
+required-features = ["std"]
+
+[[example]]
+name = "wasm_decode"
+required-features = ["std"]
+
+[[example]]
+name = "alloc_profile"
+required-features = ["std"]
+
+[[example]]
+name = "memory_profile"
+required-features = ["std"]
+
+[[example]]
+name = "benchmark_output"
+required-features = ["std"]
+
+[[example]]
 name = "size_analysis"
-required-features = ["quantizr"]
+required-features = ["std", "quantizr"]
 
 [[example]]
 name = "rmse_analysis"
-required-features = ["quantizr"]
+required-features = ["std", "quantizr"]
 
 [[example]]
 name = "test_hybrid_fallback"
-required-features = ["quantizr"]
+required-features = ["std", "quantizr"]
 
 [[example]]
 name = "test_thresholds"
-required-features = ["quantizr"]
+required-features = ["std", "quantizr"]
 
 [[bench]]
 name = "codec"
