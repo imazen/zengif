@@ -57,7 +57,7 @@ bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
-zencodec = { version = "0.1.1", optional = true }
+zencodec = { version = "0.1.2", optional = true }
 
 # Node definitions (optional)
 zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
