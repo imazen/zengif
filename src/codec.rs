@@ -1665,7 +1665,7 @@ mod tests {
 
         let dec_caps = GifDecoderConfig::capabilities();
         assert!(dec_caps.animation());
-        assert!(dec_caps.cheap_probe());
+        assert!(!dec_caps.cheap_probe());
         assert!(dec_caps.stop());
     }
 
