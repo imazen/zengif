@@ -145,6 +145,9 @@ pub struct Encoder<'a> {
 
     /// Reusable scratch buffer to avoid per-frame allocations.
     scratch: ScratchBuffer,
+
+    /// Cumulative animation duration in milliseconds (for max_animation_ms enforcement).
+    cumulative_duration_ms: u64,
 }
 
 impl<'a> Encoder<'a> {
@@ -271,6 +274,7 @@ impl<'a> Encoder<'a> {
             ))]
             quantizer,
             scratch: ScratchBuffer::default(),
+            cumulative_duration_ms: 0,
         })
     }
 
@@ -477,6 +481,12 @@ impl<'a> Encoder<'a> {
         )))]
         let total_frames = self.frame_index;
         self.limits.check_frame_count(total_frames as u64)?;
+
+        // Check cumulative animation duration (delay is in centiseconds)
+        let frame_ms = input.delay as u64 * 10;
+        self.cumulative_duration_ms += frame_ms;
+        self.limits
+            .check_animation_duration(self.cumulative_duration_ms)?;
 
         // Handle shared palette buffering mode
         #[cfg(any(
@@ -926,16 +936,19 @@ impl<'a> Encoder<'a> {
 
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.
-        if !self.buffer.is_empty() {
-            return Ok(self.buffer);
-        }
+        let output = if !self.buffer.is_empty() {
+            self.buffer
+        } else {
+            self.encoder
+                .expect("encoder should exist after flush")
+                .into_inner()
+                .map_err(|e| at!(GifError::from(e)))?
+        };
 
-        let writer = self
-            .encoder
-            .expect("encoder should exist after flush")
-            .into_inner()
-            .map_err(|e| at!(GifError::from(e)))?;
-        Ok(writer)
+        // Check output size against limits
+        self.limits.check_output_bytes(output.len() as u64)?;
+
+        Ok(output)
     }
 }
 

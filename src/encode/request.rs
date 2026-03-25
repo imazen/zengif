@@ -15,6 +15,8 @@ static DEFAULT_LIMITS: Limits = Limits {
     max_file_size: Some(100 * 1024 * 1024),
     max_memory: Some(1024 * 1024 * 1024),
     max_decompression_ratio: Some(1000.0),
+    max_animation_ms: None,
+    max_output_bytes: None,
 };
 
 static UNSTOPPABLE: Unstoppable = Unstoppable;

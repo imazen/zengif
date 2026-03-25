@@ -159,6 +159,9 @@ pub struct Decoder<'a, R: Read> {
 
     /// Counter for total decompressed bytes output.
     bytes_decompressed: u64,
+
+    /// Cumulative animation duration in milliseconds (for max_animation_ms enforcement).
+    cumulative_duration_ms: u64,
 }
 
 // Stats is always owned by the decoder - no unsafe raw pointers.
@@ -259,6 +262,7 @@ impl<'a, R: Read> Decoder<'a, R> {
             metadata,
             bytes_read,
             bytes_decompressed: 0,
+            cumulative_duration_ms: 0,
         })
     }
 
@@ -415,6 +419,11 @@ impl<'a, R: Read> Decoder<'a, R> {
         let stats = &self.stats;
         let composed = self.screen.process_frame(&raw_frame, stats, &self.limits)?;
 
+        // Track cumulative animation duration (delay is in centiseconds)
+        self.cumulative_duration_ms += frame_info.delay as u64 * 10;
+        self.limits
+            .check_animation_duration(self.cumulative_duration_ms)?;
+
         self.frame_index += 1;
 
         // Update metadata with repeat value (parsed from NETSCAPE extension during frame read)
@@ -517,6 +526,11 @@ impl<'a, R: Read> Decoder<'a, R> {
         let (index, delay) = self
             .screen
             .process_frame_in_place(&raw_frame, stats, &self.limits)?;
+
+        // Track cumulative animation duration (delay is in centiseconds)
+        self.cumulative_duration_ms += frame_info.delay as u64 * 10;
+        self.limits
+            .check_animation_duration(self.cumulative_duration_ms)?;
 
         self.frame_index += 1;
 

@@ -50,6 +50,12 @@ fn limits_from_resource(rl: &ResourceLimits) -> Limits {
     if let Some(f) = rl.max_frames {
         limits.max_frame_count = Some(f as u64);
     }
+    if let Some(ms) = rl.max_animation_ms {
+        limits.max_animation_ms = Some(ms);
+    }
+    if let Some(ob) = rl.max_output_bytes {
+        limits.max_output_bytes = Some(ob);
+    }
     limits
 }
 
@@ -74,6 +80,12 @@ fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
     }
     if let Some(f) = rl.max_frames {
         limits.max_frame_count = Some(f as u64);
+    }
+    if let Some(ms) = rl.max_animation_ms {
+        limits.max_animation_ms = Some(ms);
+    }
+    if let Some(ob) = rl.max_output_bytes {
+        limits.max_output_bytes = Some(ob);
     }
     limits
 }
@@ -915,8 +927,19 @@ impl zencodec::decode::StreamingDecode for GifStreamingDecoder {
         let rows = self.batch_size.min(h - self.y);
         let start = self.y as usize * self.stride;
         let end = start + rows as usize * self.stride;
-        let slice = PixelSlice::new(&self.data[start..end], self.info.width, rows, self.stride, self.descriptor)
-            .map_err(|_| GifError::InvalidEncoderState { message: "streaming slice" }.start_at())?;
+        let slice = PixelSlice::new(
+            &self.data[start..end],
+            self.info.width,
+            rows,
+            self.stride,
+            self.descriptor,
+        )
+        .map_err(|_| {
+            GifError::InvalidEncoderState {
+                message: "streaming slice",
+            }
+            .start_at()
+        })?;
         let y = self.y;
         self.y += rows;
         Ok(Some((y, slice)))

@@ -50,6 +50,14 @@ pub struct Limits {
     /// Maximum decompression ratio (decompressed / compressed).
     /// Protection against zip bombs.
     pub max_decompression_ratio: Option<f64>,
+
+    /// Maximum total animation duration in milliseconds.
+    /// Checked cumulatively as frames are decoded or encoded.
+    pub max_animation_ms: Option<u64>,
+
+    /// Maximum encoded output size in bytes.
+    /// Checked after encoding completes.
+    pub max_output_bytes: Option<u64>,
 }
 
 impl Default for Limits {
@@ -61,6 +69,8 @@ impl Default for Limits {
     /// - Max file size: 100 MB
     /// - Max memory: 1 GB
     /// - Max decompression ratio: 1000x
+    /// - Max animation duration: none (unlimited)
+    /// - Max output bytes: none (unlimited)
     fn default() -> Self {
         Self {
             max_width: Some(16384),
@@ -70,6 +80,8 @@ impl Default for Limits {
             max_file_size: Some(100 * 1024 * 1024),
             max_memory: Some(1024 * 1024 * 1024),
             max_decompression_ratio: Some(1000.0),
+            max_animation_ms: None,
+            max_output_bytes: None,
         }
     }
 }
@@ -87,6 +99,8 @@ impl Limits {
             max_file_size: None,
             max_memory: None,
             max_decompression_ratio: None,
+            max_animation_ms: None,
+            max_output_bytes: None,
         }
     }
 
@@ -130,6 +144,20 @@ impl Limits {
     #[must_use]
     pub fn max_decompression_ratio(mut self, ratio: f64) -> Self {
         self.max_decompression_ratio = Some(ratio);
+        self
+    }
+
+    /// Set maximum total animation duration in milliseconds.
+    #[must_use]
+    pub fn max_animation_ms(mut self, ms: u64) -> Self {
+        self.max_animation_ms = Some(ms);
+        self
+    }
+
+    /// Set maximum encoded output size in bytes.
+    #[must_use]
+    pub fn max_output_bytes(mut self, bytes: u64) -> Self {
+        self.max_output_bytes = Some(bytes);
         self
     }
 
@@ -206,6 +234,29 @@ impl Limits {
                     max_ratio,
                 }));
             }
+        }
+        Ok(())
+    }
+
+    /// Check if cumulative animation duration is within limits.
+    pub fn check_animation_duration(&self, duration_ms: u64) -> Result<()> {
+        if let Some(max_ms) = self.max_animation_ms
+            && duration_ms > max_ms
+        {
+            return Err(at!(GifError::AnimationTooLong {
+                duration_ms,
+                max_ms,
+            }));
+        }
+        Ok(())
+    }
+
+    /// Check if encoded output size is within limits.
+    pub fn check_output_bytes(&self, size: u64) -> Result<()> {
+        if let Some(max) = self.max_output_bytes
+            && size > max
+        {
+            return Err(at!(GifError::OutputTooLarge { size, max }));
         }
         Ok(())
     }

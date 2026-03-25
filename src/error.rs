@@ -167,6 +167,24 @@ pub enum GifError {
         max_ratio: f64,
     },
 
+    /// Animation duration exceeds limit.
+    #[error("animation duration {duration_ms}ms exceeds limit {max_ms}ms")]
+    AnimationTooLong {
+        /// Actual cumulative duration in milliseconds.
+        duration_ms: u64,
+        /// Maximum allowed duration in milliseconds.
+        max_ms: u64,
+    },
+
+    /// Encoded output size exceeds limit.
+    #[error("output size {size} bytes exceeds limit {max} bytes")]
+    OutputTooLarge {
+        /// Actual output size in bytes.
+        size: u64,
+        /// Maximum allowed output size in bytes.
+        max: u64,
+    },
+
     // === Encoding Errors ===
     /// Frame dimensions don't match encoder canvas.
     #[error(
