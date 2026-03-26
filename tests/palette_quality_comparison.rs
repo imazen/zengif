@@ -1,10 +1,5 @@
 //! Test shared vs per-frame palette quality using SSIMULACRA2
-#![cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#![cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 #![allow(dead_code)]
 
 use imgref::ImgVec;

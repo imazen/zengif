@@ -1,9 +1,4 @@
-#![cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#![cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 //! Integration tests comparing quantizer quality using SSIMULACRA2.
 //!
 //! These tests encode real PNG images to GIF with different quantizers,
@@ -243,7 +238,6 @@ fn test_quantizer_quality_on_png(path: &Path) -> Vec<QuantizerResult> {
 
     let backends = [
         QuantizerBackend::Imagequant,
-        QuantizerBackend::Exoquant,
         QuantizerBackend::Quantizr,
         QuantizerBackend::ColorQuant,
     ];
@@ -255,12 +249,7 @@ fn test_quantizer_quality_on_png(path: &Path) -> Vec<QuantizerResult> {
 }
 
 // Only run these tests when at least one quantizer is available
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 mod quality_tests {
     use super::*;
     use std::path::PathBuf;
@@ -372,8 +361,8 @@ mod quality_tests {
 
         // Header
         println!(
-            "{:<40} {:>10} {:>10} {:>10} {:>10}",
-            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
+            "{:<40} {:>10} {:>10} {:>10}",
+            "Image", "imagequant", "quantizr", "color_quant"
         );
         println!("{}", "=".repeat(100));
 
@@ -407,8 +396,8 @@ mod quality_tests {
                 .collect();
 
             println!(
-                "{:<40} {:>10} {:>10} {:>10} {:>10}",
-                short_name, &scores[0], &scores[1], &scores[2], &scores[3],
+                "{:<40} {:>10} {:>10} {:>10}",
+                short_name, &scores[0], &scores[1], &scores[2],
             );
         }
 
@@ -416,7 +405,7 @@ mod quality_tests {
         println!("{}", "=".repeat(100));
         println!("\n=== SUMMARY ===\n");
 
-        let backends = ["imagequant", "exoquant", "quantizr", "color_quant"];
+        let backends = ["imagequant", "quantizr", "color_quant"];
 
         // SSIM2 (higher is better)
         println!("SSIMULACRA2 (higher is better, max 100):");
@@ -525,8 +514,8 @@ mod quality_tests {
 
         println!("\n=== Quantizer Quality Comparison (Kodak Images) ===\n");
         println!(
-            "{:<15} {:>12} {:>12} {:>12} {:>12}",
-            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
+            "{:<15} {:>12} {:>12} {:>12}",
+            "Image", "imagequant", "quantizr", "color_quant"
         );
         println!("{}", "-".repeat(67));
 
@@ -555,15 +544,15 @@ mod quality_tests {
                 .collect();
 
             println!(
-                "{:<15} {:>12} {:>12} {:>12} {:>12}",
-                image, &scores[0], &scores[1], &scores[2], &scores[3],
+                "{:<15} {:>12} {:>12} {:>12}",
+                image, &scores[0], &scores[1], &scores[2],
             );
         }
 
         // Print averages
         println!("{}", "-".repeat(67));
         println!(
-            "{:<15} {:>12} {:>12} {:>12} {:>12}",
+            "{:<15} {:>12} {:>12} {:>12}",
             "AVERAGE",
             agg.avg_ssim2(0)
                 .map(|v| format!("{:.1}", v))
@@ -572,9 +561,6 @@ mod quality_tests {
                 .map(|v| format!("{:.1}", v))
                 .unwrap_or_default(),
             agg.avg_ssim2(2)
-                .map(|v| format!("{:.1}", v))
-                .unwrap_or_default(),
-            agg.avg_ssim2(3)
                 .map(|v| format!("{:.1}", v))
                 .unwrap_or_default(),
         );
@@ -628,8 +614,8 @@ mod quality_tests {
 
         println!("\n=== Quantizer Output Size Comparison ===\n");
         println!(
-            "{:<15} {:>12} {:>12} {:>12} {:>12}",
-            "Image", "imagequant", "exoquant", "quantizr", "color_quant"
+            "{:<15} {:>12} {:>12} {:>12}",
+            "Image", "imagequant", "quantizr", "color_quant"
         );
         println!("{}", "-".repeat(67));
 
@@ -655,8 +641,8 @@ mod quality_tests {
                 .collect();
 
             println!(
-                "{:<15} {:>12} {:>12} {:>12} {:>12}",
-                image, &sizes[0], &sizes[1], &sizes[2], &sizes[3],
+                "{:<15} {:>12} {:>12} {:>12}",
+                image, &sizes[0], &sizes[1], &sizes[2],
             );
         }
     }

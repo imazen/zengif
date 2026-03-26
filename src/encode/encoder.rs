@@ -4,7 +4,6 @@
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 use super::config::default_buffer_frames;
@@ -12,7 +11,6 @@ use super::config::default_buffer_frames;
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 use super::palette::compute_remap_rmse;
@@ -107,7 +105,6 @@ pub struct Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     buffered_frames: Vec<FrameInput>,
@@ -117,7 +114,6 @@ pub struct Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     buffered_bytes: usize,
@@ -128,7 +124,6 @@ pub struct Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     computed_palette: Option<Vec<u8>>,
@@ -138,7 +133,6 @@ pub struct Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     quantizer: Box<dyn crate::quantize::QuantizerTrait>,
@@ -166,7 +160,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         let defer_encoder = req.config.shared_palette && req.config.global_palette.is_none();
@@ -174,7 +167,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         )))]
         let defer_encoder = false;
@@ -210,7 +202,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         #[allow(deprecated)] // quantizer_backend fallback for backward compat
@@ -245,7 +236,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             buffered_frames: Vec::new(),
@@ -253,7 +243,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             buffered_bytes: 0,
@@ -261,7 +250,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             computed_palette: None,
@@ -269,7 +257,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quantizer,
@@ -301,7 +288,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quality: 100, // Max quality for round-trip
@@ -309,7 +295,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             dithering: 0.0, // No dithering for round-trip (already dithered)
@@ -317,7 +302,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             shared_palette: false, // Will use global if available
@@ -325,7 +309,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             max_buffer_frames: default_buffer_frames(metadata.width, metadata.height),
@@ -333,7 +316,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             max_buffer_bytes: 64 * 1024 * 1024,
@@ -341,7 +323,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quantizer_backend: crate::quantize::QuantizerBackend::default(),
@@ -349,7 +330,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quantizer: None,
@@ -357,7 +337,6 @@ impl<'a> Encoder<'a> {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             palette_error_threshold: None, // Round-trip: always use global palette
@@ -468,7 +447,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         let total_frames = self.frame_index + self.buffered_frames.len();
@@ -476,7 +454,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         )))]
         let total_frames = self.frame_index;
@@ -493,7 +470,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         if self.config.shared_palette && self.computed_palette.is_none() {
@@ -509,7 +485,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn buffer_frame(&mut self, input: FrameInput) -> Result<()> {
@@ -533,7 +508,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn flush_buffer(&mut self) -> Result<()> {
@@ -613,7 +587,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
@@ -627,7 +600,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     )))]
     fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
@@ -642,7 +614,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     )))]
     fn prepare_frame_passthrough(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
@@ -731,7 +702,6 @@ impl<'a> Encoder<'a> {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
@@ -929,7 +899,6 @@ impl<'a> Encoder<'a> {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         self.flush_buffer()?;

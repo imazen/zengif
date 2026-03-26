@@ -20,12 +20,7 @@ use std::io::{self, Write};
 use std::time::Instant;
 
 use enough::Unstoppable;
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "color_quant",
-    feature = "exoquant-deprecated"
-))]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant",))]
 use zengif::EncoderConfig;
 #[cfg(any(feature = "imagequant", feature = "quantizr"))]
 use zengif::heuristics::{QuantizerType, estimate_encode};
@@ -244,12 +239,7 @@ fn profile_decode(
         })
         .collect();
 
-    #[cfg(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "color_quant",
-        feature = "exoquant-deprecated"
-    ))]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant",))]
     let gif_data = {
         let config = EncoderConfig::new();
         zengif::encode_gif(
@@ -263,12 +253,7 @@ fn profile_decode(
         .unwrap()
     };
 
-    #[cfg(not(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "color_quant",
-        feature = "exoquant-deprecated"
-    )))]
+    #[cfg(not(any(feature = "imagequant", feature = "quantizr", feature = "color_quant",)))]
     let gif_data = Vec::new();
 
     if gif_data.is_empty() {

@@ -155,7 +155,6 @@ pub(super) fn compute_frame_diff(
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub(super) fn compute_remap_rmse(original: &[Rgba], indices: &[u8], palette_rgb: &[u8]) -> f32 {

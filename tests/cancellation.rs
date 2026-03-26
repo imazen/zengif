@@ -3,12 +3,7 @@
 
 use almost_enough::{Stop, Stopper};
 use zengif::{Decoder, EncodeRequest, EncoderConfig, GifError, Limits};
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 use zengif::{FrameInput, Rgba};
 
 /// Create a minimal valid GIF.
@@ -99,12 +94,7 @@ fn encode_with_pre_cancelled_stopper() {
 }
 
 #[test]
-#[cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 fn encode_can_be_cancelled_between_frames() {
     let config = EncoderConfig::new();
     let width = 2u16;

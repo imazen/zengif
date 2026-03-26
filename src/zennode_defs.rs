@@ -132,7 +132,6 @@ impl EncodeGif {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         {
@@ -181,7 +180,6 @@ impl EncodeGif {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn parse_quantizer(&self) -> Option<crate::Quantizer> {

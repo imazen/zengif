@@ -20,7 +20,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub quality: u8,
@@ -31,7 +30,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub dithering: f32,
@@ -47,7 +45,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub shared_palette: bool,
@@ -58,7 +55,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub max_buffer_frames: usize,
@@ -69,7 +65,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub max_buffer_bytes: usize,
@@ -84,7 +79,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub quantizer_backend: crate::quantize::QuantizerBackend,
@@ -106,7 +100,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub quantizer: Option<crate::quantize::Quantizer>,
@@ -135,7 +128,6 @@ pub struct EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     pub palette_error_threshold: Option<f32>,
@@ -171,7 +163,6 @@ pub struct EncoderConfig {
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub(super) fn default_buffer_frames(width: u16, height: u16) -> usize {
@@ -201,7 +192,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quality: 80,
@@ -209,7 +199,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             dithering: 0.5, // Lower default for better compression
@@ -221,7 +210,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             shared_palette: true,
@@ -229,7 +217,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             max_buffer_frames: 32, // Will be updated when encoder is created
@@ -237,7 +224,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             max_buffer_bytes: 64 * 1024 * 1024, // 64 MB
@@ -245,7 +231,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quantizer_backend: crate::quantize::QuantizerBackend::default(),
@@ -253,7 +238,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             quantizer: None, // Use default auto-selection
@@ -261,7 +245,6 @@ impl EncoderConfig {
                 feature = "zenquant",
                 feature = "imagequant",
                 feature = "quantizr",
-                feature = "exoquant-deprecated",
                 feature = "color_quant"
             ))]
             palette_error_threshold: Some(5.0), // Hybrid: per-frame fallback when RMSE > 5
@@ -293,7 +276,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -329,7 +311,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -364,7 +345,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -382,7 +362,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -404,7 +383,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -422,7 +400,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -440,7 +417,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -461,7 +437,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -479,7 +454,6 @@ impl EncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]

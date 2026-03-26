@@ -1,7 +1,8 @@
 //! Benchmarks for zengif codec operations
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
+use zenbench::criterion_compat::*;
+use zenbench::{criterion_group, criterion_main};
 use zengif::{
     Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable,
 };

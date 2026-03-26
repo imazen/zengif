@@ -125,7 +125,6 @@
 //! | `imagequant` | **Best** | Medium | **Smallest** | GPL-3.0-or-later | **Recommended** - LZW-aware dithering |
 //! | `quantizr` | Good | Fast | Medium | MIT | Best MIT-licensed option |
 //! | `color_quant` | Good | **Fastest** | Large | MIT | High-throughput servers |
-//! | `exoquant-deprecated` | Good | Slow | Medium | MIT | Legacy compatibility only |
 //!
 //! Configure the quantizer using the `Quantizer` enum:
 //!
@@ -189,7 +188,6 @@ pub use encode::{EncodeRequest, Encoder, EncoderConfig, PaletteStrategy, encode_
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     )
 ))]
@@ -198,8 +196,6 @@ pub use error::{DecodeError, EncodeError, GifError, Result};
 pub use limits::Limits;
 #[cfg(all(feature = "std", feature = "color_quant"))]
 pub use quantize::ColorQuantQuantizer;
-#[cfg(all(feature = "std", feature = "exoquant-deprecated"))]
-pub use quantize::ExoquantQuantizer;
 #[cfg(all(feature = "std", feature = "imagequant"))]
 pub use quantize::ImagequantQuantizer;
 #[cfg(all(
@@ -208,7 +204,6 @@ pub use quantize::ImagequantQuantizer;
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     )
 ))]

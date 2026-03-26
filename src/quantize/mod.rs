@@ -27,8 +27,6 @@ use enough::Stop;
 // Backend implementations
 #[cfg(feature = "color_quant")]
 mod color_quant_impl;
-#[cfg(feature = "exoquant-deprecated")]
-mod exoquant_impl;
 #[cfg(feature = "imagequant")]
 mod imagequant_impl;
 #[cfg(feature = "quantette")]
@@ -41,8 +39,6 @@ mod zenquant_impl;
 // Re-export backend quantizers
 #[cfg(feature = "color_quant")]
 pub use color_quant_impl::ColorQuantQuantizer;
-#[cfg(feature = "exoquant-deprecated")]
-pub use exoquant_impl::ExoquantQuantizer;
 #[cfg(feature = "imagequant")]
 pub use imagequant_impl::ImagequantQuantizer;
 #[cfg(feature = "quantette")]
@@ -149,7 +145,6 @@ impl QuantizeConfig {
     feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub enum Quantizer {
@@ -215,28 +210,12 @@ pub enum Quantizer {
         /// Default: 10
         sample_factor: i32,
     },
-
-    /// Exoquant: K-Means quantizer (DEPRECATED).
-    ///
-    /// **Deprecated**: Use `Quantizr` instead, which is faster AND better quality.
-    /// This backend is kept only for compatibility and will be removed in a future version.
-    #[cfg(feature = "exoquant-deprecated")]
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use Quantizr instead - faster and better quality"
-    )]
-    Exoquant {
-        /// Dithering level (0.0 = none, 1.0 = full).
-        /// Default: 0.5
-        dithering: f32,
-    },
 }
 
 #[cfg(any(
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 impl Quantizer {
@@ -349,7 +328,7 @@ impl Quantizer {
 
     /// Create the default quantizer based on available features.
     ///
-    /// Priority: zenquant > quantette > imagequant > quantizr > color_quant > exoquant-deprecated
+    /// Priority: zenquant > quantette > imagequant > quantizr > color_quant
     #[must_use]
     #[allow(clippy::needless_return)] // Returns needed for conditional compilation branches
     pub fn auto() -> Self {
@@ -388,17 +367,6 @@ impl Quantizer {
         {
             return Self::color_quant();
         }
-        #[cfg(all(
-            feature = "exoquant-deprecated",
-            not(feature = "zenquant"),
-            not(feature = "imagequant"),
-            not(feature = "quantizr"),
-            not(feature = "color_quant")
-        ))]
-        {
-            #[allow(deprecated)]
-            return Self::Exoquant { dithering: 0.5 };
-        }
     }
 
     /// Create the backend quantizer instance.
@@ -414,9 +382,6 @@ impl Quantizer {
             Self::Imagequant { .. } => Box::new(ImagequantQuantizer::new()),
             #[cfg(feature = "color_quant")]
             Self::ColorQuant { .. } => Box::new(ColorQuantQuantizer::new()),
-            #[cfg(feature = "exoquant-deprecated")]
-            #[allow(deprecated)]
-            Self::Exoquant { .. } => Box::new(ExoquantQuantizer::new()),
         }
     }
 }
@@ -425,7 +390,6 @@ impl Quantizer {
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 impl Default for Quantizer {
@@ -442,7 +406,6 @@ impl Default for Quantizer {
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub(crate) fn compute_sample_indices(
@@ -575,7 +538,7 @@ pub trait QuantizerTrait: Send {
 /// Used to select which quantizer implementation to use at runtime.
 ///
 /// The `Default` impl picks the best *available* backend at compile time:
-/// zenquant > imagequant > quantizr > exoquant > color_quant.
+/// zenquant > imagequant > quantizr > color_quant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum QuantizerBackend {
@@ -585,9 +548,6 @@ pub enum QuantizerBackend {
     /// Use imagequant (good quality, best compression, GPL licensed).
     /// Requires `imagequant` feature.
     Imagequant,
-    /// Use exoquant (high quality K-Means, MIT licensed).
-    /// Requires `exoquant` feature.
-    Exoquant,
     /// Use quantizr (fast, MIT licensed).
     /// Requires `quantizr` feature.
     Quantizr,
@@ -611,10 +571,6 @@ impl Default for QuantizerBackend {
         {
             return Self::Quantizr;
         }
-        #[cfg(feature = "exoquant-deprecated")]
-        {
-            return Self::Exoquant;
-        }
         #[cfg(feature = "color_quant")]
         {
             return Self::ColorQuant;
@@ -623,7 +579,6 @@ impl Default for QuantizerBackend {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         )))]
         {
@@ -651,11 +606,6 @@ impl QuantizerBackend {
             #[cfg(not(feature = "imagequant"))]
             QuantizerBackend::Imagequant => None,
 
-            #[cfg(feature = "exoquant-deprecated")]
-            QuantizerBackend::Exoquant => Some(Box::new(ExoquantQuantizer::new())),
-            #[cfg(not(feature = "exoquant-deprecated"))]
-            QuantizerBackend::Exoquant => None,
-
             #[cfg(feature = "quantizr")]
             QuantizerBackend::Quantizr => Some(Box::new(QuantizrQuantizer::new())),
             #[cfg(not(feature = "quantizr"))]
@@ -674,7 +624,6 @@ impl QuantizerBackend {
         match self {
             QuantizerBackend::Zenquant => cfg!(feature = "zenquant"),
             QuantizerBackend::Imagequant => cfg!(feature = "imagequant"),
-            QuantizerBackend::Exoquant => cfg!(feature = "exoquant-deprecated"),
             QuantizerBackend::Quantizr => cfg!(feature = "quantizr"),
             QuantizerBackend::ColorQuant => cfg!(feature = "color_quant"),
         }
@@ -686,12 +635,7 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    ))]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_all_frames() {
         // None means use all frames
@@ -702,12 +646,7 @@ mod tests {
         assert_eq!(compute_sample_indices(3, None), vec![0, 1, 2]);
     }
 
-    #[cfg(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    ))]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_more_than_total() {
         // max_samples >= total returns all frames
@@ -715,12 +654,7 @@ mod tests {
         assert_eq!(compute_sample_indices(5, Some(10)), vec![0, 1, 2, 3, 4]);
     }
 
-    #[cfg(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    ))]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_uniform_distribution() {
         // Sample 3 from 10: should be 0, 4 or 5, 9
@@ -730,12 +664,7 @@ mod tests {
         assert_eq!(indices[2], 9); // Always includes last
     }
 
-    #[cfg(any(
-        feature = "imagequant",
-        feature = "quantizr",
-        feature = "exoquant-deprecated",
-        feature = "color_quant"
-    ))]
+    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_edge_cases() {
         // Zero samples

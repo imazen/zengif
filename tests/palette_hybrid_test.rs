@@ -1,10 +1,5 @@
 //! Test hybrid palette mode (shared with per-frame fallback)
-#![cfg(any(
-    feature = "imagequant",
-    feature = "quantizr",
-    feature = "exoquant-deprecated",
-    feature = "color_quant"
-))]
+#![cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
 
 use imgref::ImgVec;
 use std::fs;

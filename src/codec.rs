@@ -115,7 +115,6 @@ static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
@@ -136,7 +135,6 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 )))]
 static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
@@ -190,7 +188,6 @@ impl GifEncoderConfig {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         {
@@ -211,7 +208,6 @@ impl GifEncoderConfig {
             feature = "zenquant",
             feature = "imagequant",
             feature = "quantizr",
-            feature = "exoquant-deprecated",
             feature = "color_quant"
         ))]
         {
@@ -242,7 +238,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -258,7 +253,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -274,7 +268,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -290,7 +283,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -306,7 +298,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -326,7 +317,6 @@ impl GifEncoderConfig {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[must_use]
@@ -1517,7 +1507,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1560,7 +1549,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1583,7 +1571,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1606,7 +1593,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1626,7 +1612,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1652,7 +1637,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1680,7 +1664,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1705,7 +1688,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1728,7 +1710,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]

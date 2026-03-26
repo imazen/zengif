@@ -33,10 +33,6 @@ quantizr = ["dep:quantizr"]
 imagequant = ["dep:imagequant"]
 # color_quant: Fastest encoder, MIT licensed (good for high-throughput)
 color_quant = ["dep:color_quant"]
-# exoquant-deprecated: Slow K-Means quantizer, kept for compatibility
-# Use quantizr instead (faster AND better quality)
-exoquant-deprecated = ["dep:exoquant"]
-
 # RGB/imgref ecosystem interop
 imgref-interop = ["imgref"]
 
@@ -69,7 +65,6 @@ imagequant = { version = "4.4.1", optional = true }
 quantizr = { version = "1.4.3", optional = true }
 zenquant = { version = "0.1.1", optional = true, default-features = false, features = ["std"] }
 quantette = { version = "0.5.1", optional = true, default-features = false, features = ["kmeans", "std"] }
-exoquant = { version = "0.2.0", optional = true }
 color_quant = { version = "1.1.0", optional = true }
 
 # RGB/imgref ecosystem interop (optional)
@@ -85,7 +80,7 @@ archmage = { version = "0.9.12", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
+zenbench = { version = "0.1.0", features = ["criterion-compat"] }
 # Quality metrics for quantizer comparison tests
 fast-ssim2 = { version = "0.7.0", features = ["imgref"] }
 # PNG decoding for quantizer quality tests

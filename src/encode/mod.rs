@@ -37,7 +37,6 @@
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 use std::borrow::Cow;
@@ -52,7 +51,6 @@ use crate::types::FrameInput;
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 use crate::types::{Repeat, Rgba};
@@ -130,7 +128,6 @@ pub fn encode_gif(
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub fn encode_gif_shared_palette(
@@ -141,7 +138,7 @@ pub fn encode_gif_shared_palette(
     limits: Limits,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>> {
-    // Select quantizer based on available features (priority: zenquant > imagequant > quantizr > color_quant > exoquant)
+    // Select quantizer based on available features (priority: zenquant > imagequant > quantizr > color_quant)
     #[cfg(feature = "zenquant")]
     let quantizer = crate::quantize::ZenquantQuantizer::new();
 
@@ -163,15 +160,6 @@ pub fn encode_gif_shared_palette(
     ))]
     let quantizer = crate::quantize::ColorQuantQuantizer::new();
 
-    #[cfg(all(
-        feature = "exoquant-deprecated",
-        not(feature = "zenquant"),
-        not(feature = "imagequant"),
-        not(feature = "quantizr"),
-        not(feature = "color_quant")
-    ))]
-    let quantizer = crate::quantize::ExoquantQuantizer::new();
-
     encode_gif_with_quantizer(frames, width, height, config, limits, stop, quantizer)
 }
 
@@ -185,7 +173,6 @@ pub fn encode_gif_shared_palette(
     feature = "zenquant",
     feature = "imagequant",
     feature = "quantizr",
-    feature = "exoquant-deprecated",
     feature = "color_quant"
 ))]
 pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
@@ -295,7 +282,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     use super::config::default_buffer_frames;
@@ -304,7 +290,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     use super::palette::compute_remap_rmse;
@@ -322,7 +307,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn encode_single_frame() {
@@ -351,7 +335,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn encode_multiple_frames() {
@@ -399,7 +382,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn encode_convenience_function() {
@@ -419,7 +401,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn encode_with_limits() {
@@ -543,7 +524,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     fn frame_diff_produces_smaller_output() {
@@ -597,7 +577,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -648,7 +627,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -705,7 +683,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -755,7 +732,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -771,7 +747,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -810,7 +785,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -848,7 +822,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -926,7 +899,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -997,7 +969,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1039,7 +1010,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1063,7 +1033,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
@@ -1080,7 +1049,6 @@ mod tests {
         feature = "zenquant",
         feature = "imagequant",
         feature = "quantizr",
-        feature = "exoquant-deprecated",
         feature = "color_quant"
     ))]
     #[test]
