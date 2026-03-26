@@ -22,32 +22,36 @@ use crate::codec::GifEncoderConfig;
 /// **RIAPI**: `?gif.quality=80&gif.dithering=0.5&gif.loop=infinite`
 /// **JSON**: `{ "quality": 80, "dithering": 0.5, "loop_count": "infinite" }`
 ///
+/// Optional fields (`Option<T>`) default to `None`, meaning "unset — use the
+/// base config's value." This enables correct overlay semantics: only
+/// user-specified parameters overwrite the base config.
+///
 /// Convert to [`GifEncoderConfig`] via [`to_encoder_config()`](EncodeGif::to_encoder_config).
 #[derive(Node, Clone, Debug)]
 #[node(id = "zengif.encode", group = Encode, role = Encode)]
 #[node(tags("gif", "encode", "animation", "palette"))]
 pub struct EncodeGif {
     /// Palette quality (1-100). Higher values produce better-looking palettes
-    /// at the cost of larger files and slower encoding.
+    /// at the cost of larger files and slower encoding. None = use base config.
     #[param(range(1.0..=100.0), default = 80.0, step = 1.0)]
     #[param(section = "Quality", label = "Palette Quality")]
     #[kv("gif.quality")]
-    pub quality: f32,
+    pub quality: Option<f32>,
 
     /// Dithering level (0.0 = none, 1.0 = full). Lower values produce less
-    /// noise and better LZW compression. Use 0.0 for re-encoding already-dithered content.
+    /// noise and better LZW compression. None = use base config.
     #[param(range(0.0..=1.0), default = 0.5, step = 0.05)]
     #[param(section = "Quality", label = "Dithering")]
     #[kv("gif.dithering", "gif.dither")]
-    pub dithering: f32,
+    pub dithering: Option<f32>,
 
     /// Lossy frame differencing tolerance per channel (0-255, 0 = lossless).
     /// Pixels within tolerance of the previous frame are marked unchanged,
-    /// reducing dirty region size and improving compression.
+    /// reducing dirty region size and improving compression. None = use base config.
     #[param(range(0.0..=255.0), default = 0.0, identity = 0.0, step = 1.0)]
     #[param(section = "Quality", label = "Lossy Tolerance")]
     #[kv("gif.lossy")]
-    pub lossy_tolerance: f32,
+    pub lossy_tolerance: Option<f32>,
 
     /// Quantizer backend selection. "auto" picks the best available.
     /// Other values: "zenquant", "quantette", "imagequant", "quantizr", "color_quant".
@@ -58,17 +62,19 @@ pub struct EncodeGif {
 
     /// Use a shared palette across all animation frames. Reduces flicker
     /// and improves LZW compression at the cost of per-frame color accuracy.
+    /// None = use base config.
     #[param(default = true)]
     #[param(section = "Animation", label = "Shared Palette")]
     #[kv("gif.shared_palette")]
-    pub shared_palette: bool,
+    pub shared_palette: Option<bool>,
 
     /// Per-frame palette error threshold (RMSE, 0-255 RGB scale) for hybrid
     /// palette mode. Frames exceeding this threshold get their own local palette.
+    /// None = use base config.
     #[param(range(0.0..=50.0), default = 5.0, step = 0.5)]
     #[param(section = "Animation", label = "Palette Error Threshold")]
     #[kv("gif.palette_threshold")]
-    pub palette_error_threshold: f32,
+    pub palette_error_threshold: Option<f32>,
 
     /// Animation loop behavior: "infinite", "once", or a numeric repeat count.
     #[param(default = "infinite")]
@@ -77,24 +83,24 @@ pub struct EncodeGif {
     pub loop_count: String,
 
     /// Enable transparency optimization: unchanged pixels between frames
-    /// are encoded as transparent, improving compression.
+    /// are encoded as transparent, improving compression. None = use base config.
     #[param(default = true)]
     #[param(section = "Advanced", label = "Transparency Optimization")]
     #[kv("gif.transparency")]
-    pub transparency_optimization: bool,
+    pub transparency_optimization: Option<bool>,
 }
 
 impl Default for EncodeGif {
     fn default() -> Self {
         Self {
-            quality: 80.0,
-            dithering: 0.5,
-            lossy_tolerance: 0.0,
+            quality: None,
+            dithering: None,
+            lossy_tolerance: None,
             quantizer: String::from("auto"),
-            shared_palette: true,
-            palette_error_threshold: 5.0,
+            shared_palette: None,
+            palette_error_threshold: None,
             loop_count: String::from("infinite"),
-            transparency_optimization: true,
+            transparency_optimization: None,
         }
     }
 }
@@ -103,19 +109,23 @@ impl EncodeGif {
     /// Apply this node's parameters on top of an existing [`GifEncoderConfig`].
     ///
     /// This is the preferred entry point when a pipeline already has a base
-    /// config and the node should overlay user-specified values.
+    /// config and the node should overlay user-specified values. Only fields
+    /// that are `Some` overwrite the base config; `None` fields are skipped.
     pub fn apply(&self, mut config: GifEncoderConfig) -> GifEncoderConfig {
-        // Quality
-        config = config.with_quality(self.quality);
+        if let Some(quality) = self.quality {
+            config = config.with_quality(quality);
+        }
 
-        // Lossy tolerance (f32 -> u8)
-        config = config.with_lossy_tolerance(self.lossy_tolerance.clamp(0.0, 255.0) as u8);
+        if let Some(lossy) = self.lossy_tolerance {
+            config = config.with_lossy_tolerance(lossy.clamp(0.0, 255.0) as u8);
+        }
 
-        // Loop count
+        // Loop count is always a String (not optional) — always apply.
         config = config.with_repeat(self.parse_loop_count());
 
-        // Transparency
-        config = config.with_transparency(self.transparency_optimization);
+        if let Some(transparency) = self.transparency_optimization {
+            config = config.with_transparency(transparency);
+        }
 
         // Quantizer-gated settings
         #[cfg(any(
@@ -126,9 +136,15 @@ impl EncodeGif {
             feature = "color_quant"
         ))]
         {
-            config = config.with_dithering(self.dithering);
-            config = config.with_shared_palette(self.shared_palette);
-            config = config.with_palette_error_threshold(Some(self.palette_error_threshold));
+            if let Some(dithering) = self.dithering {
+                config = config.with_dithering(dithering);
+            }
+            if let Some(shared) = self.shared_palette {
+                config = config.with_shared_palette(shared);
+            }
+            if let Some(threshold) = self.palette_error_threshold {
+                config = config.with_palette_error_threshold(Some(threshold));
+            }
 
             if let Some(q) = self.parse_quantizer() {
                 config = config.with_quantizer(q);
@@ -218,36 +234,51 @@ mod tests {
         assert!(param_names.contains(&"palette_error_threshold"));
         assert!(param_names.contains(&"loop_count"));
         assert!(param_names.contains(&"transparency_optimization"));
+
+        // Optional fields are marked optional in the schema
+        let optional_names = [
+            "quality",
+            "dithering",
+            "lossy_tolerance",
+            "shared_palette",
+            "palette_error_threshold",
+            "transparency_optimization",
+        ];
+        let non_optional_names = ["quantizer", "loop_count"];
+        for p in schema.params {
+            if optional_names.contains(&p.name) {
+                assert!(p.optional, "param {} should be optional", p.name);
+            }
+            if non_optional_names.contains(&p.name) {
+                assert!(!p.optional, "param {} should not be optional", p.name);
+            }
+        }
     }
 
     #[test]
     fn default_values() {
         let node = ENCODE_GIF_NODE.create_default().unwrap();
-        assert_eq!(node.get_param("quality"), Some(ParamValue::F32(80.0)));
-        assert_eq!(node.get_param("dithering"), Some(ParamValue::F32(0.5)));
+        // Optional fields default to None (unset)
+        assert_eq!(node.get_param("quality"), Some(ParamValue::None));
+        assert_eq!(node.get_param("dithering"), Some(ParamValue::None));
+        assert_eq!(node.get_param("lossy_tolerance"), Some(ParamValue::None));
+        assert_eq!(node.get_param("shared_palette"), Some(ParamValue::None));
         assert_eq!(
-            node.get_param("lossy_tolerance"),
-            Some(ParamValue::F32(0.0))
+            node.get_param("palette_error_threshold"),
+            Some(ParamValue::None)
         );
+        assert_eq!(
+            node.get_param("transparency_optimization"),
+            Some(ParamValue::None)
+        );
+        // Non-optional fields have concrete defaults
         assert_eq!(
             node.get_param("quantizer"),
             Some(ParamValue::Str("auto".into()))
         );
         assert_eq!(
-            node.get_param("shared_palette"),
-            Some(ParamValue::Bool(true))
-        );
-        assert_eq!(
-            node.get_param("palette_error_threshold"),
-            Some(ParamValue::F32(5.0))
-        );
-        assert_eq!(
             node.get_param("loop_count"),
             Some(ParamValue::Str("infinite".into()))
-        );
-        assert_eq!(
-            node.get_param("transparency_optimization"),
-            Some(ParamValue::Bool(true))
         );
     }
 
@@ -324,8 +355,8 @@ mod tests {
     fn downcast() {
         let node = ENCODE_GIF_NODE.create_default().unwrap();
         let enc = node.as_any().downcast_ref::<EncodeGif>().unwrap();
-        assert_eq!(enc.quality, 80.0);
-        assert!(enc.transparency_optimization);
+        assert_eq!(enc.quality, None);
+        assert_eq!(enc.transparency_optimization, None);
     }
 
     #[test]
@@ -360,6 +391,12 @@ mod tests {
         assert_eq!(
             node.get_param("transparency_optimization"),
             Some(ParamValue::Bool(false))
+        );
+        // Unset optional fields remain None
+        assert_eq!(node.get_param("shared_palette"), Some(ParamValue::None));
+        assert_eq!(
+            node.get_param("palette_error_threshold"),
+            Some(ParamValue::None)
         );
 
         // Round-trip through export/import
