@@ -823,7 +823,7 @@ impl Default for GifDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for GifDecoderConfig {
     type Error = At<GifError>;
-    type Job = GifDecodeJob;
+    type Job<'a> = GifDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Gif]
@@ -837,7 +837,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         &GIF_DECODE_CAPS
     }
 
-    fn job(self) -> GifDecodeJob {
+    fn job<'a>(self) -> Self::Job<'a> {
         GifDecodeJob {
             config: self,
             stop: None,
