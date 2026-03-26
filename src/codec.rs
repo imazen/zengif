@@ -799,19 +799,19 @@ impl GifDecoderConfig {
     /// Convenience: probe image header without decoding pixels.
     pub fn probe_header(&self, data: &[u8]) -> Result<ImageInfo, At<GifError>> {
         use zencodec::decode::DecodeJob as _;
-        self.job().probe(data)
+        self.clone().job().probe(data)
     }
 
     /// Convenience: probe with full parse (counts all frames).
     pub fn probe_full(&self, data: &[u8]) -> Result<ImageInfo, At<GifError>> {
         use zencodec::decode::DecodeJob as _;
-        self.job().probe_full(data)
+        self.clone().job().probe_full(data)
     }
 
     /// Convenience: decode with default job settings.
     pub fn decode(&self, data: &[u8]) -> Result<DecodeOutput, At<GifError>> {
         use zencodec::decode::{Decode as _, DecodeJob as _};
-        self.job().decoder(Cow::Borrowed(data), &[])?.decode()
+        self.clone().job().decoder(Cow::Borrowed(data), &[])?.decode()
     }
 }
 
@@ -823,7 +823,7 @@ impl Default for GifDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for GifDecoderConfig {
     type Error = At<GifError>;
-    type Job<'a> = GifDecodeJob<'a>;
+    type Job = GifDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Gif]
@@ -837,7 +837,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         &GIF_DECODE_CAPS
     }
 
-    fn job(&self) -> GifDecodeJob<'_> {
+    fn job(self) -> GifDecodeJob {
         GifDecodeJob {
             config: self,
             stop: None,
@@ -851,15 +851,15 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 // ── GifDecodeJob ─────────────────────────────────────────────────────
 
 /// Per-operation GIF decode job.
-pub struct GifDecodeJob<'a> {
-    config: &'a GifDecoderConfig,
+pub struct GifDecodeJob {
+    config: GifDecoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
     policy: Option<zencodec::decode::DecodePolicy>,
     start_frame_index: u32,
 }
 
-impl<'a> GifDecodeJob<'a> {
+impl GifDecodeJob {
     fn build_limits(&self) -> Limits {
         let base = limits_from_resource(&self.config.limits);
         match self.limits {
@@ -940,7 +940,7 @@ impl zencodec::decode::StreamingDecode for GifStreamingDecoder {
     }
 }
 
-impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob<'a> {
+impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     type Error = At<GifError>;
     type Dec = GifDecoder<'a>;
     type StreamDec = GifStreamingDecoder;
