@@ -157,12 +157,12 @@ The `std` feature (default on) controls std dependency. Without it:
 - **Location**: `/home/lilith/work/imageflow/imageflow_core/src/codecs/gif/`
 - **Files**: mod.rs, disposal.rs, screen.rs, subimage.rs, bgra.rs
 - **Study**: Streaming decode pattern, dimension validation
-- **Issues to fix**:
-  - Animation transparency doesn't work correctly during encoding
-  - Output sizes are terrible (no proper quantization)
-  - TODO comments indicate incomplete disposal/transparency handling
-  - Allocates copy every blit for Previous disposal
-  - No proper cancellation support
+- **Gaps zengif addresses**:
+  - Animation transparency had separate encode/decode paths
+  - No quantization applied to output
+  - Disposal and transparency handling had TODO comments
+  - Previous disposal allocated a copy per blit
+  - No cancellation support
 
 ### 4. gifski (1.34.0)
 - **Location**: https://github.com/ImageOptim/gifski
