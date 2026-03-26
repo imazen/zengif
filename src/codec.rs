@@ -1185,7 +1185,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
 
 /// Single-image GIF decoder (decodes first frame).
 pub struct GifDecoder<'a> {
-    config: &'a GifDecoderConfig,
+    config: GifDecoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
     data: Cow<'a, [u8]>,
