@@ -772,7 +772,11 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
             .start_at());
         }
 
-        let data = enc.finish()?;
+        let mut data = enc.finish()?;
+        // Ensure GIF trailer byte is present.
+        if data.last() != Some(&0x3B) {
+            data.push(0x3B);
+        }
         Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 }

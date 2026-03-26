@@ -905,7 +905,7 @@ impl<'a> Encoder<'a> {
 
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.
-        let output = if !self.buffer.is_empty() {
+        let mut output = if !self.buffer.is_empty() {
             self.buffer
         } else {
             self.encoder
@@ -913,6 +913,11 @@ impl<'a> Encoder<'a> {
                 .into_inner()
                 .map_err(|e| at!(GifError::from(e)))?
         };
+
+        // Ensure GIF trailer byte is present.
+        if output.last() != Some(&0x3B) {
+            output.push(0x3B);
+        }
 
         // Check output size against limits
         self.limits.check_output_bytes(output.len() as u64)?;
