@@ -1,12 +1,11 @@
-# zengif
+# zengif ![CI](https://img.shields.io/github/actions/workflow/status/imazen/zengif/ci.yml?style=flat-square&label=CI) ![crates.io](https://img.shields.io/crates/v/zengif?style=flat-square) ![docs.rs](https://img.shields.io/docsrs/zengif?style=flat-square) ![codecov](https://img.shields.io/codecov/c/github/imazen/zengif?style=flat-square) ![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=flat-square) ![license](https://img.shields.io/crates/l/zengif?style=flat-square)
 
-[![CI](https://github.com/imazen/zengif/actions/workflows/ci.yml/badge.svg)](https://github.com/imazen/zengif/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/zengif.svg)](https://crates.io/crates/zengif)
-[![Documentation](https://docs.rs/zengif/badge.svg)](https://docs.rs/zengif)
-[![codecov](https://codecov.io/gh/imazen/zengif/branch/main/graph/badge.svg)](https://codecov.io/gh/imazen/zengif)
-[![License](https://img.shields.io/crates/l/zengif.svg)](LICENSE-MIT)
+A GIF codec built for servers: streaming, memory-bounded, and thoroughly tested.
 
-A GIF codec built for servers: streaming, memory-safe, and production-ready.
+> **Licensing note:** The default features include `zenquant` (AGPL-3.0-or-later).
+> A plain `cargo add zengif` pulls in AGPL-licensed code. For MIT/Apache-2.0-only
+> licensing, use `default-features = false` and select a permissive quantizer
+> (e.g., `quantette`, `quantizr`, or `color_quant`). See [Quantizer Options](#quantizer-options).
 
 ## Getting Started
 
@@ -115,6 +114,7 @@ The decoder will return an error before allocating if limits would be exceeded.
 For web servers, you often need to stop processing if the client disconnects:
 
 ```rust
+// `almost-enough` provides a thread-safe Stopper (add it separately: cargo add almost-enough)
 use almost_enough::Stopper;
 use zengif::{Decoder, Limits};
 
@@ -125,8 +125,10 @@ let stop_for_handler = stop.clone();
 stop_for_handler.cancel();
 
 // The decoder will return GifError::Cancelled at the next check point
-let mut decoder = Decoder::new(reader, Limits::default(), stop)?;
+let mut decoder = Decoder::new(reader, Limits::default(), &stop)?;
 ```
+
+Any type implementing `enough::Stop` works here. zengif re-exports `Unstoppable` for cases where cancellation isn't needed.
 
 ## Error Diagnostics
 
@@ -143,32 +145,47 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
 
 ## High-Quality Encoding
 
-For the smallest file sizes, enable the `imagequant` feature:
-
-```bash
-cargo add zengif --features imagequant
-```
+With default features, `zenquant` is enabled and selected automatically:
 
 ```rust
 use zengif::{EncoderConfig, Quantizer};
 
 let config = EncoderConfig::new()
-    .quantizer(Quantizer::imagequant());  // Best quality, smallest files
+    .quantizer(Quantizer::auto());  // Picks best available (zenquant by default)
+```
+
+To use a specific quantizer, enable its feature and select it explicitly:
+
+```bash
+cargo add zengif --no-default-features --features std,imagequant
+```
+
+```rust
+let config = EncoderConfig::new()
+    .quantizer(Quantizer::imagequant());
 ```
 
 ### Quantizer Options
 
-| Feature | License | Quality | Speed |
-|---------|---------|---------|-------|
-| `imagequant` | GPL-3.0* | Best | Medium |
-| `quantizr` | MIT | Good | Fast |
-| `color_quant` | MIT | Good | Fastest |
+Auto-selection priority (top to bottom):
 
-*[imagequant](https://github.com/ImageOptim/libimagequant) is GPL-3.0-or-later. [Commercial license available from upstream](https://supso.org/projects/pngquant).
+| Feature | License | Quality | Speed | Notes |
+|---------|---------|---------|-------|-------|
+| `zenquant` (default) | AGPL-3.0 | Best perceptual | Medium | Butteraugli/SSIMULACRA2 metrics |
+| `quantette` | MIT/Apache-2.0 | Very good | Fast | Oklab k-means |
+| `imagequant` | GPL-3.0* | Good, smallest files | Medium | Compressible dithering patterns |
+| `quantizr` | MIT | Good | Fast | |
+| `color_quant` | MIT | Acceptable | Fastest | Good for high-throughput |
 
-**Why imagequant produces smaller files:** imagequant's superior quality comes from more compressible dithering and quantization patterns. The resulting palettes compress dramatically better in the LZW stage, producing smaller final GIF files compared to other quantizers at the same visual quality.
+*[imagequant](https://github.com/ImageOptim/libimagequant) is GPL-3.0-or-later. [Commercial license available from upstream](https://pngquant.org).
 
-**Without any quantizer feature, zengif is MIT/Apache-2.0 licensed.**
+**Default features include AGPL code.** `cargo add zengif` enables `zenquant`, which is AGPL-3.0-or-later. For permissive-only licensing, disable default features and pick a quantizer:
+
+```toml
+zengif = { version = "0.6", default-features = false, features = ["std", "quantette"] }
+```
+
+Without *any* quantizer feature, zengif is MIT/Apache-2.0 but encoding requires pre-indexed frames.
 
 ## no_std / WASM
 
@@ -182,7 +199,7 @@ You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec. Usefu
 
 ## Performance
 
-On AMD Ryzen 9 5900X:
+Approximate throughput on AMD Ryzen 9 5900X (single-threaded, not independently verified -- run `benches/codec.rs` to reproduce):
 
 | Operation | Throughput |
 |-----------|------------|
@@ -192,9 +209,9 @@ On AMD Ryzen 9 5900X:
 
 ## License
 
-MIT or Apache-2.0, at your option.
+zengif itself is MIT or Apache-2.0, at your option.
 
-The optional `imagequant` feature uses [libimagequant](https://github.com/ImageOptim/libimagequant) (GPL-3.0-or-later). A [commercial license is available from the upstream author](https://supso.org/projects/pngquant) for closed-source use. Alternatively, use `quantizr` or `color_quant` for fully permissive licensing.
+**Default features pull in AGPL code.** The `zenquant` quantizer (enabled by default) is AGPL-3.0-or-later. The `imagequant` quantizer is GPL-3.0-or-later ([commercial license available from upstream](https://pngquant.org)). For fully permissive licensing, disable defaults and use `quantette`, `quantizr`, or `color_quant`.
 
 ---
 
