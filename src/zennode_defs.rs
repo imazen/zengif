@@ -324,9 +324,10 @@ mod tests {
 
     #[test]
     fn parse_loop_count_variants() {
-        let mut node = EncodeGif::default();
-
-        node.loop_count = String::from("infinite");
+        let mut node = EncodeGif {
+            loop_count: String::from("infinite"),
+            ..Default::default()
+        };
         assert!(matches!(node.parse_loop_count(), Repeat::Infinite));
 
         node.loop_count = String::from("once");
