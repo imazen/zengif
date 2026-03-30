@@ -60,11 +60,11 @@ impl Screen {
         // Track memory allocation
         stats.try_alloc(canvas_bytes, limits)?;
 
-        // Determine background color
-        let background = match (background_index, &global_palette) {
-            (Some(idx), Some(palette)) => palette.get_or_transparent(idx),
-            _ => Rgba::TRANSPARENT,
-        };
+        // Canvas is always initialized as transparent, matching browser behavior.
+        // The GIF background color index is only used for "Restore to Background"
+        // disposal, where we also use transparent (matching Chrome/Firefox).
+        let _ = background_index; // Acknowledged but intentionally unused for init
+        let background = Rgba::TRANSPARENT;
 
         // Initialize canvas with background color (fallible)
         let mut pixels = Vec::new();
@@ -427,8 +427,8 @@ mod tests {
         assert_eq!(screen.width(), 4);
         assert_eq!(screen.height(), 4);
 
-        // Should be filled with background color (red, index 0)
-        assert_eq!(screen.pixels()[0], Rgba::rgb(255, 0, 0));
+        // Canvas always starts transparent (matching browser behavior)
+        assert_eq!(screen.pixels()[0], Rgba::TRANSPARENT);
     }
 
     #[test]
@@ -487,10 +487,11 @@ mod tests {
         // Check specific pixels
         // (1,1) = red
         assert_eq!(composed.pixels[5], Rgba::rgb(255, 0, 0));
-        // (2,1) = should be background (green) because index 1 is transparent
-        assert_eq!(composed.pixels[6], Rgba::rgb(0, 255, 0));
-        // (1,2) = should be background (green)
-        assert_eq!(composed.pixels[9], Rgba::rgb(0, 255, 0));
+        // (2,1) = should be transparent because index 1 is transparent
+        // and canvas starts transparent (matching browser behavior)
+        assert_eq!(composed.pixels[6], Rgba::TRANSPARENT);
+        // (1,2) = should be transparent
+        assert_eq!(composed.pixels[9], Rgba::TRANSPARENT);
         // (2,2) = blue
         assert_eq!(composed.pixels[10], Rgba::rgb(0, 0, 255));
     }
@@ -534,12 +535,12 @@ mod tests {
         // Frame2 covered (0,0)-(1,1) = indices 0,1,4,5
         // Overlap is at index 5 (position 1,1)
 
-        // Index 6 (2,1): was red from frame1, restored to green by disposal, not touched by frame2
-        assert_eq!(composed.pixels[6], Rgba::rgb(0, 255, 0));
-        // Index 9 (1,2): was red from frame1, restored to green by disposal, not touched by frame2
-        assert_eq!(composed.pixels[9], Rgba::rgb(0, 255, 0));
+        // Index 6 (2,1): was red from frame1, restored to transparent by disposal, not touched by frame2
+        assert_eq!(composed.pixels[6], Rgba::TRANSPARENT);
+        // Index 9 (1,2): was red from frame1, restored to transparent by disposal, not touched by frame2
+        assert_eq!(composed.pixels[9], Rgba::TRANSPARENT);
 
-        // Index 5 (1,1): was red, restored to green, then overwritten by frame2's blue
+        // Index 5 (1,1): was red, restored to transparent, then overwritten by frame2's blue
         assert_eq!(composed.pixels[5], Rgba::rgb(0, 0, 255));
 
         // The area from frame2 should be blue

@@ -89,10 +89,28 @@ impl QuantizerTrait for ZenquantQuantizer {
 
         let transparent_index = result.transparent_index();
 
+        // Post-process: ensure alpha==0 pixels map to transparent index
+        let mut indices = result.indices().to_vec();
+        let actual_transparent_index = transparent_index.unwrap_or(255);
+        let mut has_transparent_pixels = false;
+
+        for (i, p) in pixels.iter().enumerate() {
+            if p.a == 0 {
+                indices[i] = actual_transparent_index;
+                has_transparent_pixels = true;
+            }
+        }
+
+        let final_transparent_index = if has_transparent_pixels {
+            Some(actual_transparent_index)
+        } else {
+            transparent_index
+        };
+
         Ok(QuantizedFrame {
             palette: Self::palette_to_bytes(&result),
-            pixels: result.indices().to_vec(),
-            transparent_index,
+            pixels: indices,
+            transparent_index: final_transparent_index,
         })
     }
 
