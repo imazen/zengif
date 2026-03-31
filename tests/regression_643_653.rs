@@ -590,11 +590,57 @@ fn issue_653_different_transparency_per_frame() {
         "frame 0 should be fully opaque"
     );
 
-    // Frame 2: should have a mix (due to Keep disposal, transparent pixels
-    // show through to frame 1's red, so those pixels may appear opaque too).
-    // The key assertion is that the decode doesn't fail or corrupt data.
+    // Frame 2: checkerboard of transparent/green input. The encoder always uses
+    // DisposalMethod::Keep. Transparent pixels in the encoded GIF skip writing
+    // to the canvas (they use the GIF transparent index), so the prior frame's
+    // red shows through at those positions. The result: every pixel is either
+    // opaque-red (where frame 2 was transparent) or opaque-green (where frame 2
+    // was green). Either way all pixels must be fully opaque.
     assert_eq!(frames[1].pixel_count(), total);
     assert_eq!(frames[1].pixels.len(), total);
+    for (i, p) in frames[1].pixels.iter().enumerate() {
+        assert_eq!(
+            p.a, 255,
+            "frame 1 pixel {i}: expected opaque (Keep disposal shows frame 0 red \
+             through transparent areas), got alpha={}",
+            p.a
+        );
+    }
+    // Sanity-check that the non-transparent pixels (odd checkerboard) are greenish.
+    // Frame 2 had green at odd (x+y) positions. After compositing they should remain
+    // mostly green (quantization may shift the exact value slightly).
+    let greenish_count = frames[1]
+        .pixels
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            // Recover (x, y) from linear index; odd sum means green input
+            let x = i % w as usize;
+            let y = i / w as usize;
+            (x + y) % 2 != 0
+        })
+        .filter(|(_, p)| p.g > p.r && p.g > p.b)
+        .count();
+    let odd_count = total / 2;
+    assert!(
+        greenish_count > odd_count / 2,
+        "frame 1: expected most odd-checkerboard pixels to be greenish, \
+         got {greenish_count}/{odd_count}"
+    );
+
+    // Frame 3: entirely transparent input. With Keep disposal all pixels use
+    // the GIF transparent index and skip writing, so the canvas retains frame 2's
+    // composited content. Every pixel must be fully opaque.
+    assert_eq!(frames[2].pixel_count(), total);
+    assert_eq!(frames[2].pixels.len(), total);
+    for (i, p) in frames[2].pixels.iter().enumerate() {
+        assert_eq!(
+            p.a, 255,
+            "frame 2 pixel {i}: expected opaque (Keep disposal retains prior \
+             canvas through all-transparent frame), got alpha={}",
+            p.a
+        );
+    }
 }
 
 /// Verify that encoding and decoding preserves the animation delay values
@@ -638,5 +684,266 @@ fn issue_643_delays_preserved_through_round_trips() {
             .map(|f| FrameInput::new(f.width, f.height, f.delay, f.pixels.clone()))
             .collect();
         current = encode_frames(re_input, w, h, config.clone());
+    }
+}
+
+// ===========================================================================
+// Expanded transparency tests
+// ===========================================================================
+
+/// Encode a frame with a mix of colors — red, green, blue, and transparent pixels.
+/// After a round-trip, transparent pixels must stay transparent and colored pixels
+/// must retain their approximate hue.
+#[test]
+fn transparency_with_multiple_colors() {
+    let w = 8u16;
+    let h = 4u16;
+    let total = w as usize * h as usize;
+
+    // Build a 4-color frame: row 0 = red, row 1 = green, row 2 = blue, row 3 = transparent.
+    let mut pixels = Vec::with_capacity(total);
+    for y in 0..h {
+        for _x in 0..w {
+            let color = match y {
+                0 => Rgba::rgb(220, 20, 20),
+                1 => Rgba::rgb(20, 220, 20),
+                2 => Rgba::rgb(20, 20, 220),
+                _ => Rgba::TRANSPARENT,
+            };
+            pixels.push(color);
+        }
+    }
+
+    let frame = FrameInput::new(w, h, 10, pixels);
+    let config = EncoderConfig::new();
+    let encoded = encode_frames(vec![frame], w, h, config);
+    let (_meta, frames) = decode_bytes(&encoded);
+
+    assert_eq!(frames.len(), 1);
+    let decoded = &frames[0];
+
+    // Row 3 (y=3): input was fully transparent. The canvas starts transparent
+    // (no prior frame) so with Keep disposal these pixels should decode as
+    // transparent (alpha=0). No partial-alpha corruption is acceptable.
+    let row3_start = 3 * w as usize;
+    for (i, p) in decoded.pixels[row3_start..row3_start + w as usize]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(p.a, 0, "row 3 pixel {i}: expected transparent, got {:?}", p);
+    }
+
+    // Rows 0-2: all pixels must be opaque.
+    for (i, p) in decoded.pixels[..row3_start].iter().enumerate() {
+        assert_eq!(
+            p.a,
+            255,
+            "row {}: pixel {i} should be opaque, got {:?}",
+            i / w as usize,
+            p
+        );
+    }
+
+    // Row 0: red channel must dominate.
+    for p in &decoded.pixels[..w as usize] {
+        assert!(
+            p.r > p.g && p.r > p.b,
+            "row 0: expected red-dominant pixel, got {:?}",
+            p
+        );
+    }
+
+    // Row 1: green channel must dominate.
+    for p in &decoded.pixels[w as usize..2 * w as usize] {
+        assert!(
+            p.g > p.r && p.g > p.b,
+            "row 1: expected green-dominant pixel, got {:?}",
+            p
+        );
+    }
+
+    // Row 2: blue channel must dominate.
+    for p in &decoded.pixels[2 * w as usize..3 * w as usize] {
+        assert!(
+            p.b > p.r && p.b > p.g,
+            "row 2: expected blue-dominant pixel, got {:?}",
+            p
+        );
+    }
+}
+
+/// Regression guard for the bug where quantize_frame didn't map alpha=0 to the
+/// transparent index, causing transparency to be lost on round-trip.
+///
+/// Encode an 8x8 checkerboard of transparent/opaque-red pixels. After decoding,
+/// at least 35% of pixels must be transparent (exactly 50% were in the input;
+/// allowing some margin for quantizer rounding at edges).
+#[test]
+fn transparency_survives_resize_equivalent() {
+    let w = 8u16;
+    let h = 8u16;
+    let total = w as usize * h as usize;
+
+    // Checkerboard: even (x+y) → transparent, odd → opaque red.
+    let mut pixels = Vec::with_capacity(total);
+    for y in 0..h {
+        for x in 0..w {
+            if (x + y) % 2 == 0 {
+                pixels.push(Rgba::TRANSPARENT);
+            } else {
+                pixels.push(Rgba::rgb(200, 30, 30));
+            }
+        }
+    }
+
+    let frame = FrameInput::new(w, h, 10, pixels);
+    let config = EncoderConfig::new();
+    let encoded = encode_frames(vec![frame], w, h, config);
+    let (_meta, frames) = decode_bytes(&encoded);
+
+    assert_eq!(frames.len(), 1);
+
+    let transparent_count = frames[0].pixels.iter().filter(|p| p.a == 0).count();
+    assert!(
+        transparent_count >= total * 35 / 100,
+        "expected >= 35% transparent pixels after round-trip, got {transparent_count}/{total} \
+         ({:.1}%)",
+        transparent_count as f64 / total as f64 * 100.0
+    );
+}
+
+/// A single-frame GIF where the first (and only) frame has transparent pixels.
+/// Tests the single-frame path independently of multi-frame disposal logic.
+#[test]
+fn first_frame_transparent_pixels() {
+    let w = 4u16;
+    let h = 4u16;
+    let total = w as usize * h as usize;
+
+    // Top half transparent, bottom half opaque blue.
+    let mut pixels = Vec::with_capacity(total);
+    for y in 0..h {
+        for _x in 0..w {
+            if y < h / 2 {
+                pixels.push(Rgba::TRANSPARENT);
+            } else {
+                pixels.push(Rgba::rgb(30, 30, 200));
+            }
+        }
+    }
+
+    let frame = FrameInput::new(w, h, 10, pixels);
+    let config = EncoderConfig::new();
+    let encoded = encode_frames(vec![frame], w, h, config);
+    let (_meta, frames) = decode_bytes(&encoded);
+
+    assert_eq!(frames.len(), 1);
+    let decoded = &frames[0];
+    assert_eq!(decoded.pixels.len(), total);
+
+    let half = (h as usize / 2) * w as usize;
+
+    // Top half: must be transparent (canvas starts transparent; no prior frame).
+    for (i, p) in decoded.pixels[..half].iter().enumerate() {
+        assert_eq!(
+            p.a, 0,
+            "top-half pixel {i}: expected transparent, got {:?}",
+            p
+        );
+    }
+
+    // Bottom half: must be opaque.
+    for (i, p) in decoded.pixels[half..].iter().enumerate() {
+        assert_eq!(
+            p.a, 255,
+            "bottom-half pixel {i}: expected opaque, got {:?}",
+            p
+        );
+    }
+}
+
+/// Encode 3 frames:
+///   - Frame 1: solid opaque blue (8x8)
+///   - Frame 2: 4x4 opaque red center, transparent surround (8x8)
+///   - Frame 3: solid opaque green (8x8)
+///
+/// With DisposalMethod::Keep (the encoder default), the transparent outer ring
+/// in frame 2 shows frame 1's blue through. The opaque red center overwrites.
+/// Frame 3 fully covers the canvas with green.
+///
+/// Assertions:
+///   - Frame 2 center pixels are reddish.
+///   - Frame 2 corner pixels are opaque (blue shows through from frame 1).
+///   - Frame 3 is fully opaque green.
+#[test]
+fn animation_transparent_overlay() {
+    let w = 8u16;
+    let h = 8u16;
+
+    // Frame 1: solid opaque blue.
+    let frame1 = solid_frame(w, h, Rgba::rgb(30, 30, 200), 10);
+
+    // Frame 2: 4x4 opaque red center (columns 2-5, rows 2-5), transparent elsewhere.
+    let mut pixels2 = vec![Rgba::TRANSPARENT; w as usize * h as usize];
+    for y in 2usize..6 {
+        for x in 2usize..6 {
+            pixels2[y * w as usize + x] = Rgba::rgb(200, 30, 30);
+        }
+    }
+    let frame2 = FrameInput::new(w, h, 10, pixels2);
+
+    // Frame 3: solid opaque green.
+    let frame3 = solid_frame(w, h, Rgba::rgb(30, 200, 30), 10);
+
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
+    let encoded = encode_frames(vec![frame1, frame2, frame3], w, h, config);
+    let (_meta, frames) = decode_bytes(&encoded);
+
+    assert_eq!(frames.len(), 3);
+
+    // --- Frame 2 assertions ---
+
+    // Center pixels (2..6 × 2..6): should be reddish (red input, fully opaque).
+    for y in 2usize..6 {
+        for x in 2usize..6 {
+            let p = frames[1].pixels[y * w as usize + x];
+            assert_eq!(
+                p.a, 255,
+                "frame 1 center ({x},{y}): expected opaque, got {:?}",
+                p
+            );
+            assert!(
+                p.r > p.b && p.r > p.g,
+                "frame 1 center ({x},{y}): expected reddish pixel, got {:?}",
+                p
+            );
+        }
+    }
+
+    // Corner pixel (0,0): transparent in frame 2 input, so Keep disposal shows
+    // frame 1's blue through. Must be opaque.
+    let corner = frames[1].pixels[0];
+    assert_eq!(
+        corner.a, 255,
+        "frame 1 corner (0,0): expected opaque (frame 1 blue shows through), got {:?}",
+        corner
+    );
+
+    // --- Frame 3 assertions ---
+
+    // Frame 3 is solid opaque green and covers the whole canvas.
+    let total = w as usize * h as usize;
+    assert_eq!(frames[2].pixels.len(), total);
+    for (i, p) in frames[2].pixels.iter().enumerate() {
+        assert_eq!(
+            p.a, 255,
+            "frame 2 pixel {i}: expected opaque green, got {:?}",
+            p
+        );
+        assert!(
+            p.g > p.r && p.g > p.b,
+            "frame 2 pixel {i}: expected greenish, got {:?}",
+            p
+        );
     }
 }
