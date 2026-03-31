@@ -549,6 +549,9 @@ pub enum QuantizerBackend {
     /// Use zenquant (best perceptual quality, AGPL-3.0-or-later).
     /// Requires `zenquant` feature.
     Zenquant,
+    /// Use quantette (Oklab k-means, high quality, MIT/Apache-2.0).
+    /// Requires `quantette` feature.
+    Quantette,
     /// Use imagequant (good quality, best compression, GPL licensed).
     /// Requires `imagequant` feature.
     Imagequant,
@@ -567,6 +570,10 @@ impl Default for QuantizerBackend {
         {
             return Self::Zenquant;
         }
+        #[cfg(feature = "quantette")]
+        {
+            return Self::Quantette;
+        }
         #[cfg(feature = "imagequant")]
         {
             return Self::Imagequant;
@@ -581,6 +588,7 @@ impl Default for QuantizerBackend {
         }
         #[cfg(not(any(
             feature = "zenquant",
+            feature = "quantette",
             feature = "imagequant",
             feature = "quantizr",
             feature = "color_quant"
@@ -605,6 +613,11 @@ impl QuantizerBackend {
             #[cfg(not(feature = "zenquant"))]
             QuantizerBackend::Zenquant => None,
 
+            #[cfg(feature = "quantette")]
+            QuantizerBackend::Quantette => Some(Box::new(QuantetteQuantizer::new())),
+            #[cfg(not(feature = "quantette"))]
+            QuantizerBackend::Quantette => None,
+
             #[cfg(feature = "imagequant")]
             QuantizerBackend::Imagequant => Some(Box::new(ImagequantQuantizer::new())),
             #[cfg(not(feature = "imagequant"))]
@@ -627,6 +640,7 @@ impl QuantizerBackend {
     pub fn is_available(&self) -> bool {
         match self {
             QuantizerBackend::Zenquant => cfg!(feature = "zenquant"),
+            QuantizerBackend::Quantette => cfg!(feature = "quantette"),
             QuantizerBackend::Imagequant => cfg!(feature = "imagequant"),
             QuantizerBackend::Quantizr => cfg!(feature = "quantizr"),
             QuantizerBackend::ColorQuant => cfg!(feature = "color_quant"),
@@ -639,7 +653,13 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
     #[test]
     fn compute_sample_indices_all_frames() {
         // None means use all frames
@@ -650,7 +670,13 @@ mod tests {
         assert_eq!(compute_sample_indices(3, None), vec![0, 1, 2]);
     }
 
-    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
     #[test]
     fn compute_sample_indices_more_than_total() {
         // max_samples >= total returns all frames
@@ -658,7 +684,13 @@ mod tests {
         assert_eq!(compute_sample_indices(5, Some(10)), vec![0, 1, 2, 3, 4]);
     }
 
-    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
     #[test]
     fn compute_sample_indices_uniform_distribution() {
         // Sample 3 from 10: should be 0, 4 or 5, 9
@@ -668,7 +700,13 @@ mod tests {
         assert_eq!(indices[2], 9); // Always includes last
     }
 
-    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
     #[test]
     fn compute_sample_indices_edge_cases() {
         // Zero samples

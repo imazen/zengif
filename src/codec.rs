@@ -188,6 +188,7 @@ impl GifEncoderConfig {
         inner.repeat = Repeat::Once;
         #[cfg(any(
             feature = "zenquant",
+            feature = "quantette",
             feature = "imagequant",
             feature = "quantizr",
             feature = "color_quant"
@@ -208,6 +209,7 @@ impl GifEncoderConfig {
     pub fn with_quality(mut self, #[allow(unused)] quality: f32) -> Self {
         #[cfg(any(
             feature = "zenquant",
+            feature = "quantette",
             feature = "imagequant",
             feature = "quantizr",
             feature = "color_quant"
@@ -238,6 +240,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -253,6 +256,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -268,6 +272,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -283,6 +288,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -298,6 +304,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -317,6 +324,7 @@ impl GifEncoderConfig {
     /// Requires a quantizer feature (`imagequant`, `quantizr`, etc.).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1140,7 +1148,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         if let Some(ref policy) = self.policy
             && !policy.resolve_animation(true)
         {
-            return Err(at!(GifError::from(zencodec::UnsupportedOperation::AnimationDecode)));
+            return Err(at!(GifError::from(
+                zencodec::UnsupportedOperation::AnimationDecode
+            )));
         }
         self.check_file_size(&data)?;
         let probe = crate::detect::probe(&data).ok();
@@ -1503,6 +1513,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1545,6 +1556,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1567,6 +1579,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1589,6 +1602,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1608,6 +1622,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1633,6 +1648,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1660,6 +1676,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1684,6 +1701,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1706,6 +1724,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
