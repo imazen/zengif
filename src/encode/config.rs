@@ -18,6 +18,7 @@ pub struct EncoderConfig {
     /// Quality setting for quantization (1-100, higher = better quality).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -28,6 +29,7 @@ pub struct EncoderConfig {
     /// Default is 0.5. Use 0.0 for re-encoding already-dithered content.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -43,6 +45,7 @@ pub struct EncoderConfig {
     /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -53,6 +56,7 @@ pub struct EncoderConfig {
     /// Default is 64. Only used when `shared_palette` is true.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -63,6 +67,7 @@ pub struct EncoderConfig {
     /// Default is 64MB. Only used when `shared_palette` is true.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -77,6 +82,7 @@ pub struct EncoderConfig {
     #[deprecated(since = "0.2.0", note = "Use the `quantizer` field instead")]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -98,6 +104,7 @@ pub struct EncoderConfig {
     /// ```
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -126,6 +133,7 @@ pub struct EncoderConfig {
     /// - `Some(15.0)`: permissive — only severe outliers get per-frame palettes
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -161,6 +169,7 @@ pub struct EncoderConfig {
 /// | 1920×1080   | 2M     | 4             |
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -190,6 +199,7 @@ impl EncoderConfig {
             use_transparency: true,
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -197,6 +207,7 @@ impl EncoderConfig {
             quality: 80,
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -208,6 +219,7 @@ impl EncoderConfig {
             // Round-trip encoding (from_metadata) overrides this to false.
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -215,6 +227,7 @@ impl EncoderConfig {
             shared_palette: true,
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -222,6 +235,7 @@ impl EncoderConfig {
             max_buffer_frames: 32, // Will be updated when encoder is created
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -229,6 +243,7 @@ impl EncoderConfig {
             max_buffer_bytes: 64 * 1024 * 1024, // 64 MB
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -236,6 +251,7 @@ impl EncoderConfig {
             quantizer_backend: crate::quantize::QuantizerBackend::default(),
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -243,6 +259,7 @@ impl EncoderConfig {
             quantizer: None, // Use default auto-selection
             #[cfg(any(
                 feature = "zenquant",
+                feature = "quantette",
                 feature = "imagequant",
                 feature = "quantizr",
                 feature = "color_quant"
@@ -274,6 +291,7 @@ impl EncoderConfig {
     #[deprecated(since = "0.2.0", note = "Use the `quantizer` method instead")]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -309,6 +327,7 @@ impl EncoderConfig {
     /// ```
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -343,6 +362,7 @@ impl EncoderConfig {
     /// Set quality for quantization (1-100).
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -360,6 +380,7 @@ impl EncoderConfig {
     /// Default is 0.5.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -381,6 +402,7 @@ impl EncoderConfig {
     /// are encoded. Subsequent frames use the shared palette immediately.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -398,6 +420,7 @@ impl EncoderConfig {
     /// Default is 64 frames.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -415,6 +438,7 @@ impl EncoderConfig {
     /// Default is 64 MB.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -435,6 +459,7 @@ impl EncoderConfig {
     /// frames with very different colors get per-frame palettes automatically.
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -452,6 +477,7 @@ impl EncoderConfig {
     /// - Shared palette (consistent colors across frames)
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"

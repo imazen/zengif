@@ -186,6 +186,7 @@ pub use encode::{EncodeRequest, Encoder, EncoderConfig, PaletteStrategy, encode_
     feature = "std",
     any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -198,10 +199,13 @@ pub use limits::Limits;
 pub use quantize::ColorQuantQuantizer;
 #[cfg(all(feature = "std", feature = "imagequant"))]
 pub use quantize::ImagequantQuantizer;
+#[cfg(all(feature = "std", feature = "quantette"))]
+pub use quantize::QuantetteQuantizer;
 #[cfg(all(
     feature = "std",
     any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"

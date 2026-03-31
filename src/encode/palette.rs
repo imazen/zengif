@@ -153,6 +153,7 @@ pub(super) fn compute_frame_diff(
 /// Returns RMSE in 0-255 RGB space (0 = perfect, ~5 = invisible, ~20 = visible).
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
