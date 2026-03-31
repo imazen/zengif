@@ -339,14 +339,17 @@ fn issue_653_transparency_survives_round_trip() {
     let total = frames[0].pixels.len();
 
     // We started with exactly 50% transparent. After quantization there may be
-    // minor changes, but the vast majority should be preserved.
+    // minor changes at edges, but losing half the transparent pixels (25%)
+    // would hide real bugs. Require at least 40% of each.
     assert!(
-        transparent_count > total / 4,
-        "expected many transparent pixels, got {transparent_count}/{total}"
+        transparent_count > total * 2 / 5,
+        "expected >= 40% transparent pixels, got {transparent_count}/{total} ({:.1}%)",
+        transparent_count as f64 / total as f64 * 100.0
     );
     assert!(
-        opaque_count > total / 4,
-        "expected many opaque pixels, got {opaque_count}/{total}"
+        opaque_count > total * 2 / 5,
+        "expected >= 40% opaque pixels, got {opaque_count}/{total} ({:.1}%)",
+        opaque_count as f64 / total as f64 * 100.0
     );
 }
 
@@ -383,12 +386,35 @@ fn issue_653_opaque_then_transparent_frames() {
     assert!(f1_all_opaque, "frame 0 should be fully opaque");
 
     // Frame 2: bottom half should be opaque (red), top half depends on
-    // disposal method. With Keep disposal, top half shows frame 1's green.
-    // With Background disposal, top half would be transparent.
+    // disposal method. With Keep disposal, top half shows frame 1's green
+    // (opaque). With Background disposal, top half would be transparent.
     // Either way, bottom half must be opaque.
     let bottom_start = (h as usize / 2) * w as usize;
     let bottom_all_opaque = frames[1].pixels[bottom_start..].iter().all(|p| p.a == 255);
     assert!(bottom_all_opaque, "frame 1 bottom half should be opaque");
+
+    // Top half: with either disposal method, every pixel must be fully
+    // resolved — either opaque (Keep: frame 1 green shows through) or
+    // fully transparent (Background: cleared to transparent). No partial
+    // alpha or corrupt values.
+    let top_pixels = &frames[1].pixels[..bottom_start];
+    for (i, p) in top_pixels.iter().enumerate() {
+        assert!(
+            p.a == 0 || p.a == 255,
+            "frame 1 top-half pixel {i}: expected alpha 0 or 255, got {}",
+            p.a
+        );
+    }
+    // Additionally, all top-half pixels should agree on their disposal
+    // outcome — either all opaque (Keep) or all transparent (Background).
+    let top_transparent = top_pixels.iter().filter(|p| p.a == 0).count();
+    let top_opaque = top_pixels.iter().filter(|p| p.a == 255).count();
+    assert!(
+        top_transparent == top_pixels.len() || top_opaque == top_pixels.len(),
+        "frame 1 top half should be uniformly opaque or transparent, \
+         got {top_transparent} transparent + {top_opaque} opaque out of {}",
+        top_pixels.len()
+    );
 }
 
 /// Verify the encoder handles frames where ALL pixels are transparent.
