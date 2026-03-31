@@ -333,3 +333,69 @@ fn missing_trailer_zero_frames_still_errors() {
         }
     }
 }
+
+// --- Reduced fuzz artifacts (crash-repro corpus) ---
+//
+// Each test loads a minimal malformed GIF from tests/corpus/crash-repro/
+// and verifies that decoding handles it gracefully (error or safe result,
+// never a panic).
+
+/// Helper: attempt full decode of a crash-repro GIF file.
+/// Returns Ok(()) whether decoding succeeds or returns an error —
+/// the only failure mode is a panic.
+fn decode_crash_repro(filename: &str) {
+    let path = format!(
+        "{}/tests/corpus/crash-repro/{}",
+        env!("CARGO_MANIFEST_DIR"),
+        filename
+    );
+    let data = std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
+
+    let limits = Limits::default();
+    let cursor = std::io::Cursor::new(data);
+    match Decoder::new(cursor, limits, &Unstoppable) {
+        Ok(mut decoder) => {
+            // Drain all frames — errors are fine, panics are not
+            loop {
+                match decoder.next_frame() {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+        }
+        Err(_) => {
+            // Failing at construction is acceptable
+        }
+    }
+}
+
+#[test]
+fn crash_repro_oob_palette_index() {
+    decode_crash_repro("gif_oob_palette_index.gif");
+}
+
+#[test]
+fn crash_repro_frame_exceeds_canvas() {
+    decode_crash_repro("gif_frame_exceeds_canvas.gif");
+}
+
+#[test]
+fn crash_repro_bad_bg_index() {
+    decode_crash_repro("gif_bad_bg_index.gif");
+}
+
+#[test]
+fn crash_repro_zero_size_frame() {
+    decode_crash_repro("gif_zero_size_frame.gif");
+}
+
+#[test]
+fn crash_repro_overflow_frame_pos() {
+    decode_crash_repro("gif_overflow_frame_pos.gif");
+}
+
+#[test]
+fn crash_repro_frame_buffer_oob() {
+    decode_crash_repro("gif_frame_buffer_oob.gif");
+}
