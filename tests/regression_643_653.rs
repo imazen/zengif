@@ -43,12 +43,7 @@ fn transparent_border_frame(w: u16, h: u16, inner: Rgba, delay: u16) -> FrameInp
 }
 
 /// Encode a set of frames into GIF bytes using the given config.
-fn encode_frames(
-    frames: Vec<FrameInput>,
-    w: u16,
-    h: u16,
-    config: EncoderConfig,
-) -> Vec<u8> {
+fn encode_frames(frames: Vec<FrameInput>, w: u16, h: u16, config: EncoderConfig) -> Vec<u8> {
     encode_gif(frames, w, h, config, Limits::default(), &Unstoppable)
         .expect("encode should succeed")
 }
@@ -109,7 +104,11 @@ fn issue_643_double_round_trip_single_frame() {
 
     // Second decode — this is what failed in #643
     let (_meta2, frames2) = decode_bytes(&encoded2);
-    assert_eq!(frames2.len(), 1, "double round-trip decode must produce 1 frame");
+    assert_eq!(
+        frames2.len(),
+        1,
+        "double round-trip decode must produce 1 frame"
+    );
     assert_eq!(frames2[0].width, w);
     assert_eq!(frames2[0].height, h);
 }
@@ -139,9 +138,16 @@ fn issue_643_double_round_trip_animated() {
     let encoded2 = encode_frames(re_input, w, h, config);
     let (_meta2, frames2) = decode_bytes(&encoded2);
 
-    assert_eq!(frames2.len(), 3, "double round-trip must preserve frame count");
+    assert_eq!(
+        frames2.len(),
+        3,
+        "double round-trip must preserve frame count"
+    );
     for (i, (a, b)) in frames1.iter().zip(frames2.iter()).enumerate() {
-        assert_eq!(a.delay, b.delay, "frame {i} delay mismatch in double round-trip");
+        assert_eq!(
+            a.delay, b.delay,
+            "frame {i} delay mismatch in double round-trip"
+        );
         assert_eq!(a.width, b.width, "frame {i} width mismatch");
         assert_eq!(a.height, b.height, "frame {i} height mismatch");
         assert_eq!(
@@ -200,10 +206,7 @@ fn issue_643_triple_round_trip() {
 
     for pass in 0..3 {
         let (_meta, decoded) = decode_bytes(&current_bytes);
-        assert!(
-            !decoded.is_empty(),
-            "pass {pass}: decoded zero frames"
-        );
+        assert!(!decoded.is_empty(), "pass {pass}: decoded zero frames");
 
         let re_input: Vec<FrameInput> = decoded
             .iter()
@@ -256,7 +259,10 @@ fn issue_643_streaming_decode_of_reencoded() {
         assert_eq!(frame.height, h);
         count += 1;
     }
-    assert_eq!(count, 2, "streaming decode of re-encoded GIF should yield 2 frames");
+    assert_eq!(
+        count, 2,
+        "streaming decode of re-encoded GIF should yield 2 frames"
+    );
 }
 
 // ===========================================================================
@@ -382,10 +388,7 @@ fn issue_653_opaque_then_transparent_frames() {
     // Either way, bottom half must be opaque.
     let bottom_start = (h as usize / 2) * w as usize;
     let bottom_all_opaque = frames[1].pixels[bottom_start..].iter().all(|p| p.a == 255);
-    assert!(
-        bottom_all_opaque,
-        "frame 1 bottom half should be opaque"
-    );
+    assert!(bottom_all_opaque, "frame 1 bottom half should be opaque");
 }
 
 /// Verify the encoder handles frames where ALL pixels are transparent.
