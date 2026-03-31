@@ -25,7 +25,9 @@ use zencodec::decode::{Decode as _, DecoderConfig as _};
 
 use crate::encode::{EncodeRequest, EncoderConfig};
 use crate::types::{FrameInput, Repeat};
-use whereat::{At, ErrorAtExt as _};
+use whereat::At;
+#[allow(unused_imports)]
+use whereat::at;
 
 use crate::{Decoder, GifError, Limits};
 
@@ -525,11 +527,10 @@ impl GifEncoder {
         if let Some(max_mem) = effective_limits.max_memory_bytes
             && estimated_mem > max_mem
         {
-            return Err(GifError::MemoryLimitExceeded {
+            return Err(at!(GifError::MemoryLimitExceeded {
                 current: estimated_mem,
                 limit: max_mem,
-            }
-            .start_at());
+            }));
         }
 
         let limits = self.build_limits();
@@ -553,7 +554,7 @@ impl zencodec::encode::Encoder for GifEncoder {
     type Error = At<GifError>;
 
     fn reject(op: zencodec::UnsupportedOperation) -> At<GifError> {
-        GifError::from(op).start_at()
+        at!(GifError::from(op))
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<GifError>> {
@@ -567,22 +568,20 @@ fn pixels_to_gif_rgba(
     pixels: &PixelSlice<'_>,
 ) -> Result<(Vec<crate::Rgba>, u16, u16), At<GifError>> {
     let w = u16::try_from(pixels.width()).map_err(|_| {
-        GifError::DimensionsTooLarge {
+        at!(GifError::DimensionsTooLarge {
             width: pixels.width().min(u16::MAX as u32) as u16,
             height: pixels.rows().min(u16::MAX as u32) as u16,
             max_width: u16::MAX,
             max_height: u16::MAX,
-        }
-        .start_at()
+        })
     })?;
     let h = u16::try_from(pixels.rows()).map_err(|_| {
-        GifError::DimensionsTooLarge {
+        at!(GifError::DimensionsTooLarge {
             width: pixels.width().min(u16::MAX as u32) as u16,
             height: pixels.rows().min(u16::MAX as u32) as u16,
             max_width: u16::MAX,
             max_height: u16::MAX,
-        }
-        .start_at()
+        })
     })?;
 
     let desc = pixels.descriptor();
@@ -650,10 +649,9 @@ fn pixels_to_gif_rgba(
                 .collect()
         }
         _ => {
-            return Err(GifError::InvalidEncoderState {
+            return Err(at!(GifError::InvalidEncoderState {
                 message: "unsupported pixel format for GIF encoding",
-            }
-            .start_at());
+            }));
         }
     };
 
@@ -725,7 +723,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
     type Error = At<GifError>;
 
     fn reject(op: zencodec::UnsupportedOperation) -> At<GifError> {
-        GifError::from(op).start_at()
+        at!(GifError::from(op))
     }
 
     fn push_frame(
@@ -735,7 +733,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<(), At<GifError>> {
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+            stop.check().map_err(|_| at!(GifError::Cancelled))?;
         }
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
@@ -753,23 +751,21 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<EncodeOutput, At<GifError>> {
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+            stop.check().map_err(|_| at!(GifError::Cancelled))?;
         }
         let enc = match self.encoder {
             Some(enc) => enc,
             None => {
-                return Err(GifError::InvalidEncoderState {
+                return Err(at!(GifError::InvalidEncoderState {
                     message: "no frames to encode",
-                }
-                .start_at());
+                }));
             }
         };
 
         if !self.has_frames {
-            return Err(GifError::InvalidEncoderState {
+            return Err(at!(GifError::InvalidEncoderState {
                 message: "no frames to encode",
-            }
-            .start_at());
+            }));
         }
 
         let mut data = enc.finish()?;
@@ -880,13 +876,13 @@ impl GifDecodeJob {
         if let Some(max) = self.config.limits.max_input_bytes
             && size > max
         {
-            return Err(GifError::FileTooLarge { size, max }.start_at());
+            return Err(at!(GifError::FileTooLarge { size, max }));
         }
         if let Some(ref job_limits) = self.limits
             && let Some(max) = job_limits.max_input_bytes
             && size > max
         {
-            return Err(GifError::FileTooLarge { size, max }.start_at());
+            return Err(at!(GifError::FileTooLarge { size, max }));
         }
         Ok(())
     }
@@ -932,10 +928,9 @@ impl zencodec::decode::StreamingDecode for GifStreamingDecoder {
             self.descriptor,
         )
         .map_err(|_| {
-            GifError::InvalidEncoderState {
+            at!(GifError::InvalidEncoderState {
                 message: "streaming slice",
-            }
-            .start_at()
+            })
         })?;
         let y = self.y;
         self.y += rows;
@@ -1106,10 +1101,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            GifError::GifCrate {
+            at!(GifError::GifCrate {
                 message: e.to_string(),
-            }
-            .start_at()
+            })
         })
     }
 
@@ -1146,7 +1140,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         if let Some(ref policy) = self.policy
             && !policy.resolve_animation(true)
         {
-            return Err(GifError::from(zencodec::UnsupportedOperation::AnimationDecode).start_at());
+            return Err(at!(GifError::from(zencodec::UnsupportedOperation::AnimationDecode)));
         }
         self.check_file_size(&data)?;
         let probe = crate::detect::probe(&data).ok();
@@ -1261,13 +1255,13 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         if let Some(max) = self.config.limits.max_input_bytes
             && size > max
         {
-            return Err(GifError::FileTooLarge { size, max }.start_at());
+            return Err(at!(GifError::FileTooLarge { size, max }));
         }
         if let Some(ref job_limits) = self.limits
             && let Some(max) = job_limits.max_input_bytes
             && size > max
         {
-            return Err(GifError::FileTooLarge { size, max }.start_at());
+            return Err(at!(GifError::FileTooLarge { size, max }));
         }
 
         let limits = self.build_limits();
@@ -1283,7 +1277,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
 
         let frame = decoder
             .next_frame()?
-            .ok_or_else(|| GifError::UnexpectedEof.start_at())?;
+            .ok_or_else(|| at!(GifError::UnexpectedEof))?;
 
         let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
         let buf = PixelBuffer::from_vec(
@@ -1293,10 +1287,9 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             PixelDescriptor::RGBA8_SRGB,
         )
         .map_err(|_| {
-            GifError::InvalidEncoderState {
+            at!(GifError::InvalidEncoderState {
                 message: "frame size mismatch",
-            }
-            .start_at()
+            })
         })?;
 
         let has_alpha = source_probe.as_ref().is_none_or(|p| p.has_transparency);
@@ -1350,10 +1343,9 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
     type Error = At<GifError>;
 
     fn wrap_sink_error(err: SinkError) -> At<GifError> {
-        GifError::GifCrate {
+        at!(GifError::GifCrate {
             message: err.to_string(),
-        }
-        .start_at()
+        })
     }
 
     fn info(&self) -> &ImageInfo {
@@ -1382,7 +1374,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         // (lifetime constraint prevents borrowing the job's stop token), so
         // cancellation granularity is per-frame rather than mid-frame.
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled.start_at())?;
+            stop.check().map_err(|_| at!(GifError::Cancelled))?;
         }
         // GIF AnimationFrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. AnimationFrame
@@ -1417,10 +1409,9 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
             let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
             let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
                 .map_err(|_| {
-                    GifError::InvalidEncoderState {
+                    at!(GifError::InvalidEncoderState {
                         message: "frame size mismatch",
-                    }
-                    .start_at()
+                    })
                 })?;
 
             let buf = negotiate_format(buf, &self.preferred);

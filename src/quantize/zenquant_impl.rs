@@ -89,28 +89,23 @@ impl QuantizerTrait for ZenquantQuantizer {
 
         let transparent_index = result.transparent_index();
 
-        // Post-process: ensure alpha==0 pixels map to transparent index
+        // Post-process: ensure alpha==0 pixels map to transparent index.
+        // Only remap if we have a valid transparent palette entry.
+        // If there is no transparent entry, skip remapping — pixels get their
+        // nearest quantized color, which is acceptable degradation.
         let mut indices = result.indices().to_vec();
-        let actual_transparent_index = transparent_index.unwrap_or(255);
-        let mut has_transparent_pixels = false;
-
-        for (i, p) in pixels.iter().enumerate() {
-            if p.a == 0 {
-                indices[i] = actual_transparent_index;
-                has_transparent_pixels = true;
+        if let Some(ti) = transparent_index {
+            for (i, p) in pixels.iter().enumerate() {
+                if p.a == 0 {
+                    indices[i] = ti;
+                }
             }
         }
-
-        let final_transparent_index = if has_transparent_pixels {
-            Some(actual_transparent_index)
-        } else {
-            transparent_index
-        };
 
         Ok(QuantizedFrame {
             palette: Self::palette_to_bytes(&result),
             pixels: indices,
-            transparent_index: final_transparent_index,
+            transparent_index,
         })
     }
 
@@ -180,28 +175,21 @@ impl QuantizerTrait for ZenquantQuantizer {
         let transparent_index = result.transparent_index();
         let palette_bytes = Self::palette_to_bytes(&result);
 
-        // Post-process: ensure alpha==0 pixels map to transparent index
+        // Post-process: ensure alpha==0 pixels map to transparent index.
+        // Only remap if we have a valid transparent palette entry.
         let mut indices = result.indices().to_vec();
-        let actual_transparent_index = transparent_index.unwrap_or(255);
-        let mut has_transparent_pixels = false;
-
-        for (i, p) in pixels.iter().enumerate() {
-            if p.a == 0 {
-                indices[i] = actual_transparent_index;
-                has_transparent_pixels = true;
+        if let Some(ti) = transparent_index {
+            for (i, p) in pixels.iter().enumerate() {
+                if p.a == 0 {
+                    indices[i] = ti;
+                }
             }
         }
-
-        let final_transparent_index = if has_transparent_pixels {
-            Some(actual_transparent_index)
-        } else {
-            transparent_index
-        };
 
         Ok(QuantizedFrame {
             palette: palette_bytes,
             pixels: indices,
-            transparent_index: final_transparent_index,
+            transparent_index,
         })
     }
 

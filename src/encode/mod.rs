@@ -35,6 +35,7 @@
 
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -49,6 +50,7 @@ use crate::limits::Limits;
 use crate::types::FrameInput;
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -126,6 +128,7 @@ pub fn encode_gif(
 /// significantly reduces output bloat.
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -138,16 +141,24 @@ pub fn encode_gif_shared_palette(
     limits: Limits,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>> {
-    // Select quantizer based on available features (priority: zenquant > imagequant > quantizr > color_quant)
+    // Select quantizer based on available features (priority: zenquant > quantette > imagequant > quantizr > color_quant)
     #[cfg(feature = "zenquant")]
     let quantizer = crate::quantize::ZenquantQuantizer::new();
 
-    #[cfg(all(feature = "imagequant", not(feature = "zenquant")))]
+    #[cfg(all(feature = "quantette", not(feature = "zenquant")))]
+    let quantizer = crate::quantize::QuantetteQuantizer::new();
+
+    #[cfg(all(
+        feature = "imagequant",
+        not(feature = "zenquant"),
+        not(feature = "quantette")
+    ))]
     let quantizer = crate::quantize::ImagequantQuantizer::new();
 
     #[cfg(all(
         feature = "quantizr",
         not(feature = "zenquant"),
+        not(feature = "quantette"),
         not(feature = "imagequant")
     ))]
     let quantizer = crate::quantize::QuantizrQuantizer::new();
@@ -155,6 +166,7 @@ pub fn encode_gif_shared_palette(
     #[cfg(all(
         feature = "color_quant",
         not(feature = "zenquant"),
+        not(feature = "quantette"),
         not(feature = "imagequant"),
         not(feature = "quantizr")
     ))]
@@ -171,6 +183,7 @@ pub fn encode_gif_shared_palette(
 /// See [`encode_gif_shared_palette`] for the default imagequant-based version.
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -280,6 +293,7 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
 mod tests {
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -288,6 +302,7 @@ mod tests {
     use super::palette::compute_frame_diff;
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -305,6 +320,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -333,6 +349,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -380,6 +397,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -399,6 +417,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -522,6 +541,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -575,6 +595,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -625,6 +646,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -681,6 +703,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -730,6 +753,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -745,6 +769,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -783,6 +808,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -820,6 +846,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -897,6 +924,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -967,6 +995,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1008,6 +1037,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1031,6 +1061,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"
@@ -1047,6 +1078,7 @@ mod tests {
 
     #[cfg(any(
         feature = "zenquant",
+        feature = "quantette",
         feature = "imagequant",
         feature = "quantizr",
         feature = "color_quant"

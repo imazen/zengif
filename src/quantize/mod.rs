@@ -23,6 +23,8 @@
 use crate::error::Result;
 use crate::types::Rgba;
 use enough::Stop;
+#[allow(unused_imports)]
+use whereat::at;
 
 // Backend implementations
 #[cfg(feature = "color_quant")]
@@ -214,6 +216,7 @@ pub enum Quantizer {
 
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -388,6 +391,7 @@ impl Quantizer {
 
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -404,6 +408,7 @@ impl Default for Quantizer {
 /// Always includes first and last frame if max_samples >= 2.
 #[cfg(any(
     feature = "zenquant",
+    feature = "quantette",
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant"
@@ -499,10 +504,9 @@ pub trait QuantizerTrait: Send {
         _config: &QuantizeConfig,
         _stop: &dyn Stop,
     ) -> Result<Vec<u8>> {
-        Err(crate::error::GifError::QuantizationFailed {
+        Err(at!(crate::error::GifError::QuantizationFailed {
             message: "shared palettes not supported by this quantizer",
-        }
-        .into())
+        }))
     }
 
     /// Quantize a frame using a pre-computed shared palette.
@@ -635,7 +639,7 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_all_frames() {
         // None means use all frames
@@ -646,7 +650,7 @@ mod tests {
         assert_eq!(compute_sample_indices(3, None), vec![0, 1, 2]);
     }
 
-    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_more_than_total() {
         // max_samples >= total returns all frames
@@ -654,7 +658,7 @@ mod tests {
         assert_eq!(compute_sample_indices(5, Some(10)), vec![0, 1, 2, 3, 4]);
     }
 
-    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_uniform_distribution() {
         // Sample 3 from 10: should be 0, 4 or 5, 9
@@ -664,7 +668,7 @@ mod tests {
         assert_eq!(indices[2], 9); // Always includes last
     }
 
-    #[cfg(any(feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
+    #[cfg(any(feature = "zenquant", feature = "quantette", feature = "imagequant", feature = "quantizr", feature = "color_quant"))]
     #[test]
     fn compute_sample_indices_edge_cases() {
         // Zero samples
