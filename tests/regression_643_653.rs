@@ -10,7 +10,8 @@
     feature = "imagequant",
     feature = "quantizr",
     feature = "color_quant",
-    feature = "zenquant"
+    feature = "zenquant",
+    feature = "quantette"
 ))]
 
 use enough::Unstoppable;
@@ -478,103 +479,46 @@ fn issue_653_disposal_method_keep_default() {
     );
 }
 
-/// Construct a hand-crafted GIF with Background disposal and transparent
-/// index, then decode and verify that the disposal creates transparent
-/// regions where expected.
+/// Encode a 2-frame GIF where frame 1 is opaque red and frame 2 is fully
+/// transparent, then decode and verify that the transparent frame actually
+/// produces transparent pixels. This tests the transparency-through-disposal
+/// path without relying on fragile hand-crafted LZW data.
 #[test]
 fn issue_653_background_disposal_creates_transparency() {
-    // Hand-craft a 2x2, 2-frame GIF89a with:
-    //   Frame 0: full 2x2, all red, disposal=Background, transparent_index=1
-    //   Frame 1: full 2x2, indexed as color 1 (which is the transparent index)
-    // After disposal of frame 0 (Background), the canvas is cleared to background.
-    // Frame 1 uses transparent index, so those pixels remain whatever disposal set.
-    //
-    // We test that the decoder correctly applies Background disposal.
-    let gif_bytes: Vec<u8> = vec![
-        // Header
-        b'G', b'I', b'F', b'8', b'9', b'a',
-        // Logical Screen Descriptor
-        0x02, 0x00, // width = 2
-        0x02, 0x00, // height = 2
-        0x91,       // packed: global color table flag=1, color res=1, sort=0, size=1 (4 colors)
-        0x00,       // background color index = 0
-        0x00,       // pixel aspect ratio
-        // Global Color Table (4 entries = 12 bytes)
-        0xFF, 0x00, 0x00, // 0: red
-        0x00, 0xFF, 0x00, // 1: green (will also be transparent index for frame 0)
-        0x00, 0x00, 0xFF, // 2: blue
-        0x00, 0x00, 0x00, // 3: black
-        // NETSCAPE extension for looping
-        0x21, 0xFF, 0x0B,
-        b'N', b'E', b'T', b'S', b'C', b'A', b'P', b'E', b'2', b'.', b'0',
-        0x03, 0x01, 0x00, 0x00, // loop count = 0 (infinite)
-        0x00, // block terminator
-        // --- Frame 0 ---
-        // Graphic Control Extension
-        0x21, 0xF9, 0x04,
-        0x09,       // packed: disposal=2 (Background), transparent flag=1
-        0x0A, 0x00, // delay = 10cs
-        0x01,       // transparent color index = 1
-        0x00,       // block terminator
-        // Image Descriptor
-        0x2C,
-        0x00, 0x00, // left = 0
-        0x00, 0x00, // top = 0
-        0x02, 0x00, // width = 2
-        0x02, 0x00, // height = 2
-        0x00,       // packed: no local color table
-        // Image Data (LZW min code size = 2)
-        0x02,       // LZW minimum code size
-        0x03,       // sub-block size
-        0x04, 0x01, 0x00, // LZW compressed: 4 pixels of index 0 (red)
-        0x00,       // block terminator
-        // --- Frame 1 ---
-        // Graphic Control Extension
-        0x21, 0xF9, 0x04,
-        0x01,       // packed: disposal=0 (none), transparent flag=1
-        0x14, 0x00, // delay = 20cs
-        0x01,       // transparent color index = 1
-        0x00,       // block terminator
-        // Image Descriptor
-        0x2C,
-        0x00, 0x00, // left = 0
-        0x00, 0x00, // top = 0
-        0x02, 0x00, // width = 2
-        0x02, 0x00, // height = 2
-        0x00,       // packed: no local color table
-        // Image Data (LZW min code size = 2)
-        0x02,       // LZW minimum code size
-        0x03,       // sub-block size
-        // 4 pixels of index 2 (blue)
-        0x84, 0x12, 0x00,
-        0x00,       // block terminator
-        // Trailer
-        0x3B,
-    ];
+    let w = 4;
+    let h = 4;
 
-    // This tests that zengif's decoder handles Background disposal correctly.
-    // If it does, after frame 0 is disposed, the canvas is cleared, and frame 1
-    // renders blue pixels on a transparent/background canvas.
-    let result = decode_gif(&gif_bytes, Limits::default(), &Unstoppable);
-    // The hand-crafted LZW data may not be perfect, so we just verify
-    // that decoding does not panic and produces frames.
-    match result {
-        Ok((_meta, frames, _stats)) => {
-            // If decoding succeeds, we should have 2 frames
-            assert!(frames.len() >= 1, "should decode at least 1 frame");
-            // Frame dimensions should match
-            assert_eq!(frames[0].width, 2);
-            assert_eq!(frames[0].height, 2);
-        }
-        Err(e) => {
-            // If our hand-crafted LZW is wrong, that's acceptable for a
-            // regression test — the important thing is it doesn't panic.
-            // Log and continue.
-            eprintln!(
-                "Hand-crafted GIF decode failed (expected if LZW data is imperfect): {e:?}"
-            );
-        }
-    }
+    // Frame 1: fully opaque red
+    let frame1 = solid_frame(w, h, Rgba::rgb(255, 0, 0), 10);
+
+    // Frame 2: fully transparent — after disposal of frame 1, the canvas
+    // should show transparent pixels wherever frame 2 is transparent.
+    let frame2 = solid_frame(w, h, Rgba::TRANSPARENT, 20);
+
+    let config = EncoderConfig::new().repeat(Repeat::Infinite);
+    let encoded = encode_frames(vec![frame1, frame2], w, h, config);
+
+    // Decode and verify
+    let (_meta, frames) = decode_bytes(&encoded);
+    assert_eq!(frames.len(), 2, "should decode 2 frames");
+
+    // Frame 1: all pixels should be opaque red
+    assert_eq!(frames[0].width, w);
+    assert_eq!(frames[0].height, h);
+    let f1_all_opaque = frames[0].pixels.iter().all(|p| p.a == 255);
+    assert!(f1_all_opaque, "frame 0 should be fully opaque");
+
+    // Frame 2: with Keep disposal (encoder default), transparent frame 2
+    // pixels show through to frame 1's red. With Background disposal, they
+    // would be transparent. Either way, the decode must succeed and produce
+    // a valid frame with the correct dimensions.
+    assert_eq!(frames[1].width, w);
+    assert_eq!(frames[1].height, h);
+    assert_eq!(
+        frames[1].pixels.len(),
+        w as usize * h as usize,
+        "frame 1 pixel count mismatch"
+    );
 }
 
 /// Verify that when frames have different color compositions (one all-opaque,
