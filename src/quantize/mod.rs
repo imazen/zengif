@@ -548,19 +548,19 @@ pub trait QuantizerTrait: Send {
 pub enum QuantizerBackend {
     /// Use zenquant (best perceptual quality, AGPL-3.0-or-later).
     /// Requires `zenquant` feature.
-    Zenquant,
+    Zenquant = 0,
     /// Use quantette (Oklab k-means, high quality, MIT/Apache-2.0).
     /// Requires `quantette` feature.
-    Quantette,
+    Quantette = 4,
     /// Use imagequant (good quality, best compression, GPL licensed).
     /// Requires `imagequant` feature.
-    Imagequant,
+    Imagequant = 1,
     /// Use quantizr (fast, MIT licensed).
     /// Requires `quantizr` feature.
-    Quantizr,
+    Quantizr = 2,
     /// Use color_quant (NEUQUANT algorithm, MIT licensed).
     /// Requires `color_quant` feature.
-    ColorQuant,
+    ColorQuant = 3,
 }
 
 impl Default for QuantizerBackend {

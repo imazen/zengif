@@ -1,4 +1,4 @@
-# zengif [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zengif/ci.yml?style=flat-square&label=CI)](https://github.com/imazen/zengif/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zengif?style=flat-square)](https://crates.io/crates/zengif) [![docs.rs](https://img.shields.io/docsrs/zengif?style=flat-square)](https://docs.rs/zengif) [![codecov](https://img.shields.io/codecov/c/github/imazen/zengif?style=flat-square)](https://codecov.io/gh/imazen/zengif) [![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field) [![license](https://img.shields.io/crates/l/zengif?style=flat-square)](https://github.com/imazen/zengif#license)
+# zengif [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zengif/ci.yml?style=flat-square&label=CI)](https://github.com/imazen/zengif/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zengif?style=flat-square)](https://crates.io/crates/zengif) [![lib.rs](https://img.shields.io/crates/v/zengif?style=flat-square&label=lib.rs&color=blue)](https://lib.rs/crates/zengif) [![docs.rs](https://img.shields.io/docsrs/zengif?style=flat-square)](https://docs.rs/zengif) [![codecov](https://img.shields.io/codecov/c/github/imazen/zengif?style=flat-square)](https://codecov.io/gh/imazen/zengif) [![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field) [![license](https://img.shields.io/crates/l/zengif?style=flat-square)](https://github.com/imazen/zengif#license)
 
 A GIF codec built for servers: streaming, memory-bounded, and thoroughly tested.
 
@@ -182,7 +182,7 @@ Auto-selection priority (top to bottom):
 **Default features include AGPL code.** `cargo add zengif` enables `zenquant`, which is AGPL-3.0-or-later. For permissive-only licensing, disable default features and pick a quantizer:
 
 ```toml
-zengif = { version = "0.6", default-features = false, features = ["std", "quantette"] }
+zengif = { version = "0.7.1", default-features = false, features = ["std", "quantette"] }
 ```
 
 Without *any* quantizer feature, zengif is MIT/Apache-2.0 but encoding requires pre-indexed frames.
@@ -192,7 +192,7 @@ Without *any* quantizer feature, zengif is MIT/Apache-2.0 but encoding requires 
 For WASM or embedded, disable the default `std` feature:
 
 ```toml
-zengif = { version = "0.6", default-features = false }
+zengif = { version = "0.7.1", default-features = false }
 ```
 
 You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec. Useful when you need to share types between WASM and native code.
@@ -228,6 +228,10 @@ Approximate throughput on AMD Ryzen 9 5900X (single-threaded, not independently 
 [archmage] · [magetypes] · [enough] · [whereat] · [zenbench] · [cargo-copter]
 
 [And other projects](https://www.imazen.io/open-source) · [GitHub @imazen](https://github.com/imazen) · [GitHub @lilith](https://github.com/lilith) · [lib.rs/~lilith](https://lib.rs/~lilith) · [NuGet](https://www.nuget.org/profiles/imazen) (over 30 million downloads / 87 packages)
+
+## AI-Generated Code Notice
+
+Developed with Claude (Anthropic). Not all code manually reviewed. Review critical paths before production use.
 
 ## License
 

@@ -617,7 +617,7 @@ fn issue_653_different_transparency_per_frame() {
             // Recover (x, y) from linear index; odd sum means green input
             let x = i % w as usize;
             let y = i / w as usize;
-            (x + y) % 2 != 0
+            !(x + y).is_multiple_of(2)
         })
         .filter(|(_, p)| p.g > p.r && p.g > p.b)
         .count();
