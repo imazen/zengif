@@ -679,7 +679,7 @@ fn pixels_to_gif_rgba(
 /// [`with_canvas_size`](zencodec::encode::EncodeJob::with_canvas_size)) or
 /// the first frame's dimensions.
 pub struct GifAnimationFrameEncoder {
-    /// Configuration (owned, leaked to `'static` when the encoder is created).
+    /// Configuration (owned, passed to the encoder via Cow::Owned).
     inner_config: EncoderConfig,
     /// Pre-computed zengif limits (built from config + job limits).
     gif_limits: Limits,
@@ -706,20 +706,16 @@ impl GifAnimationFrameEncoder {
                 )
             });
 
-            // Leak config and limits to satisfy the 'static lifetime on Encoder.
-            // These are small structs (~100 + ~64 bytes) and this happens once
-            // per animation, matching the pattern in Encoder::from_metadata.
-            let config: &'static EncoderConfig = Box::leak(Box::new(self.inner_config.clone()));
-            let limits: &'static Limits = Box::leak(Box::new(self.gif_limits.clone()));
+            // Use Cow::Owned so config and limits are owned by the encoder
+            // and dropped when it is dropped -- no memory leak.
+            let config = std::borrow::Cow::Owned(self.inner_config.clone());
+            let limits = std::borrow::Cow::Owned(self.gif_limits.clone());
 
             // Encoder<'static> requires a 'static stop token. Per-frame
             // stop checks are added in push_frame()/finish() instead.
             let stop: &'static dyn enough::Stop = &enough::Unstoppable;
 
-            let enc = EncodeRequest::new(config, w, h)
-                .limits(limits)
-                .stop(stop)
-                .build()?;
+            let enc = crate::encode::Encoder::build_encoder(config, w, h, limits, stop)?;
 
             self.encoder = Some(enc);
         }

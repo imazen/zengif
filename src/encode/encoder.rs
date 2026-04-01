@@ -80,8 +80,8 @@ pub struct Encoder<'a> {
     /// When true, frames with the same palette can use `palette: None`.
     has_global_palette: bool,
 
-    /// Configuration (borrowed from request).
-    config: &'a EncoderConfig,
+    /// Configuration (borrowed or owned).
+    config: Cow<'a, EncoderConfig>,
 
     /// Previous frame for transparency optimization.
     previous_frame: Option<Vec<Rgba>>,
@@ -89,8 +89,8 @@ pub struct Encoder<'a> {
     /// Frame index.
     frame_index: usize,
 
-    /// Limits configuration (borrowed from request).
-    limits: &'a Limits,
+    /// Limits configuration (borrowed or owned).
+    limits: Cow<'a, Limits>,
 
     /// Stats tracker.
     stats: Stats,
@@ -153,11 +153,32 @@ pub struct Encoder<'a> {
 impl<'a> Encoder<'a> {
     /// Create encoder from request (internal constructor).
     pub(crate) fn from_request(req: EncodeRequest<'a>) -> Result<Self> {
+        Self::build_encoder(
+            Cow::Borrowed(req.config),
+            req.width,
+            req.height,
+            Cow::Borrowed(req.limits),
+            req.stop,
+        )
+    }
+
+    /// Core constructor shared by `from_request` and `from_metadata`.
+    ///
+    /// Accepts `Cow` for config and limits so callers can pass either
+    /// borrowed references (normal path) or owned values (round-trip path)
+    /// without leaking memory.
+    pub(crate) fn build_encoder(
+        config: Cow<'a, EncoderConfig>,
+        width: u16,
+        height: u16,
+        limits: Cow<'a, Limits>,
+        stop: &'a dyn Stop,
+    ) -> Result<Self> {
         // Check cancellation
-        req.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|_| at!(GifError::Cancelled))?;
 
         // Validate dimensions
-        req.limits.check_dimensions(req.width, req.height)?;
+        limits.check_dimensions(width, height)?;
 
         let stats = Stats::new();
 
@@ -169,7 +190,7 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
-        let defer_encoder = req.config.shared_palette && req.config.global_palette.is_none();
+        let defer_encoder = config.shared_palette && config.global_palette.is_none();
         #[cfg(not(any(
             feature = "zenquant",
             feature = "quantette",
@@ -184,8 +205,7 @@ impl<'a> Encoder<'a> {
             (None, Vec::new(), false)
         } else {
             // Create encoder immediately
-            let global_pal_bytes = req
-                .config
+            let global_pal_bytes = config
                 .global_palette
                 .as_ref()
                 .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect::<Vec<u8>>())
@@ -193,10 +213,10 @@ impl<'a> Encoder<'a> {
 
             let has_global = !global_pal_bytes.is_empty();
 
-            let mut enc = gif::Encoder::new(Vec::new(), req.width, req.height, &global_pal_bytes)
+            let mut enc = gif::Encoder::new(Vec::new(), width, height, &global_pal_bytes)
                 .map_err(|e| at!(GifError::from(e)))?;
 
-            enc.set_repeat(match req.config.repeat {
+            enc.set_repeat(match config.repeat {
                 Repeat::Once => gif::Repeat::Finite(0),
                 Repeat::Infinite => gif::Repeat::Infinite,
                 Repeat::Count(n) => gif::Repeat::Finite(n),
@@ -214,12 +234,11 @@ impl<'a> Encoder<'a> {
             feature = "color_quant"
         ))]
         #[allow(deprecated)] // quantizer_backend fallback for backward compat
-        let quantizer = req
-            .config
+        let quantizer = config
             .quantizer
             .as_ref()
             .map(|q| q.create_backend())
-            .or_else(|| req.config.quantizer_backend.create_quantizer())
+            .or_else(|| config.quantizer_backend.create_quantizer())
             .or_else(|| Some(crate::quantize::Quantizer::auto().create_backend()))
             .ok_or_else(|| {
                 at!(GifError::QuantizationFailed {
@@ -231,15 +250,15 @@ impl<'a> Encoder<'a> {
         Ok(Self {
             encoder,
             buffer,
-            width: req.width,
-            height: req.height,
+            width,
+            height,
             has_global_palette,
-            config: req.config,
+            config,
             previous_frame: None,
             frame_index: 0,
-            limits: req.limits,
+            limits,
             stats,
-            stop: req.stop,
+            stop,
             repeat_written: false,
             #[cfg(any(
                 feature = "zenquant",
@@ -284,6 +303,9 @@ impl<'a> Encoder<'a> {
     ///
     /// This preserves the original global palette if available, and uses
     /// round-trip optimized settings (zero dithering) to minimize bloat.
+    ///
+    /// The config is constructed internally and owned by the encoder, so
+    /// no external `EncoderConfig` reference is needed.
     #[allow(deprecated)] // quantizer_backend is deprecated
     pub fn from_metadata(
         metadata: &Metadata,
@@ -365,20 +387,20 @@ impl<'a> Encoder<'a> {
             lossy_tolerance: 0, // Lossless for round-trip
         };
 
-        // Box and leak the config to satisfy the 'a lifetime requirement.
-        // This is acceptable for from_metadata as it's used for round-tripping,
-        // which is typically done once per GIF, not in a loop.
-        let config: &'a EncoderConfig = Box::leak(Box::new(config));
-
-        let req = EncodeRequest::new(config, metadata.width, metadata.height)
-            .limits(limits)
-            .stop(stop);
-        Self::from_request(req)
+        // Use Cow::Owned so the config is owned by the encoder and
+        // dropped when the encoder is dropped -- no memory leak.
+        Self::build_encoder(
+            Cow::Owned(config),
+            metadata.width,
+            metadata.height,
+            Cow::Borrowed(limits),
+            stop,
+        )
     }
 
     /// Get the encoder configuration.
     pub fn config(&self) -> &EncoderConfig {
-        self.config
+        &self.config
     }
 
     /// Get the stats.
