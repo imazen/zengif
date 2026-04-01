@@ -86,10 +86,18 @@ impl Stats {
     }
 
     /// Track a deallocation of `bytes`.
+    ///
+    /// Uses saturating subtraction to prevent wrapping underflow in release
+    /// builds if deallocations are ever mismatched (e.g., double-free tracking
+    /// or untracked allocations).
     pub fn track_dealloc(&self, bytes: usize) {
         self.dealloc_count.fetch_add(1, Ordering::Relaxed);
         self.total_deallocated.fetch_add(bytes, Ordering::Relaxed);
-        self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
+        self.current_bytes
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(bytes))
+            })
+            .ok();
     }
 
     /// Get current memory usage in bytes.
@@ -368,5 +376,18 @@ mod tests {
         assert_eq!(stats.current(), 0);
         assert_eq!(stats.peak(), 0);
         assert_eq!(stats.alloc_count(), 0);
+    }
+
+    #[test]
+    fn dealloc_underflow_saturates_to_zero() {
+        let stats = Stats::new();
+        stats.track_alloc(100);
+        // Deallocate more than was allocated — must not wrap
+        stats.track_dealloc(200);
+        assert_eq!(stats.current(), 0, "should saturate at 0, not wrap");
+
+        // Deallocate from zero — still safe
+        stats.track_dealloc(50);
+        assert_eq!(stats.current(), 0);
     }
 }
