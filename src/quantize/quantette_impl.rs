@@ -28,6 +28,7 @@ pub struct QuantetteQuantizer {
 }
 
 impl QuantetteQuantizer {
+    /// Creates a new quantette quantizer with no shared palette.
     pub fn new() -> Self {
         Self {
             shared_palette: None,
