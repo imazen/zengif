@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-04-01
+
+### Fixed
+
+- **Memory safety**: Replaced `Box::leak` with `Cow`-owned storage in Encoder to eliminate leaked memory
+- **Stats accuracy**: Use `saturating_sub` in `Stats::track_dealloc` to prevent underflow
+- **Quantette support**: Added quantette to all cfg gates; fixed transparent index out-of-range panic
+- **Transparency**: Fixed transparent pixel mapping in `quantize_frame`; initialized canvas as transparent
+- **Error instrumentation**: Upgraded from `.start_at()` to `at!()` macro for better error tracing
+
+### Changed
+
+- Bumped dependencies: zencodec 0.1.12, zenpixels 0.2.2, linear-srgb 0.6.7, archmage, enough, whereat
+- Set correct minimum versions for zenflate and linear-srgb
+
+### Added
+
+- Expanded transparency and background disposal test coverage
+- Reduced fuzz artifacts for malformed GIF inputs
+
+## [0.7.0] - 2026-03-31
+
+### Changed
+
+- Three-layer encoding API: `EncoderConfig` → `EncodeRequest<'a>` → `Encoder<'a>`
+- Modularized encode module into focused submodules (palette, config, request, encoder)
+- Added zenquant quantization backend (perceptual masking, AGPL-3.0)
+- Added quantette quantization backend (Oklab k-means, MIT/Apache-2.0)
+- Upgraded to Rust 2024 edition, MSRV 1.93
+- Added zenpixels and linear-srgb dependencies for pixel type integration
+
 ## [0.6.0] - 2026-02-06
 
 ### Changed - BREAKING
@@ -157,6 +188,8 @@ println!("Peak: {}", decoder.stats().peak());
 - Encode (pre-indexed): ~200 MB/s.
 - Encode (quantized): ~40 MB/s.
 
+[0.7.1]: https://github.com/imazen/zengif/releases/tag/v0.7.1
+[0.7.0]: https://github.com/imazen/zengif/releases/tag/v0.7.0
 [0.6.0]: https://github.com/imazen/zengif/releases/tag/v0.6.0
 [0.5.0]: https://github.com/imazen/zengif/releases/tag/v0.5.0
 [0.4.0]: https://github.com/imazen/zengif/releases/tag/v0.4.0
