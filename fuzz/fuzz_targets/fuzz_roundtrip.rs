@@ -55,7 +55,13 @@ fuzz_target!(|data: &[u8]| {
     };
 
     // Step 4: Decode the re-encoded output
-    let (_, decoded, _stats2) = match decode_gif(&output, limits, &Unstoppable) {
+    // Use relaxed limits for re-decode: the encoded output can have a very
+    // different compression ratio than the original input (e.g., a 33-byte
+    // adversarial GIF that decodes to 256x255 transparent canvas gets
+    // re-encoded as ~400 bytes, giving a 164x ratio). The re-encoded data
+    // is trusted (our encoder), so relax the decompression ratio.
+    let redecode_limits = limits.max_decompression_ratio(10000.0);
+    let (_, decoded, _stats2) = match decode_gif(&output, redecode_limits, &Unstoppable) {
         Ok(d) => d,
         Err(_) => {
             // If we successfully encoded but can't decode, that's a bug!
