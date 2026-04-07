@@ -162,7 +162,14 @@ impl Limits {
     }
 
     /// Check if dimensions are within limits.
+    ///
+    /// Rejects zero-width or zero-height images (always invalid).
     pub fn check_dimensions(&self, width: u16, height: u16) -> Result<()> {
+        // Zero dimensions are always invalid — a 0x0 image is meaningless
+        if width == 0 || height == 0 {
+            return Err(at!(GifError::InvalidScreenDescriptor));
+        }
+
         if let Some(max_w) = self.max_width
             && width > max_w
         {
