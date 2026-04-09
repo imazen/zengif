@@ -10,7 +10,7 @@ documentation = "https://docs.rs/zengif"
 keywords = ["gif", "image", "animation", "codec", "server"]
 categories = ["multimedia::images", "encoding"]
 readme = "README.md"
-exclude = ["CLAUDE.md", "FEEDBACK.md", "api-feedback.md", "justfile", ".github/"]
+exclude = ["CLAUDE.md", "CONTEXT-HANDOFF.md", "FEEDBACK.md", ".claude/", ".superwork/", ".zenbench/", "copter-report/", ".github/", "Cross.toml", "justfile", "Cargo.toml.original.txt", "api-feedback.md", "fuzz/"]
 
 [features]
 default = ["std", "zenquant"]

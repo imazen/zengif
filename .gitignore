@@ -10,8 +10,13 @@ tests/corpus/image-rs/
 target/
 
 # Fuzz build artifacts and crashes
+# (corpus/ is selectively ignored in fuzz/.gitignore to preserve corpus/seed/)
 fuzz/target/
 fuzz/artifacts/
+fuzz/coverage/
+fuzz-*.log
+*.profraw
+*.profdata
 
 # Profiling
 perf.data
@@ -50,3 +55,12 @@ Thumbs.db
 .vscode/
 *.iml
 !fuzz/Cargo.lock
+
+# Tooling noise
+.superwork/
+.claude/
+copter-report/
+.zenbench/
+.external-cache/
+Cargo.toml.original.txt
+*.rs.local
