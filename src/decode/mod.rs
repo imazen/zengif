@@ -376,7 +376,8 @@ impl<'a, R: Read> Decoder<'a, R> {
         let frame_size = frame_info.width as usize * frame_info.height as usize;
         self.ensure_buffer_capacity(frame_size)?;
         let buffer_slice = &mut self.pixel_buffer[..frame_size];
-        buffer_slice.fill(0);
+        // Note: no fill(0) needed — read_into_buffer writes exactly frame_size
+        // bytes on success (GIF guarantees width*height indexed pixels per frame).
 
         self.reader
             .read_into_buffer(buffer_slice)
@@ -432,6 +433,103 @@ impl<'a, R: Read> Decoder<'a, R> {
         Ok(Some(composed))
     }
 
+    /// Read, compose, and return the next frame, moving the canvas pixels
+    /// out instead of cloning them.
+    ///
+    /// This is a zero-copy variant of `next_frame` that avoids both the
+    /// indexed pixel buffer clone (B.1) and the RGBA canvas clone (B.2).
+    /// After calling this, the decoder's Screen canvas is empty and the
+    /// decoder should not be used for further compositing.
+    ///
+    /// Use this for single-frame decode paths where the decoder will be
+    /// dropped immediately after.
+    pub fn next_frame_take(&mut self) -> Result<Option<ComposedFrame>> {
+        if self.finished {
+            return Ok(None);
+        }
+
+        // Check for cancellation periodically
+        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+
+        // Check frame count limit
+        self.limits.check_frame_count(self.frame_index as u64)?;
+
+        // Try to read the next frame info
+        let frame_info = match self.reader.next_frame_info() {
+            Ok(Some(info)) => info.clone(),
+            Ok(None) => {
+                self.finished = true;
+                return Ok(None);
+            }
+            Err(e) => {
+                if self.frame_index > 0 && is_unexpected_eof(&e) {
+                    self.finished = true;
+                    return Ok(None);
+                }
+                return Err(at!(GifError::from(e)));
+            }
+        };
+
+        // Read frame pixels
+        let frame_size = frame_info.width as usize * frame_info.height as usize;
+        self.ensure_buffer_capacity(frame_size)?;
+        let buffer_slice = &mut self.pixel_buffer[..frame_size];
+
+        self.reader
+            .read_into_buffer(buffer_slice)
+            .map_err(|e| at!(GifError::from(e)))?;
+
+        // Track decompressed bytes and check ratio (zip bomb protection)
+        self.bytes_decompressed += frame_size as u64;
+        let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        self.limits
+            .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
+
+        // Avoid cloning the indexed pixel buffer (B.1): swap the pixel_buffer
+        // into the RawFrame, compose, then swap it back. This is zero-copy
+        // for the indexed pixels.
+        let pixels = core::mem::take(&mut self.pixel_buffer);
+
+        let raw_frame = RawFrame {
+            index: self.frame_index,
+            left: frame_info.left,
+            top: frame_info.top,
+            width: frame_info.width,
+            height: frame_info.height,
+            delay: frame_info.delay,
+            disposal: DisposalMethod::from(frame_info.dispose),
+            transparent: frame_info.transparent,
+            needs_user_input: frame_info.needs_user_input,
+            interlaced: frame_info.interlaced,
+            palette: frame_info
+                .palette
+                .as_ref()
+                .map(|p| Palette::from_rgb_bytes(p)),
+            pixels,
+        };
+
+        // Compose the frame, taking the canvas pixels (zero-copy B.2)
+        let stats = &self.stats;
+        let composed = self
+            .screen
+            .process_frame_take(&raw_frame, stats, &self.limits)?;
+
+        // Reclaim the pixel buffer for potential future use
+        self.pixel_buffer = raw_frame.pixels;
+
+        // Track cumulative animation duration (delay is in centiseconds)
+        self.cumulative_duration_ms += frame_info.delay as u64 * 10;
+        self.limits
+            .check_animation_duration(self.cumulative_duration_ms)?;
+
+        self.frame_index += 1;
+
+        // Update metadata with repeat value
+        self.metadata.repeat = Repeat::from(self.reader.repeat());
+
+        Ok(Some(composed))
+    }
+
     /// Process the next frame with a callback, without copying the canvas.
     ///
     /// This is more efficient than `next_frame()` for streaming use cases
@@ -482,7 +580,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         let frame_size = frame_info.width as usize * frame_info.height as usize;
         self.ensure_buffer_capacity(frame_size)?;
         let buffer_slice = &mut self.pixel_buffer[..frame_size];
-        buffer_slice.fill(0);
+        // Note: no fill(0) needed — read_into_buffer writes exactly frame_size bytes.
 
         self.reader
             .read_into_buffer(buffer_slice)

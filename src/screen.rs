@@ -129,13 +129,16 @@ impl Screen {
         self.disposal
             .apply(&mut self.pixels, self.width, self.background, stats);
 
-        // 2. Get the palette for this frame
-        let palette = frame
+        // 2. Build a 256-entry palette lookup table for bounds-check-free indexing.
+        // `Palette::lookup_table()` fills unused slots with TRANSPARENT so every
+        // u8 index is valid — LLVM can prove `idx < 256` for a `[T; 256]` and
+        // elide bounds checks entirely.
+        let lut: [Rgba; 256] = frame
             .palette
             .as_ref()
             .or(self.global_palette.as_ref())
-            .map(|p| p.colors())
-            .unwrap_or(&[]);
+            .map(|p| p.lookup_table())
+            .unwrap_or([Rgba::TRANSPARENT; 256]);
 
         // 3. Validate frame bounds (clip if necessary, but warn)
         let (left, top, width, height) =
@@ -182,10 +185,7 @@ impl Screen {
                     for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
                     {
                         if color_index != transparent_idx {
-                            *canvas_pixel = palette
-                                .get(color_index as usize)
-                                .copied()
-                                .unwrap_or(Rgba::TRANSPARENT);
+                            *canvas_pixel = lut[color_index as usize];
                         }
                     }
                 }
@@ -206,10 +206,7 @@ impl Screen {
 
                     for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
                     {
-                        *canvas_pixel = palette
-                            .get(color_index as usize)
-                            .copied()
-                            .unwrap_or(Rgba::TRANSPARENT);
+                        *canvas_pixel = lut[color_index as usize];
                     }
                 }
             }
@@ -225,7 +222,9 @@ impl Screen {
     ///
     /// Note: This copies the entire canvas. For streaming use cases
     /// where frames don't need to be kept, use `process_frame_in_place`
-    /// followed by `pixels()` to avoid the copy.
+    /// followed by `pixels()` to avoid the copy. For single-frame decode
+    /// where the Screen will be dropped, use `process_frame_take` to move
+    /// the canvas out without copying.
     pub fn process_frame(
         &mut self,
         frame: &RawFrame,
@@ -249,6 +248,50 @@ impl Screen {
                 })
             })?;
         composed_pixels.extend_from_slice(&self.pixels);
+
+        // Get effective palette (local if present, else global)
+        let effective_palette = frame
+            .palette
+            .as_ref()
+            .or(self.global_palette.as_ref())
+            .cloned();
+
+        let composed = ComposedFrame {
+            index,
+            width: self.width,
+            height: self.height,
+            delay,
+            pixels: composed_pixels,
+            palette: effective_palette,
+        };
+
+        Ok(composed)
+    }
+
+    /// Process a raw frame and return the composited result by taking
+    /// the canvas pixels instead of cloning them.
+    ///
+    /// This is a zero-copy variant of `process_frame` that moves the
+    /// internal pixel buffer out. After calling this, the screen's canvas
+    /// is empty and the screen should not be used for further compositing.
+    ///
+    /// Use this for single-frame decode where the Screen will be dropped
+    /// immediately after. For multi-frame animation, use `process_frame`
+    /// which preserves the canvas for subsequent frames.
+    pub fn process_frame_take(
+        &mut self,
+        frame: &RawFrame,
+        stats: &Stats,
+        limits: &Limits,
+    ) -> Result<ComposedFrame> {
+        // Process frame in place (does all the compositing work)
+        let (index, delay) = self.process_frame_in_place(frame, stats, limits)?;
+
+        // Move the canvas pixels out instead of cloning (zero-copy).
+        // The screen's canvas is left empty — further compositing would
+        // produce incorrect results, so this should only be used when
+        // the screen is about to be dropped.
+        let composed_pixels = core::mem::take(&mut self.pixels);
 
         // Get effective palette (local if present, else global)
         let effective_palette = frame

@@ -1303,7 +1303,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         let metadata = decoder.metadata().clone();
 
         let frame = decoder
-            .next_frame()?
+            .next_frame_take()?
             .ok_or_else(|| at!(GifError::UnexpectedEof))?;
 
         let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
