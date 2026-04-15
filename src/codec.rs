@@ -99,6 +99,8 @@ static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
+    PixelDescriptor::RGBX8_SRGB,
+    PixelDescriptor::BGRX8_SRGB,
     PixelDescriptor::RGBF32_LINEAR,
     PixelDescriptor::RGBAF32_LINEAR,
     PixelDescriptor::GRAYF32_LINEAR,
@@ -594,6 +596,25 @@ fn pixels_to_gif_rgba(
 
     let desc = pixels.descriptor();
     let bytes = pixels.contiguous_bytes();
+
+    // RGBX8/BGRX8: 4-byte layouts where byte 3 is undefined padding, not alpha.
+    // Match the exact descriptor BEFORE the generic layout branches (which
+    // share ChannelLayout::Rgba / Bgra) so the padding byte is discarded
+    // instead of leaking into decoded alpha.
+    if desc == PixelDescriptor::RGBX8_SRGB {
+        let rgba: Vec<crate::Rgba> = bytes
+            .chunks_exact(4)
+            .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
+            .collect();
+        return Ok((rgba, w, h));
+    }
+    if desc == PixelDescriptor::BGRX8_SRGB {
+        let rgba: Vec<crate::Rgba> = bytes
+            .chunks_exact(4)
+            .map(|c| crate::Rgba::rgb(c[2], c[1], c[0]))
+            .collect();
+        return Ok((rgba, w, h));
+    }
 
     let rgba = match (desc.channel_type(), desc.layout()) {
         (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgb) => bytes
@@ -1716,6 +1737,159 @@ mod tests {
         let output = dyn_enc.encode(buf.as_slice()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[test]
+    fn supported_descriptors_includes_rgbx_and_bgrx() {
+        use zencodec::encode::EncoderConfig as _;
+        let desc = GifEncoderConfig::supported_descriptors();
+        assert!(
+            desc.contains(&PixelDescriptor::RGBX8_SRGB),
+            "RGBX8_SRGB must be in supported_descriptors"
+        );
+        assert!(
+            desc.contains(&PixelDescriptor::BGRX8_SRGB),
+            "BGRX8_SRGB must be in supported_descriptors"
+        );
+    }
+
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encode_rgbx8_roundtrip() {
+        use zencodec::encode::Encoder as _;
+
+        // 16×16 image, RGBX8 layout: 4 bytes per pixel, byte 3 is padding.
+        // Padding byte deliberately non-0xFF to confirm it's ignored.
+        let w: u32 = 16;
+        let h: u32 = 16;
+        let mut buf = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..(w * h) {
+            buf.extend_from_slice(&[255, 128, 0, 0x13]);
+        }
+        let pbuf = PixelBuffer::from_vec(buf, w, h, PixelDescriptor::RGBX8_SRGB).unwrap();
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder.encode(pbuf.as_slice()).unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+
+        // Round-trip: decode and confirm padding byte didn't leak into alpha
+        // and RGB is preserved (within GIF palette tolerance — solid color
+        // should quantize exactly).
+        let dec = GifDecoderConfig::new();
+        let decoded = dec.decode(output.data()).unwrap();
+        let out_buf = decoded.into_buffer();
+        assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
+        let px = out_buf.into_vec();
+        // First pixel: R=255, G=128, B=0, A=255 (padding byte must not leak)
+        assert_eq!(
+            &px[0..4],
+            &[255, 128, 0, 255],
+            "RGBX8 padding byte must not leak into decoded alpha; got {:?}",
+            &px[0..4]
+        );
+    }
+
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encode_bgrx8_roundtrip() {
+        use zencodec::encode::Encoder as _;
+
+        // 16×16 image, BGRX8 layout: B=0, G=128, R=255, padding=0x42.
+        let w: u32 = 16;
+        let h: u32 = 16;
+        let mut buf = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..(w * h) {
+            buf.extend_from_slice(&[0, 128, 255, 0x42]);
+        }
+        let pbuf = PixelBuffer::from_vec(buf, w, h, PixelDescriptor::BGRX8_SRGB).unwrap();
+        let config = GifEncoderConfig::new();
+        let encoder = config.job().encoder().unwrap();
+        let output = encoder.encode(pbuf.as_slice()).unwrap();
+        assert!(!output.is_empty());
+        assert_eq!(output.format(), ImageFormat::Gif);
+
+        let dec = GifDecoderConfig::new();
+        let decoded = dec.decode(output.data()).unwrap();
+        let out_buf = decoded.into_buffer();
+        assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
+        let px = out_buf.into_vec();
+        // BGRX → RGBA: B=0, G=128, R=255 → R=255, G=128, B=0; alpha=255.
+        assert_eq!(
+            &px[0..4],
+            &[255, 128, 0, 255],
+            "BGRX8 padding byte must not leak into decoded alpha; got {:?}",
+            &px[0..4]
+        );
+    }
+
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn encode_rgbx8_and_rgb8_produce_similar_sizes() {
+        // RGBX8 should encode as a 3-channel (opaque) GIF — size should be
+        // very close to the equivalent RGB8 encode, not the RGBA8 encode.
+        // The GIF format is always palettized, so the output sizes are
+        // governed by palette + LZW, not raw channel count — they should
+        // be nearly identical (within a small fudge factor for any palette
+        // entry / disposal method differences).
+        use zencodec::encode::Encoder as _;
+
+        let w: u32 = 16;
+        let h: u32 = 16;
+
+        let mut rgbx = Vec::with_capacity((w * h * 4) as usize);
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        for i in 0..(w * h) {
+            let r = (i & 0xff) as u8;
+            let g = ((i >> 1) & 0xff) as u8;
+            let b = ((i >> 2) & 0xff) as u8;
+            rgbx.extend_from_slice(&[r, g, b, 0x55]);
+            rgb.extend_from_slice(&[r, g, b]);
+        }
+
+        let rgbx_buf = PixelBuffer::from_vec(rgbx, w, h, PixelDescriptor::RGBX8_SRGB).unwrap();
+        let rgb_buf = PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+
+        let rgbx_out = GifEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(rgbx_buf.as_slice())
+            .unwrap();
+        let rgb_out = GifEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(rgb_buf.as_slice())
+            .unwrap();
+
+        let rgbx_len = rgbx_out.data().len();
+        let rgb_len = rgb_out.data().len();
+        // Allow up to 5% difference for any palette/header quirks.
+        let diff = (rgbx_len as i64 - rgb_len as i64).abs();
+        let tol = (rgb_len.max(rgbx_len) as i64 * 5 + 99) / 100;
+        assert!(
+            diff <= tol,
+            "RGBX8 encode ({rgbx_len} B) should closely match RGB8 encode ({rgb_len} B) — diff {diff} > tol {tol}"
+        );
     }
 
     #[cfg(any(
