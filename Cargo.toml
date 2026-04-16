@@ -80,7 +80,7 @@ archmage = { version = "0.9.15", features = ["std"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-zenbench = { version = "0.1.2", features = ["criterion-compat"] }
+zenbench = { version = "0.1.7", features = ["criterion-compat"] }
 # Quality metrics for quantizer comparison tests
 fast-ssim2 = { version = "0.7.1", features = ["imgref"] }
 # PNG decoding for quantizer quality tests
@@ -131,4 +131,8 @@ required-features = ["std", "quantizr"]
 
 [[bench]]
 name = "codec"
+harness = false
+
+[[bench]]
+name = "decode_bench"
 harness = false
