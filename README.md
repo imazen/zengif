@@ -182,7 +182,7 @@ Auto-selection priority (top to bottom):
 **Default features include AGPL code.** `cargo add zengif` enables `zenquant`, which is AGPL-3.0-or-later. For permissive-only licensing, disable default features and pick a quantizer:
 
 ```toml
-zengif = { version = "0.7.1", default-features = false, features = ["std", "quantette"] }
+zengif = { version = "0.7", default-features = false, features = ["std", "quantette"] }
 ```
 
 Without *any* quantizer feature, zengif is MIT/Apache-2.0 but encoding requires pre-indexed frames.
@@ -192,7 +192,7 @@ Without *any* quantizer feature, zengif is MIT/Apache-2.0 but encoding requires 
 For WASM or embedded, disable the default `std` feature:
 
 ```toml
-zengif = { version = "0.7.1", default-features = false }
+zengif = { version = "0.7", default-features = false }
 ```
 
 You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec. Useful when you need to share types between WASM and native code.

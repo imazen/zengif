@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### QUEUED BREAKING CHANGES
+<!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
+     Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
+
+## [0.7.2] - 2026-04-10
+
+### Fixed
+
+- Reject zero-dimension GIF images in `check_dimensions` (5323302)
+- Relax decompression ratio limit in roundtrip fuzz target (d5eb050)
+
+### Changed
+
+- Bumped zencodec to 0.1.13 (f678856)
+
+### Added
+
+- Nightly fuzz workflow (60s on push, 5min nightly) (dba2d7a)
+- Committed fuzz/Cargo.lock for reproducible fuzz builds (afcad3e)
+- Gitignore tooling noise; exclude from packages (b2d388a)
+
 ## [0.7.1] - 2026-04-01
 
 ### Fixed
@@ -188,6 +211,7 @@ println!("Peak: {}", decoder.stats().peak());
 - Encode (pre-indexed): ~200 MB/s.
 - Encode (quantized): ~40 MB/s.
 
+[0.7.2]: https://github.com/imazen/zengif/releases/tag/v0.7.2
 [0.7.1]: https://github.com/imazen/zengif/releases/tag/v0.7.1
 [0.7.0]: https://github.com/imazen/zengif/releases/tag/v0.7.0
 [0.6.0]: https://github.com/imazen/zengif/releases/tag/v0.6.0
