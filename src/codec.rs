@@ -1453,12 +1453,12 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         }
     }
 
-    /// Override the default owned-frame path to avoid an extra copy.
+    /// Zero-copy override: use `with_next_frame` to avoid the 64 MB canvas
+    /// clone that `next_frame()` → `process_frame()` performs.
     ///
-    /// The default impl calls `render_next_frame()` (which stores a PixelBuffer
-    /// in `self.current_frame`) and then `to_owned_frame()` which copies it
-    /// again. Since `next_frame()` already produces owned pixels, we build
-    /// the `OwnedAnimationFrame` directly — one fewer 64 MB memcpy at 4096².
+    /// `with_next_frame` composites in-place and gives a callback a `&[Rgba]`
+    /// reference to the canvas. We copy directly from that reference into the
+    /// output `PixelBuffer`, skipping the intermediate `ComposedFrame` clone.
     fn render_next_frame_owned(
         &mut self,
         stop: Option<&dyn zencodec::enough::Stop>,
@@ -1468,37 +1468,49 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         }
 
         loop {
-            let frame = self.decoder.next_frame()?;
+            let w = self.decoder.width() as u32;
+            let h = self.decoder.height() as u32;
+            let preferred = &self.preferred;
 
-            let frame = match frame {
-                Some(f) => f,
+            // with_next_frame composites in-place (no canvas clone) and gives
+            // us a &[Rgba] reference to the screen pixels.
+            let result = self.decoder.with_next_frame(
+                |_index, delay, pixels| -> Result<OwnedAnimationFrame, At<GifError>> {
+                    let duration_ms = delay as u32 * 10;
+                    let rgba_bytes = bytemuck::cast_slice::<crate::Rgba, u8>(pixels).to_vec();
+                    let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
+                        .map_err(|_| {
+                            at!(GifError::InvalidEncoderState {
+                                message: "frame size mismatch",
+                            })
+                        })?;
+                    let buf = negotiate_format(buf, preferred);
+                    Ok(OwnedAnimationFrame::new(buf, duration_ms, 0))
+                },
+            )?;
+
+            match result {
                 None => {
                     self.current_frame = None;
                     return Ok(None);
                 }
-            };
+                Some(frame_result) => {
+                    let index = self.frame_index;
+                    self.frame_index += 1;
 
-            let index = self.frame_index;
-            self.frame_index += 1;
+                    // Skip frames before start_frame_index
+                    if index < self.start_frame_index {
+                        continue;
+                    }
 
-            // Skip frames before start_frame_index
-            if index < self.start_frame_index {
-                continue;
+                    let frame = frame_result?;
+                    // Fix up the frame index (couldn't set it inside the closure
+                    // because we don't know it until after with_next_frame returns)
+                    let rebuilt =
+                        OwnedAnimationFrame::new(frame.into_buffer(), frame.duration_ms(), index);
+                    return Ok(Some(rebuilt));
+                }
             }
-
-            let w = frame.width as u32;
-            let h = frame.height as u32;
-            let duration_ms = frame.delay as u32 * 10;
-            let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
-            let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
-                .map_err(|_| {
-                    at!(GifError::InvalidEncoderState {
-                        message: "frame size mismatch",
-                    })
-                })?;
-
-            let buf = negotiate_format(buf, &self.preferred);
-            return Ok(Some(OwnedAnimationFrame::new(buf, duration_ms, index)));
         }
     }
 
