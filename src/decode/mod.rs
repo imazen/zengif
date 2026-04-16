@@ -389,14 +389,10 @@ impl<'a, R: Read> Decoder<'a, R> {
         self.limits
             .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
-        // Create RawFrame (fallible pixel copy)
-        let mut pixels = Vec::new();
-        pixels.try_reserve(buffer_slice.len()).map_err(|_| {
-            at!(GifError::AllocationFailed {
-                requested: buffer_slice.len() as u64
-            })
-        })?;
-        pixels.extend_from_slice(buffer_slice);
+        // Avoid cloning the indexed pixel buffer: swap the pixel_buffer into
+        // the RawFrame, compose, then swap it back. process_frame only borrows
+        // the frame immutably, so the pixels are returned intact.
+        let pixels = core::mem::take(&mut self.pixel_buffer);
 
         let raw_frame = RawFrame {
             index: self.frame_index,
@@ -416,9 +412,12 @@ impl<'a, R: Read> Decoder<'a, R> {
             pixels,
         };
 
-        // Compose the frame
+        // Compose the frame (clones canvas for multi-frame safety)
         let stats = &self.stats;
         let composed = self.screen.process_frame(&raw_frame, stats, &self.limits)?;
+
+        // Reclaim the pixel buffer
+        self.pixel_buffer = raw_frame.pixels;
 
         // Track cumulative animation duration (delay is in centiseconds)
         self.cumulative_duration_ms += frame_info.delay as u64 * 10;
@@ -592,14 +591,9 @@ impl<'a, R: Read> Decoder<'a, R> {
         self.limits
             .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
-        // Create RawFrame (fallible pixel copy - unavoidable here)
-        let mut pixels = Vec::new();
-        pixels.try_reserve(buffer_slice.len()).map_err(|_| {
-            at!(GifError::AllocationFailed {
-                requested: buffer_slice.len() as u64
-            })
-        })?;
-        pixels.extend_from_slice(buffer_slice);
+        // Avoid cloning the indexed pixel buffer: swap into RawFrame, compose,
+        // then swap back. process_frame_in_place only borrows immutably.
+        let pixels = core::mem::take(&mut self.pixel_buffer);
 
         let raw_frame = RawFrame {
             index: self.frame_index,
@@ -624,6 +618,9 @@ impl<'a, R: Read> Decoder<'a, R> {
         let (index, delay) = self
             .screen
             .process_frame_in_place(&raw_frame, stats, &self.limits)?;
+
+        // Reclaim the pixel buffer
+        self.pixel_buffer = raw_frame.pixels;
 
         // Track cumulative animation duration (delay is in centiseconds)
         self.cumulative_duration_ms += frame_info.delay as u64 * 10;
