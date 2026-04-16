@@ -183,3 +183,88 @@ Commit baseline for this investigation: imageflow
 release) + `f66bf8d1` (RGBX/BGRX dispatch), weezl patched to
 `https://github.com/lilith/weezl/tree/imageflow-0.1.13-with-perf`
 (commit `a4a5ee9`).
+
+## Fixes applied (2026-04-15)
+
+Commits: `9e49aced`..`d3d1e894` on zengif main.
+
+### B.2 — Canvas clone elimination (Screen::process_frame_take + with_next_frame)
+
+Added `Screen::process_frame_take()` that uses `mem::take` to move the
+canvas Vec out instead of cloning. For the single-frame `Decode::decode()`
+path, this is zero-copy. For the animation frame decoder path (what
+imageflow actually benches), rewrote `render_next_frame_owned` to use
+`Decoder::with_next_frame()` which composites in-place and gives the
+callback a `&[Rgba]` reference to the canvas — avoids the 64 MB clone
+entirely.
+
+### B.3 — Bounds-check-free palette LUT
+
+Replaced `palette.get(idx).copied().unwrap_or(TRANSPARENT)` with a
+`[Rgba; 256]` lookup table built once per frame via `Palette::lookup_table()`.
+LLVM can prove `idx < 256` for fixed-size arrays, eliminating 16M bounds
+checks at 4096².
+
+### B.1 — Indexed pixel buffer clone elimination
+
+Applied `mem::take`/reclaim pattern to all three frame-reading methods
+(`next_frame`, `next_frame_take`, `with_next_frame`). The pixel buffer is
+swapped into the RawFrame for compositing, then reclaimed afterward. Zero
+extra allocation or memcpy for the indexed pixels.
+
+### B.4 — Redundant fill removal
+
+Removed `buffer_slice.fill(0)` before `read_into_buffer` in all three
+methods. GIF guarantees width×height indexed pixels per successful frame
+decode; the zeroing was pure waste.
+
+### Bonus — Fused BGRA copy+swizzle
+
+`render_next_frame_owned` now does RGBA→BGRA conversion in a single pass
+(memcpy then in-place swap) instead of the previous two-pass approach
+(clone canvas → negotiate_format swizzle).
+
+### Results after fixes
+
+Back-to-back bench (old binary = before, new binary = after, same session):
+
+| Size   | zen before (Mpx/s) | zen after (Mpx/s) | gifrs (Mpx/s) | ratio before | ratio after |
+|--------|--------------------|--------------------|---------------|-------------|-------------|
+| 256²   | 43.6               | 47.1               | ~43           | ~1.0        | ~1.0        |
+| 1024²  | 2.43 G             | 2.70 G             | ~2.8 G        | 0.91        | 0.93        |
+| 4096²  | 38.7               | 39.8               | ~54           | 0.72        | 0.74        |
+
+The improvement at 4096² is modest (~3% ratio improvement, ~3% absolute)
+because the system had high variance (CV 20-30%) and the architectural
+gap remains: gif-rs composites directly to BGRA, while zengif composites
+to RGBA then swizzles. That BGRA swizzle pass touches 64 MB — at ~30 GB/s
+that's only ~2 ms of the ~420 ms total, so it's not the main explanation.
+
+The remaining ~26% gap vs gif-rs is likely composed of:
+- **gif-rs has no per-frame overhead**: no stats tracking, no decompression
+  ratio checks, no fallible allocation paths, no limit enforcement. zengif
+  does all of these for security (zero-trust design).
+- **gif-rs iterator-based compositing** vs zengif row-slice compositing:
+  different cache access patterns. gif-rs uses a custom `Subimage` iterator
+  over the pixel and canvas buffers with per-pixel iteration; zengif does
+  row-at-a-time slicing. Both are valid but produce different codegen.
+- **gif-rs uses BGRA natively** — palette entries are stored as BGRA8 and
+  composited directly to BGRA canvas. zengif uses RGBA throughout and
+  converts at output. One fewer memory pass for gif-rs.
+
+### Magetypes / SIMD opportunities (not yet implemented)
+
+- **Palette expansion loop** (`screen.rs` inner compositing loops): the LUT
+  lookup is inherently scalar (indexed by arbitrary u8). SIMD gather
+  (`vpgatherdd`) could do 8-16 lookups at once on AVX2/AVX-512. This is a
+  significant optimization opportunity but requires explicit SIMD, not
+  autovectorization. Would use `#[magetypes(_v4x, v4, v3, neon, wasm128)]`.
+- **BGRA swizzle**: `garb::bytes::swap_br` is already SIMD-optimized. Could
+  be used instead of the scalar `chunks_exact_mut(4) + swap(0,2)` pattern.
+  Would require adding garb as a dependency (currently not a dep of zengif).
+- **Dispose-to-background fill**: `self.pixels.fill(background)` — could
+  benefit from SIMD when filling with a non-zero pattern. memset handles the
+  zero case; non-zero BGRA fill is a scatter opportunity.
+- **Per-row alpha blending** (transparency compositing path): the
+  `if color_index != transparent_idx` branch is per-pixel and unpredictable.
+  SIMD blend with mask could eliminate the branch.
