@@ -130,6 +130,10 @@ required-features = ["std", "quantizr"]
 name = "test_thresholds"
 required-features = ["std", "quantizr"]
 
+[[example]]
+name = "profile_decode"
+required-features = ["std"]
+
 [[bench]]
 name = "codec"
 harness = false

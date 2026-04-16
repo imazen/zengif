@@ -1408,47 +1408,97 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         // borrows the decoder's stored buffer, so callers get ready-to-display
         // frames with no further compositing needed.
         //
+        // Uses with_next_frame (in-place compositing, no 64 MB canvas clone)
+        // and reuses the output buffer from the previous frame to avoid
+        // per-frame allocation.
+        //
         // Frames before `start_frame_index` are decoded (to advance compositing
         // and disposal state correctly) but not yielded to the caller.
         loop {
-            let frame = self.decoder.next_frame()?;
+            let w = self.decoder.width() as u32;
+            let h = self.decoder.height() as u32;
+            let preferred = &self.preferred;
+            let wants_bgra = preferred.contains(&PixelDescriptor::BGRA8_SRGB);
 
-            let frame = match frame {
-                Some(f) => f,
+            // Reclaim the output buffer from the previous frame's PixelBuffer.
+            // This avoids a fresh 64 MB allocation every frame at 4096².
+            let mut reuse_buf = self
+                .current_frame
+                .take()
+                .map(|(pb, _, _)| pb.into_vec())
+                .unwrap_or_default();
+
+            let result = self.decoder.with_next_frame(
+                |_index, delay, pixels| -> Result<(PixelBuffer, u32), At<GifError>> {
+                    let duration_ms = delay as u32 * 10;
+                    let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
+
+                    let buf = if wants_bgra {
+                        // Fused copy + R↔B swizzle in one SIMD pass.
+                        reuse_buf.resize(src.len(), 0);
+                        garb::bytes::rgba_to_bgra(src, &mut reuse_buf)
+                            .expect("src/dst same length, multiple of 4");
+                        PixelBuffer::from_vec(
+                            core::mem::take(&mut reuse_buf),
+                            w,
+                            h,
+                            PixelDescriptor::BGRA8_SRGB,
+                        )
+                        .map_err(|_| {
+                            at!(GifError::InvalidEncoderState {
+                                message: "frame size mismatch",
+                            })
+                        })?
+                    } else {
+                        // Reuse buffer for copy
+                        reuse_buf.resize(src.len(), 0);
+                        reuse_buf.copy_from_slice(src);
+                        let pb = PixelBuffer::from_vec(
+                            core::mem::take(&mut reuse_buf),
+                            w,
+                            h,
+                            PixelDescriptor::RGBA8_SRGB,
+                        )
+                        .map_err(|_| {
+                            at!(GifError::InvalidEncoderState {
+                                message: "frame size mismatch",
+                            })
+                        })?;
+                        negotiate_format(pb, preferred)
+                    };
+
+                    Ok((buf, duration_ms))
+                },
+            )?;
+
+            match result {
                 None => {
                     self.current_frame = None;
                     return Ok(None);
                 }
-            };
+                Some(inner_result) => {
+                    let index = self.frame_index;
+                    self.frame_index += 1;
 
-            let index = self.frame_index;
-            self.frame_index += 1;
+                    // Skip frames before start_frame_index — decode for
+                    // correct compositing state, but don't yield.
+                    if index < self.start_frame_index {
+                        // For skipped frames: inner_result was computed but we
+                        // discard it. The PixelBuffer's Vec will be dropped,
+                        // but that's OK — skipped frames are rare.
+                        continue;
+                    }
 
-            // Skip frames before start_frame_index — we must decode them for
-            // correct compositing state, but we don't yield them.
-            if index < self.start_frame_index {
-                continue;
+                    let (buf, duration_ms) = inner_result?;
+                    self.current_frame = Some((buf, duration_ms, index));
+                    let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
+                    return Ok(Some(AnimationFrame::new(
+                        buf.as_slice(),
+                        duration_ms,
+                        index,
+                    )));
+                }
             }
-
-            let w = frame.width as u32;
-            let h = frame.height as u32;
-            let duration_ms = frame.delay as u32 * 10;
-            let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
-            let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
-                .map_err(|_| {
-                    at!(GifError::InvalidEncoderState {
-                        message: "frame size mismatch",
-                    })
-                })?;
-
-            let buf = negotiate_format(buf, &self.preferred);
-            self.current_frame = Some((buf, duration_ms, index));
-            let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
-            return Ok(Some(AnimationFrame::new(
-                buf.as_slice(),
-                duration_ms,
-                index,
-            )));
         }
     }
 
