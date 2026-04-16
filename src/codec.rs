@@ -1486,12 +1486,12 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                     let duration_ms = delay as u32 * 10;
 
                     let buf = if wants_bgra {
-                        // Fused copy+swizzle: one pass over the data.
+                        // Copy RGBA, then swizzle R↔B in-place. Two passes but
+                        // both are highly LLVM-friendly: memcpy + vectorized swap.
                         let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
-                        let mut bgra_bytes = Vec::with_capacity(src.len());
-                        // SAFETY: capacity is correct, we fill all bytes below.
-                        for chunk in src.chunks_exact(4) {
-                            bgra_bytes.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
+                        let mut bgra_bytes = src.to_vec();
+                        for chunk in bgra_bytes.chunks_exact_mut(4) {
+                            chunk.swap(0, 2); // R↔B
                         }
                         PixelBuffer::from_vec(bgra_bytes, w, h, PixelDescriptor::BGRA8_SRGB)
                             .map_err(|_| {
