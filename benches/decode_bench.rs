@@ -50,7 +50,7 @@ fn generate_gradient_gif(width: u16, height: u16) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
-/// Decode using zengif: produces composited RGBA frames.
+/// Decode using zengif `next_frame`: clones canvas per frame.
 fn decode_zengif(data: &[u8]) -> usize {
     let cursor = std::io::Cursor::new(data);
     let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).unwrap();
@@ -58,6 +58,25 @@ fn decode_zengif(data: &[u8]) -> usize {
     while let Some(frame) = decoder.next_frame().unwrap() {
         total_pixels += frame.pixels.len();
         black_box(&frame.pixels);
+    }
+    total_pixels
+}
+
+/// Decode using zengif `with_next_frame`: in-place compositing, no canvas clone.
+/// This is the path used by the zencodec `render_next_frame` after optimization.
+fn decode_zengif_inplace(data: &[u8]) -> usize {
+    let cursor = std::io::Cursor::new(data);
+    let mut decoder = Decoder::new(cursor, Limits::none(), &Unstoppable).unwrap();
+    let mut total_pixels = 0usize;
+    while let Some(count) = decoder
+        .with_next_frame(|_index, _delay, pixels| {
+            let len = pixels.len();
+            black_box(pixels);
+            len
+        })
+        .unwrap()
+    {
+        total_pixels += count;
     }
     total_pixels
 }
@@ -136,6 +155,7 @@ fn decode_benchmarks(suite: &mut Suite) {
 
         // Clone data for each closure
         let zen_data = gif_data.clone();
+        let zen_data_inplace = gif_data.clone();
         let gif_data_clone = gif_data;
 
         suite.group(&group_name, move |g: &mut BenchGroup| {
@@ -145,6 +165,13 @@ fn decode_benchmarks(suite: &mut Suite) {
             g.bench("zengif", move |b| {
                 b.iter(|| {
                     decode_zengif(&zd);
+                });
+            });
+
+            let zd2 = zen_data_inplace.clone();
+            g.bench("zengif-inplace", move |b| {
+                b.iter(|| {
+                    decode_zengif_inplace(&zd2);
                 });
             });
 
