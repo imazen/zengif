@@ -1252,12 +1252,11 @@ fn negotiate_format(pixels: PixelBuffer, preferred: &[PixelDescriptor]) -> Pixel
         return PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB)
             .expect("negotiate_format: dimensions unchanged");
     }
-    // Check for BGRA8 (swizzle)
+    // Check for BGRA8 (swizzle) — garb uses SIMD (AVX2/NEON/WASM128)
     if preferred.contains(&PixelDescriptor::BGRA8_SRGB) {
         let mut raw = pixels.into_vec();
-        for chunk in raw.chunks_exact_mut(4) {
-            chunk.swap(0, 2);
-        }
+        garb::bytes::rgba_to_bgra_inplace(&mut raw)
+            .expect("negotiate_format: buffer is 4-byte aligned");
         return PixelBuffer::from_vec(raw, w, h, PixelDescriptor::BGRA8_SRGB)
             .expect("negotiate_format: dimensions unchanged");
     }
@@ -1486,13 +1485,13 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                     let duration_ms = delay as u32 * 10;
 
                     let buf = if wants_bgra {
-                        // Copy RGBA, then swizzle R↔B in-place. Two passes but
-                        // both are highly LLVM-friendly: memcpy + vectorized swap.
+                        // Copy + R↔B swizzle in one SIMD pass via garb
+                        // (AVX2/NEON/WASM128). Halves memory bandwidth vs
+                        // separate memcpy + scalar swap.
                         let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
-                        let mut bgra_bytes = src.to_vec();
-                        for chunk in bgra_bytes.chunks_exact_mut(4) {
-                            chunk.swap(0, 2); // R↔B
-                        }
+                        let mut bgra_bytes = vec![0u8; src.len()];
+                        garb::bytes::rgba_to_bgra(src, &mut bgra_bytes)
+                            .expect("src/dst same length, multiple of 4");
                         PixelBuffer::from_vec(bgra_bytes, w, h, PixelDescriptor::BGRA8_SRGB)
                             .map_err(|_| {
                                 at!(GifError::InvalidEncoderState {

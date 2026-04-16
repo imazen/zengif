@@ -59,6 +59,7 @@ zencodec = { version = "0.1.13", optional = true }
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
 zenpixels = { version = "0.2.2", default-features = false }
 linear-srgb = { version = "0.6.7"}
+garb = { version = "0.2.5", default-features = false }
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4.1", optional = true }
