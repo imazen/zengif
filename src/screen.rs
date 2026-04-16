@@ -12,6 +12,67 @@ use crate::limits::Limits;
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, Palette, RawFrame, Rgba};
 
+/// Expand palette indices to RGBA pixels (no transparency).
+///
+/// Uses fixed-size 16-pixel chunks so LLVM can prove all LUT indices
+/// are in-bounds (u8 → `[Rgba; 256]`) and all array accesses are safe.
+/// This eliminates per-pixel bounds checks and lets LLVM unroll or
+/// vectorize the inner loop.
+#[inline(never)]
+fn expand_palette_row(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
+    let len = canvas.len().min(indices.len());
+    let (canvas_main, canvas_tail) = canvas[..len].split_at_mut(len / 16 * 16);
+    let (idx_main, idx_tail) = indices[..len].split_at(len / 16 * 16);
+
+    for (out, inp) in canvas_main
+        .chunks_exact_mut(16)
+        .zip(idx_main.chunks_exact(16))
+    {
+        let inp: &[u8; 16] = inp.try_into().unwrap();
+        let out: &mut [Rgba; 16] = out.try_into().unwrap();
+        for i in 0..16 {
+            out[i] = lut[inp[i] as usize];
+        }
+    }
+    for (o, &idx) in canvas_tail.iter_mut().zip(idx_tail.iter()) {
+        *o = lut[idx as usize];
+    }
+}
+
+/// Expand palette indices to RGBA pixels, skipping transparent index.
+///
+/// Same chunked approach as `expand_palette_row` but with a conditional
+/// store — only non-transparent indices update the canvas.
+#[inline(never)]
+fn expand_palette_row_transparent(
+    canvas: &mut [Rgba],
+    indices: &[u8],
+    lut: &[Rgba; 256],
+    transparent_idx: u8,
+) {
+    let len = canvas.len().min(indices.len());
+    let (canvas_main, canvas_tail) = canvas[..len].split_at_mut(len / 16 * 16);
+    let (idx_main, idx_tail) = indices[..len].split_at(len / 16 * 16);
+
+    for (out, inp) in canvas_main
+        .chunks_exact_mut(16)
+        .zip(idx_main.chunks_exact(16))
+    {
+        let inp: &[u8; 16] = inp.try_into().unwrap();
+        let out: &mut [Rgba; 16] = out.try_into().unwrap();
+        for i in 0..16 {
+            if inp[i] != transparent_idx {
+                out[i] = lut[inp[i] as usize];
+            }
+        }
+    }
+    for (o, &idx) in canvas_tail.iter_mut().zip(idx_tail.iter()) {
+        if idx != transparent_idx {
+            *o = lut[idx as usize];
+        }
+    }
+}
+
 /// GIF compositing screen.
 ///
 /// Maintains the canvas state and applies frames with proper
@@ -182,12 +243,7 @@ impl Screen {
                     let canvas_row =
                         &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
-                    {
-                        if color_index != transparent_idx {
-                            *canvas_pixel = lut[color_index as usize];
-                        }
-                    }
+                    expand_palette_row_transparent(canvas_row, frame_row, &lut, transparent_idx);
                 }
             } else {
                 // Fast path: no transparency check needed
@@ -204,10 +260,7 @@ impl Screen {
                     let canvas_row =
                         &mut self.pixels[canvas_row_start..canvas_row_start + frame_row.len()];
 
-                    for (canvas_pixel, &color_index) in canvas_row.iter_mut().zip(frame_row.iter())
-                    {
-                        *canvas_pixel = lut[color_index as usize];
-                    }
+                    expand_palette_row(canvas_row, frame_row, &lut);
                 }
             }
         }
