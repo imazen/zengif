@@ -1459,6 +1459,10 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
     /// `with_next_frame` composites in-place and gives a callback a `&[Rgba]`
     /// reference to the canvas. We copy directly from that reference into the
     /// output `PixelBuffer`, skipping the intermediate `ComposedFrame` clone.
+    ///
+    /// When the caller prefers BGRA8, the copy and R↔B swizzle are fused into
+    /// a single pass instead of copy-then-swizzle (saves one 64 MB touch at
+    /// 4096²).
     fn render_next_frame_owned(
         &mut self,
         stop: Option<&dyn zencodec::enough::Stop>,
@@ -1472,19 +1476,41 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
             let h = self.decoder.height() as u32;
             let preferred = &self.preferred;
 
+            // Detect if caller wants BGRA so we can fuse copy+swizzle.
+            let wants_bgra = preferred.contains(&PixelDescriptor::BGRA8_SRGB);
+
             // with_next_frame composites in-place (no canvas clone) and gives
             // us a &[Rgba] reference to the screen pixels.
             let result = self.decoder.with_next_frame(
                 |_index, delay, pixels| -> Result<OwnedAnimationFrame, At<GifError>> {
                     let duration_ms = delay as u32 * 10;
-                    let rgba_bytes = bytemuck::cast_slice::<crate::Rgba, u8>(pixels).to_vec();
-                    let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
-                        .map_err(|_| {
-                            at!(GifError::InvalidEncoderState {
-                                message: "frame size mismatch",
-                            })
-                        })?;
-                    let buf = negotiate_format(buf, preferred);
+
+                    let buf = if wants_bgra {
+                        // Fused copy+swizzle: one pass over the data.
+                        let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
+                        let mut bgra_bytes = Vec::with_capacity(src.len());
+                        // SAFETY: capacity is correct, we fill all bytes below.
+                        for chunk in src.chunks_exact(4) {
+                            bgra_bytes.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
+                        }
+                        PixelBuffer::from_vec(bgra_bytes, w, h, PixelDescriptor::BGRA8_SRGB)
+                            .map_err(|_| {
+                                at!(GifError::InvalidEncoderState {
+                                    message: "frame size mismatch",
+                                })
+                            })?
+                    } else {
+                        let rgba_bytes = bytemuck::cast_slice::<crate::Rgba, u8>(pixels).to_vec();
+                        let buf =
+                            PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
+                                .map_err(|_| {
+                                    at!(GifError::InvalidEncoderState {
+                                        message: "frame size mismatch",
+                                    })
+                                })?;
+                        negotiate_format(buf, preferred)
+                    };
+
                     Ok(OwnedAnimationFrame::new(buf, duration_ms, 0))
                 },
             )?;
