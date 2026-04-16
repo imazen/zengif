@@ -77,6 +77,44 @@ fn decode_gif_rs(data: &[u8]) -> usize {
     total_pixels
 }
 
+/// Isolated RGBA→BGRA swizzle benchmark (garb SIMD vs scalar).
+///
+/// Measures just the swizzle overhead, separate from decode, to
+/// quantify the garb improvement for BGRA-requesting callers.
+fn swizzle_scalar(data: &mut [u8]) {
+    for chunk in data.chunks_exact_mut(4) {
+        chunk.swap(0, 2);
+    }
+}
+
+fn swizzle_garb(data: &mut [u8]) {
+    garb::bytes::rgba_to_bgra_inplace(data).unwrap();
+}
+
+fn swizzle_benchmarks(suite: &mut Suite) {
+    // 4096x4096 RGBA = 64 MiB — the target where swizzle cost matters
+    let size = 4096usize * 4096 * 4;
+    let rgba_bytes = size as u64;
+
+    suite.group("swizzle_4096x4096", move |g: &mut BenchGroup| {
+        g.throughput(Throughput::Bytes(rgba_bytes));
+
+        g.bench("scalar", move |b| {
+            let mut buf = vec![0u8; size];
+            b.iter(|| {
+                swizzle_scalar(black_box(&mut buf));
+            });
+        });
+
+        g.bench("garb", move |b| {
+            let mut buf = vec![0u8; size];
+            b.iter(|| {
+                swizzle_garb(black_box(&mut buf));
+            });
+        });
+    });
+}
+
 fn decode_benchmarks(suite: &mut Suite) {
     // Pre-generate fixtures. Cache them so each benchmark iteration just
     // decodes (doesn't re-encode).
@@ -118,6 +156,8 @@ fn decode_benchmarks(suite: &mut Suite) {
             });
         });
     }
+
+    swizzle_benchmarks(suite);
 }
 
 zenbench::main!(decode_benchmarks);
