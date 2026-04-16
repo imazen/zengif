@@ -15,6 +15,7 @@ use alloc::borrow::Cow;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use zencodec::OwnedAnimationFrame;
 use zencodec::decode::{AnimationFrame, DecodeOutput, OutputInfo, SinkError};
 use zencodec::encode::EncodeOutput;
 use zencodec::{ImageFormat, ImageInfo, ImageSequence, Metadata, ResourceLimits};
@@ -1449,6 +1450,55 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                 duration_ms,
                 index,
             )));
+        }
+    }
+
+    /// Override the default owned-frame path to avoid an extra copy.
+    ///
+    /// The default impl calls `render_next_frame()` (which stores a PixelBuffer
+    /// in `self.current_frame`) and then `to_owned_frame()` which copies it
+    /// again. Since `next_frame()` already produces owned pixels, we build
+    /// the `OwnedAnimationFrame` directly — one fewer 64 MB memcpy at 4096².
+    fn render_next_frame_owned(
+        &mut self,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<Option<OwnedAnimationFrame>, At<GifError>> {
+        if let Some(stop) = stop {
+            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        }
+
+        loop {
+            let frame = self.decoder.next_frame()?;
+
+            let frame = match frame {
+                Some(f) => f,
+                None => {
+                    self.current_frame = None;
+                    return Ok(None);
+                }
+            };
+
+            let index = self.frame_index;
+            self.frame_index += 1;
+
+            // Skip frames before start_frame_index
+            if index < self.start_frame_index {
+                continue;
+            }
+
+            let w = frame.width as u32;
+            let h = frame.height as u32;
+            let duration_ms = frame.delay as u32 * 10;
+            let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
+            let buf = PixelBuffer::from_vec(rgba_bytes, w, h, PixelDescriptor::RGBA8_SRGB)
+                .map_err(|_| {
+                    at!(GifError::InvalidEncoderState {
+                        message: "frame size mismatch",
+                    })
+                })?;
+
+            let buf = negotiate_format(buf, &self.preferred);
+            return Ok(Some(OwnedAnimationFrame::new(buf, duration_ms, index)));
         }
     }
 
