@@ -1506,8 +1506,8 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                     let frame = frame_result?;
                     // Fix up the frame index (couldn't set it inside the closure
                     // because we don't know it until after with_next_frame returns)
-                    let rebuilt =
-                        OwnedAnimationFrame::new(frame.into_buffer(), frame.duration_ms(), index);
+                    let duration_ms = frame.duration_ms();
+                    let rebuilt = OwnedAnimationFrame::new(frame.into_buffer(), duration_ms, index);
                     return Ok(Some(rebuilt));
                 }
             }
