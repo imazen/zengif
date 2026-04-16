@@ -70,6 +70,17 @@ pub enum GifError {
         canvas_height: u16,
     },
 
+    /// Frame has zero width or height (invalid, would cause infinite decode loop).
+    #[error("frame {frame_index} has zero dimension ({frame_width}x{frame_height})")]
+    ZeroDimensionFrame {
+        /// Frame index.
+        frame_index: usize,
+        /// Frame width.
+        frame_width: u16,
+        /// Frame height.
+        frame_height: u16,
+    },
+
     /// Frame is missing a required color palette.
     #[error("frame {frame_index} is missing color palette")]
     MissingPalette {

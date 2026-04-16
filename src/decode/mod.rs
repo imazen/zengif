@@ -364,6 +364,17 @@ impl<'a, R: Read> Decoder<'a, R> {
             }
         };
 
+        // Reject zero-dimension frames: the gif crate's LZW decoder loops
+        // forever when given a zero-length output buffer because it keeps
+        // reading LZW data but can never write decoded bytes.
+        if frame_info.width == 0 || frame_info.height == 0 {
+            return Err(at!(GifError::ZeroDimensionFrame {
+                frame_index: self.frame_index,
+                frame_width: frame_info.width,
+                frame_height: frame_info.height,
+            }));
+        }
+
         // Validate frame bounds
         if frame_info.left as u32 + frame_info.width as u32 > self.screen.width() as u32
             || frame_info.top as u32 + frame_info.height as u32 > self.screen.height() as u32
@@ -468,6 +479,16 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Err(at!(GifError::from(e)));
             }
         };
+
+        // Reject zero-dimension frames (same as next_frame — prevents
+        // infinite loop in the gif crate's LZW decoder).
+        if frame_info.width == 0 || frame_info.height == 0 {
+            return Err(at!(GifError::ZeroDimensionFrame {
+                frame_index: self.frame_index,
+                frame_width: frame_info.width,
+                frame_height: frame_info.height,
+            }));
+        }
 
         // Read frame pixels
         let frame_size = frame_info.width as usize * frame_info.height as usize;
@@ -574,6 +595,16 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Err(at!(GifError::from(e)));
             }
         };
+
+        // Reject zero-dimension frames (same as next_frame — prevents
+        // infinite loop in the gif crate's LZW decoder).
+        if frame_info.width == 0 || frame_info.height == 0 {
+            return Err(at!(GifError::ZeroDimensionFrame {
+                frame_index: self.frame_index,
+                frame_width: frame_info.width,
+                frame_height: frame_info.height,
+            }));
+        }
 
         // Read frame pixels - ensure buffer is large enough for this frame
         let frame_size = frame_info.width as usize * frame_info.height as usize;
