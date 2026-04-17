@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+## [0.7.3] - 2026-04-17
+
+### Changed
+
+- Bump zencodec to 0.1.19 (release prep)
+
 ## [0.7.2] - 2026-04-10
 
 ### Fixed
