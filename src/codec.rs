@@ -1003,11 +1003,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             Some(ref s) => s,
             None => &enough::Unstoppable,
         };
+        // Run the bounded probe BEFORE constructing the Decoder, since
+        // Decoder::new takes ownership of `gif_limits`. The probe gets the
+        // same limits + stop the decode would, so descriptor floods can't
+        // walk past max_frame_count or be made uncancellable.
+        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+
         let decoder = Decoder::new(cursor, gif_limits, stop)?;
 
         let metadata = decoder.metadata().clone();
-
-        let probe = crate::detect::probe(data).ok();
 
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
 
@@ -1046,11 +1050,12 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             Some(ref s) => s,
             None => &enough::Unstoppable,
         };
+        // Bounded probe before Decoder takes ownership of the limits.
+        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+
         let mut decoder = Decoder::new(cursor, gif_limits, stop)?;
 
         let metadata = decoder.metadata().clone();
-
-        let probe = crate::detect::probe(data).ok();
 
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
 
@@ -1091,12 +1096,12 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         self.check_file_size(data)?;
         let gif_limits = self.build_limits();
         let cursor = std::io::Cursor::new(data);
-        let decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)?;
-        let metadata = decoder.metadata().clone();
-
-        let has_alpha = crate::detect::probe(data)
+        // Bounded probe before Decoder takes ownership of `gif_limits`.
+        let has_alpha = crate::detect::probe_with_limits(data, &gif_limits, &enough::Unstoppable)
             .ok()
             .is_none_or(|p| p.has_transparency);
+        let decoder = Decoder::new(cursor, gif_limits, &enough::Unstoppable)?;
+        let metadata = decoder.metadata().clone();
 
         Ok(OutputInfo::full_decode(
             metadata.width as u32,
@@ -1171,10 +1176,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             )));
         }
         self.check_file_size(&data)?;
-        let probe = crate::detect::probe(&data).ok();
+        let limits = self.build_limits();
+        // Bounded probe respecting job limits — no Stop wired through here
+        // because GifAnimationFrameDecoder uses a 'static stop token (see
+        // comment below); cancellation between frames is handled in
+        // render_next_frame().
+        let probe = crate::detect::probe_with_limits(&data, &limits, &enough::Unstoppable).ok();
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
         let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
-        let limits = self.build_limits();
         let cursor = std::io::Cursor::new(data.into_owned());
         // The underlying Decoder requires a 'static stop token because
         // GifAnimationFrameDecoder stores Decoder<'static, _>. Per-frame stop
@@ -1296,7 +1305,11 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             Some(ref s) => s,
             None => &enough::Unstoppable,
         };
-        let source_probe = crate::detect::probe(&self.data).ok();
+        // Bounded probe with the same limits + stop as the decode that
+        // follows. Without this, a 100 MB descriptor flood reaches probe()
+        // before any limit check applies, since the surrounding Decoder's
+        // limits don't gate the probe walk.
+        let source_probe = crate::detect::probe_with_limits(&self.data, &limits, stop).ok();
         let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop)?;
 
