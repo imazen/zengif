@@ -442,6 +442,7 @@ mod tests {
     /// 100 MB body packed with trivial Image Descriptors must NOT loop forever.
     /// Without bounding, this would emit ~9 M frames; with the hard cap we
     /// either return `TooManyFrames` or finish in `O(input)` time.
+    #[cfg(feature = "std")]
     #[test]
     fn test_probe_descriptor_flood_bounded() {
         let mut data = Vec::with_capacity(13 + 100 * 1024 * 1024);
