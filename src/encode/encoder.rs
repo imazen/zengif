@@ -552,11 +552,11 @@ impl<'a> Encoder<'a> {
         // pixels.len() is bounded by what the decoder/caller passed in, but on
         // 32-bit targets a 4096x4096 frame (16 M pixels × 4) overflows i32 and
         // — combined with a tampered FrameInput — could overflow usize.
-        let frame_bytes = input
-            .pixels
-            .len()
-            .checked_mul(4)
-            .ok_or_else(|| at!(GifError::AllocationFailed { requested: u64::MAX }))?;
+        let frame_bytes = input.pixels.len().checked_mul(4).ok_or_else(|| {
+            at!(GifError::AllocationFailed {
+                requested: u64::MAX
+            })
+        })?;
 
         // Charge against per-request memory limit BEFORE pushing onto the
         // buffer. try_alloc both enforces `Limits::max_memory` and updates
@@ -572,7 +572,9 @@ impl<'a> Encoder<'a> {
                 // Undo the stats charge so we don't leak tracking on the
                 // overflow path.
                 self.stats.track_dealloc(frame_bytes);
-                at!(GifError::AllocationFailed { requested: u64::MAX })
+                at!(GifError::AllocationFailed {
+                    requested: u64::MAX
+                })
             })?;
         self.buffered_bytes = new_total;
         self.buffered_frames.push(input);

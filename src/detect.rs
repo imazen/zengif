@@ -245,9 +245,7 @@ pub fn probe_with_limits(
         iters = iters.saturating_add(1);
 
         // Cancellation poll: cheap when Unstoppable, bounded latency otherwise.
-        if frame_count.is_multiple_of(PROBE_STOP_POLL_INTERVAL)
-            && stop.check().is_err()
-        {
+        if frame_count.is_multiple_of(PROBE_STOP_POLL_INTERVAL) && stop.check().is_err() {
             return Err(ProbeError::Cancelled);
         }
 
