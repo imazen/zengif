@@ -512,8 +512,8 @@ mod tests {
 
         struct AlwaysStop;
         impl Stop for AlwaysStop {
-            fn check(&self) -> Result<(), enough::Stopped> {
-                Err(enough::Stopped)
+            fn check(&self) -> Result<(), enough::StopReason> {
+                Err(enough::StopReason::Cancelled)
             }
         }
         // The stop-poll interval is keyed off frame_count, so frame 0 polls

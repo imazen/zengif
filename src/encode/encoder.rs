@@ -527,6 +527,19 @@ impl<'a> Encoder<'a> {
     }
 
     /// Buffer a frame for later encoding with shared palette.
+    ///
+    /// # Limits
+    ///
+    /// Buffered frames are charged against `Limits::max_memory` via
+    /// `Stats::try_alloc`. This prevents a malicious caller from forcing
+    /// unbounded retained memory just by setting `EncoderConfig::shared_palette`
+    /// + a large `max_buffer_bytes` and feeding a long animation: the per-
+    /// request memory budget now caps total live buffered pixels too.
+    ///
+    /// `usize` arithmetic on `frame_bytes` and the running buffered total uses
+    /// checked operations so that an attacker-controlled
+    /// `width * height * 4 * frame_count` cannot wrap and silently bypass the
+    /// cap.
     #[cfg(any(
         feature = "zenquant",
         feature = "quantette",
@@ -535,9 +548,34 @@ impl<'a> Encoder<'a> {
         feature = "color_quant"
     ))]
     fn buffer_frame(&mut self, input: FrameInput) -> Result<()> {
-        let frame_bytes = input.pixels.len() * 4; // RGBA = 4 bytes per pixel
+        // Compute buffered bytes for this frame with checked arithmetic.
+        // pixels.len() is bounded by what the decoder/caller passed in, but on
+        // 32-bit targets a 4096x4096 frame (16 M pixels × 4) overflows i32 and
+        // — combined with a tampered FrameInput — could overflow usize.
+        let frame_bytes = input
+            .pixels
+            .len()
+            .checked_mul(4)
+            .ok_or_else(|| at!(GifError::AllocationFailed { requested: u64::MAX }))?;
+
+        // Charge against per-request memory limit BEFORE pushing onto the
+        // buffer. try_alloc both enforces `Limits::max_memory` and updates
+        // Stats so peak/current reflect retained buffered frames.
+        self.stats.try_alloc(frame_bytes, &self.limits)?;
+
+        // Update running total with checked add so a long animation can't
+        // wrap buffered_bytes and skip the should_flush trigger.
+        let new_total = self
+            .buffered_bytes
+            .checked_add(frame_bytes)
+            .ok_or_else(|| {
+                // Undo the stats charge so we don't leak tracking on the
+                // overflow path.
+                self.stats.track_dealloc(frame_bytes);
+                at!(GifError::AllocationFailed { requested: u64::MAX })
+            })?;
+        self.buffered_bytes = new_total;
         self.buffered_frames.push(input);
-        self.buffered_bytes += frame_bytes;
 
         // Check if buffer limits reached
         let should_flush = self.buffered_frames.len() >= self.config.max_buffer_frames
@@ -597,9 +635,16 @@ impl<'a> Encoder<'a> {
 
         self.computed_palette = Some(palette_bytes);
 
-        // Take ownership of buffered frames
+        // Take ownership of buffered frames. Release their byte tracking
+        // back to the Stats so that downstream per-frame allocations see an
+        // accurate `current` and don't get falsely rejected by max_memory
+        // (the buffered pixels are about to be dropped after encoding).
+        let released = self.buffered_bytes;
         let frames = core::mem::take(&mut self.buffered_frames);
         self.buffered_bytes = 0;
+        if released > 0 {
+            self.stats.track_dealloc(released);
+        }
 
         // Encode all buffered frames with the shared palette
         for frame_input in frames {
