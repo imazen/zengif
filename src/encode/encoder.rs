@@ -532,9 +532,9 @@ impl<'a> Encoder<'a> {
     ///
     /// Buffered frames are charged against `Limits::max_memory` via
     /// `Stats::try_alloc`. This prevents a malicious caller from forcing
-    /// unbounded retained memory just by setting `EncoderConfig::shared_palette`
-    /// + a large `max_buffer_bytes` and feeding a long animation: the per-
-    /// request memory budget now caps total live buffered pixels too.
+    /// unbounded retained memory by setting `EncoderConfig::shared_palette`,
+    /// a large `max_buffer_bytes`, and feeding a long animation; the
+    /// per-request memory budget now caps total live buffered pixels too.
     ///
     /// `usize` arithmetic on `frame_bytes` and the running buffered total uses
     /// checked operations so that an attacker-controlled
