@@ -1099,6 +1099,68 @@ mod tests {
         );
     }
 
+    /// Buffered shared-palette frames must be charged against
+    /// `Limits::max_memory`. Without the H2 fix the encoder happily holds
+    /// gigabytes of RGBA pixels until `max_buffer_bytes` (independent
+    /// EncoderConfig field) trips, never honouring per-request memory caps.
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    #[test]
+    fn buffered_frames_respect_max_memory_limit() {
+        use crate::error::GifError;
+
+        let width = 64u16;
+        let height = 64u16;
+        let pixels_per_frame = width as usize * height as usize; // 4096
+        let bytes_per_frame = pixels_per_frame * core::mem::size_of::<Rgba>(); // 16 KB
+
+        // Allow exactly one buffered frame's worth of memory.
+        let limits = Limits::default().max_memory(bytes_per_frame as u64);
+
+        // Force buffering by enabling shared_palette without a global palette,
+        // and set buffer triggers high so flush isn't reached.
+        let config = EncoderConfig::new()
+            .repeat(Repeat::Once)
+            .shared_palette(true);
+
+        let mut encoder = EncodeRequest::new(&config, width, height)
+            .limits(&limits)
+            .stop(&Unstoppable)
+            .build()
+            .unwrap();
+
+        // First frame fits exactly within the budget.
+        let frame1 = FrameInput::new(
+            width,
+            height,
+            10,
+            vec![Rgba::rgb(255, 0, 0); pixels_per_frame],
+        );
+        encoder.add_frame(frame1).expect("first frame fits");
+
+        // Second frame would push retained memory past max_memory and must
+        // be rejected.
+        let frame2 = FrameInput::new(
+            width,
+            height,
+            10,
+            vec![Rgba::rgb(0, 255, 0); pixels_per_frame],
+        );
+        let err = encoder
+            .add_frame(frame2)
+            .expect_err("second frame should exceed max_memory");
+        assert!(
+            matches!(err.error(), GifError::MemoryLimitExceeded { .. }),
+            "expected MemoryLimitExceeded, got {:?}",
+            err.error()
+        );
+    }
+
     #[test]
     fn palette_nearest_color_mapping() {
         use crate::types::Palette;
