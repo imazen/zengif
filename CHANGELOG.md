@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Changed
+- `tests/fuzz_regression.rs` now uses the shared `zen-fuzz-regress`
+  test-helper crate (DEDUP-J2). Behaviour is unchanged — same
+  `fuzz/regression/` seeds, same three targets (`decode`,
+  `decode_streaming`, `roundtrip`), same panic-propagation failure
+  semantics. The in-file `collect_seeds` scaffolding is now provided
+  by `RegressionSuite`.
+
 ### Added
 
 - `tests/fuzz_regression.rs` regression-harness template ported from
