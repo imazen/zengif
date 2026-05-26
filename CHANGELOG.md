@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Added
+
+- `tests/fuzz_regression.rs` regression-harness template ported from
+  zenwebp (DEDUP-J). Walks `fuzz/regression/` (incl. per-target subdirs)
+  and runs every seed through `decode_gif`, streaming `Decoder`, and the
+  `encode_gif` roundtrip on the stable toolchain — no nightly required.
+  Drop minimized crash files into `fuzz/regression/` to gate future
+  regressions of fixed bugs.
+
 ## [0.7.3] - 2026-04-17
 
 ### Changed
