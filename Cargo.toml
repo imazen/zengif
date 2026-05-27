@@ -146,10 +146,12 @@ required-features = ["std"]
 [[bench]]
 name = "codec"
 harness = false
+required-features = ["std"]
 
 [[bench]]
 name = "decode_bench"
 harness = false
+required-features = ["std"]
 
 [patch.crates-io]
 # Weezl wuffs branch: Streaming LZW decoder (wuffs-inspired), default=Streaming.

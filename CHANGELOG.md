@@ -11,8 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Fixed
+- `tests/fuzz_regression.rs` now gated on the `std` feature so the
+  `Feature permutations / no-default-features` CI job compiles (the
+  `decode_gif`/`encode_gif`/`Decoder` symbols it imports are std-gated);
+  rewrote the streaming-decode loop to satisfy `clippy::while_let_loop`
+  under `-D warnings` (behaviour identical, 100-frame cap preserved);
+  fixed stale doc-comment crate name `zen-fuzz-regress` → `zenutils-fuzz`.
+- `codec` and `decode_bench` benches now declare `required-features =
+  ["std"]` so `cargo check --all-targets --no-default-features` is clean.
+
 ### Changed
-- `tests/fuzz_regression.rs` now uses the shared `zen-fuzz-regress`
+- `tests/fuzz_regression.rs` now uses the shared `zenutils-fuzz`
   test-helper crate (DEDUP-J2). Behaviour is unchanged — same
   `fuzz/regression/` seeds, same three targets (`decode`,
   `decode_streaming`, `roundtrip`), same panic-propagation failure

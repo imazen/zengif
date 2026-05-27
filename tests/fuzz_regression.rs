@@ -1,5 +1,10 @@
 //! Replay seed inputs from `fuzz/regression/` through every fuzz target
-//! entry point. Shared scaffolding lives in `zen-fuzz-regress`.
+//! entry point. Shared scaffolding lives in `zenutils-fuzz`.
+//!
+//! The decode/encode entry points exercised here (`decode_gif`, `encode_gif`,
+//! `Decoder`, `EncoderConfig`) are gated behind the `std` feature, so this whole
+//! test compiles to nothing without it (e.g. `--no-default-features`).
+#![cfg(feature = "std")]
 
 use std::io::Cursor;
 use zengif::{
@@ -29,15 +34,10 @@ fn fuzz_regression() {
                 return;
             };
             let mut frame_count = 0;
-            loop {
-                match decoder.next_frame() {
-                    Ok(Some(_frame)) => {
-                        frame_count += 1;
-                        if frame_count >= 100 {
-                            break;
-                        }
-                    }
-                    Ok(None) | Err(_) => break,
+            while let Ok(Some(_frame)) = decoder.next_frame() {
+                frame_count += 1;
+                if frame_count >= 100 {
+                    break;
                 }
             }
         })
