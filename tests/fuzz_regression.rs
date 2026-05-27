@@ -2,7 +2,7 @@
 //! entry point. Shared scaffolding lives in `zen-fuzz-regress`.
 
 use std::io::Cursor;
-use zen_fuzz_regress::RegressionSuite;
+use zenutils_fuzz::RegressionSuite;
 use zengif::{decode_gif, encode_gif, Decoder, EncoderConfig, FrameInput, Limits, Repeat, Unstoppable};
 
 fn fuzz_limits() -> Limits {
