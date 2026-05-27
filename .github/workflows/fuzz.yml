@@ -37,7 +37,7 @@ jobs:
           cache-directories: fuzz/target
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        uses: taiki-e/install-action@cargo-fuzz
 
       - name: Determine duration
         id: duration
