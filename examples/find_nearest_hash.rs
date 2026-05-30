@@ -8,7 +8,8 @@
 
 use std::path::Path;
 use zengif::{
-    EncodeRequest, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable, decode_gif,
+    EncodeRequest, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable,
+    decode_gif,
 };
 
 fn sha256(data: &[u8]) -> String {

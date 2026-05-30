@@ -333,8 +333,7 @@ impl Palette {
         let mut chunks = self.colors.chunks_exact(8);
         for chunk in &mut chunks {
             let arr: &[Rgba; 8] = chunk.try_into().unwrap();
-            for k in 0..8 {
-                let pc = arr[k];
+            for (k, pc) in arr.iter().enumerate() {
                 let dr = (color.r as i32 - pc.r as i32).unsigned_abs();
                 let dg = (color.g as i32 - pc.g as i32).unsigned_abs();
                 let db = (color.b as i32 - pc.b as i32).unsigned_abs();
