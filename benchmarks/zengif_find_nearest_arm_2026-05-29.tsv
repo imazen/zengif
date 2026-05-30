@@ -1,0 +1,23 @@
+# zengif find_nearest optimization — ARM before/after (zenbench `codec` harness)
+# Box: Hetzner cax21, ARM Neoverse-N1 (aarch64), 4 cores, 7.5 GB RAM
+# Toolchain: cargo 1.96.0; RUSTFLAGS='' (runtime SIMD dispatch, NO target-cpu=native)
+# Method: same binary built twice from one tree, swapping only src/types.rs
+#   BASELINE  = scalar `if dist < best_dist` scan (chunks_exact=0 best_dist=3)
+#   OPTIMIZED = branchless chunked (dist<<8)|idx running-min (chunks_exact=1 best_dist=1)
+#   Build verified to recompile each phase (touch + 18.3s compile both phases).
+# Decode rows are a CONTROL: decode does not call find_nearest, so it is unchanged.
+#
+# bench	baseline	optimized	speedup	delta
+encode/solid/256x256x10	12.5ms	11.2ms	1.116x	-10.4%
+encode/solid/512x512x10	54.5ms	48.9ms	1.115x	-10.3%
+animation_stress/encode/512x512x200_dirty32	515.7ms	470.1ms	1.097x	-8.8%
+animation_stress/encode/512x512x200_dirty64	659.5ms	598.0ms	1.103x	-9.3%
+animation_stress/encode/512x512x200_dirty128	1235.3ms	1100.0ms	1.123x	-11.0%
+animation_stress/encode/512x512x200_dirty256	3540.2ms	3145.0ms	1.126x	-11.2%
+memory_allocation/encode/512x512x50	231.0ms	205.0ms	1.127x	-11.3%
+# --- control: decode (no find_nearest), expected unchanged ---
+decode/solid/256x256x10	889.4us	887.1us	1.003x	-0.3%
+decode/solid/512x512x10	3897.4us	3902.5us	0.999x	+0.1%
+decode/solid/1024x1024x10	16700.7us	16690.0us	1.001x	-0.1%
+decode/transparent/512x512x10	2761.1us	2758.0us	1.001x	-0.1%
+animation_stress/decode/512x512x200_dirty256	113.6ms	113.0ms	1.005x	-0.5%

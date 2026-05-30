@@ -312,26 +312,49 @@ impl Palette {
             return idx;
         }
 
-        // Find nearest by RGB distance
-        let mut best_idx = 0u8;
-        let mut best_dist = u32::MAX;
-
-        for (idx, pc) in self.colors.iter().enumerate() {
+        // Find nearest by squared RGB distance.
+        //
+        // The inner per-color body is branchless and packs each candidate as
+        // `(dist << 8) | idx` into a u32, then takes the running minimum. Because
+        // the index occupies the low 8 bits, `min` selects the lowest squared
+        // distance and, on ties, the lowest palette index — identical tie-breaking
+        // to the original `if dist < best_dist` scan. The fixed-size `[_; 8]` chunk
+        // body has no data-dependent branch, so LLVM auto-vectorizes it to SIMD
+        // (NEON on aarch64, SSE/AVX on x86) without intrinsics or unsafe code.
+        //
+        // Overflow: max squared distance is 3 * 255^2 = 195_075; the packed value
+        // is at most (195_075 << 8) | 255 = 49_939_455 < 2^32, and a GIF palette
+        // holds at most 256 entries, so neither the shift nor the index overflows.
+        //
+        // Exact-match early exit is preserved between chunks: once any entry has
+        // dist == 0 the answer can't improve, so we stop scanning further chunks.
+        let mut best: u32 = u32::MAX;
+        let mut base = 0usize;
+        let mut chunks = self.colors.chunks_exact(8);
+        for chunk in &mut chunks {
+            let arr: &[Rgba; 8] = chunk.try_into().unwrap();
+            for k in 0..8 {
+                let pc = arr[k];
+                let dr = (color.r as i32 - pc.r as i32).unsigned_abs();
+                let dg = (color.g as i32 - pc.g as i32).unsigned_abs();
+                let db = (color.b as i32 - pc.b as i32).unsigned_abs();
+                let dist = dr * dr + dg * dg + db * db;
+                best = best.min((dist << 8) | ((base + k) as u32));
+            }
+            base += 8;
+            if (best >> 8) == 0 {
+                return (best & 0xFF) as u8;
+            }
+        }
+        for (j, pc) in chunks.remainder().iter().enumerate() {
             let dr = (color.r as i32 - pc.r as i32).unsigned_abs();
             let dg = (color.g as i32 - pc.g as i32).unsigned_abs();
             let db = (color.b as i32 - pc.b as i32).unsigned_abs();
             let dist = dr * dr + dg * dg + db * db;
-
-            if dist < best_dist {
-                best_dist = dist;
-                best_idx = idx as u8;
-                if dist == 0 {
-                    break; // Exact match
-                }
-            }
+            best = best.min((dist << 8) | ((base + j) as u32));
         }
 
-        best_idx
+        (best & 0xFF) as u8
     }
 
     /// Find the index of the most transparent color in the palette.

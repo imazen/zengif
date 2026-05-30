@@ -1,0 +1,24 @@
+# zengif find_nearest optimization — byte-identical-output correctness proof
+#
+# Method: decode each corpus GIF, re-encode every canvas-sized frame through the
+# Palette::find_nearest palette-mapping path (FrameInput::with_palette + a fixed
+# 64-color cube palette), and sha256 the encoded GIF bytes. The encoded bytes
+# depend on the palette index find_nearest returns for every pixel, so identical
+# hashes between the scalar baseline and the branchless chunked-min optimization
+# prove identical indices (including tie-breaks). Harness: examples/find_nearest_hash.rs.
+#
+# Result: ALL 9 encodable corpus files produced BYTE-IDENTICAL sha256 between
+# baseline (scalar `if dist < best_dist`) and optimized (chunked (dist<<8)|idx min).
+# 2 files (issue_1455_oversized.gif, oob.gif) intentionally fail decode and were skipped.
+# Plus: `cargo test --release` = 162 passed, 0 failed.
+#
+# Columns: sha256<TAB>file   (this hash is the SAME for baseline and optimized)
+aa63088f6c85701023f787bf59ea1338be5e8b341196d6b63f2daa03bd50088c	alpha_gif_a.gif
+2edd6653a71c54c1dbea97102c64dee6862b207bb0e44edca709cce1b71964a0	any-disposal.gif
+194b85940de874295dbba6d91c2ea61699c58cc13a039b7ae2ae7c58523dd098	border_touching_layers.gif
+68ec24ab4b3aae394b6bd2ae7df55216bf698b9d31cf16dfbea66a1a4fc8a037	interlaced.gif
+52bb2529b4e622c71d5dd96c9e702668195c13eaad3b92c3ed95da0176982cea	issue_1455_undersized.gif
+786a9f72bf16cf52db33c935ead1a6937a151e35c1f96cf77b6d92555ecad2b8	large-gif-anim-combine.gif
+330ca4c61971f9bf00517c79b4a47177fba73f4efbe15cd80ee30ffbcecd5bca	large-gif-anim-full-frame-replace.gif
+2bca0961fd63beac48555c8f21af3452548493447e32d6a25dfa59be508b44cb	mixed-disposal.gif
+9b50b93ac63c979412d45dcac12e05a03c7e95fb4015692b7b0552b1d4c25e6a	sample_1.gif
