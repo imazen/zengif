@@ -1,33 +1,51 @@
-benchmark: zengif find_nearest branchless chunked-min optimization (ARM A/B)
+benchmark: zengif find_nearest branchless chunked-min optimization (ARM A/B) — FALSIFIED
 date: 2026-05-29
 hostname: Hetzner cax21 (arm-zen-ubuntu), ARM Neoverse-N1 aarch64, 4 cores, 7.5 GB RAM
 toolchain: cargo 1.96.0 (30a34c682 2026-05-25)
-rustflags: '' (runtime SIMD dispatch; NO target-cpu=native, per benchmarking discipline)
+rustflags: '' (runtime SIMD dispatch; NO target-cpu=native)
 build: cargo build --release -j2 --bench codec
 bench_cmd: target/release/deps/codec-* --bench   (zenbench criterion-compat, all groups)
-local_commit_under_test: fd5c2b86ace1 (sibling workspace zengif--arm-perf; lands on main)
-parent_main_commit: a6b11773 (ci: build fuzz targets for host gnu target)
 
 method:
-  Single source tree, src/types.rs swapped between two versions and rebuilt:
-    BASELINE  src/types.rs: scalar `if dist < best_dist` scan
-              (marker check on box: chunks_exact=0 best_dist=3)
-    OPTIMIZED src/types.rs: branchless chunked (dist<<8)|index running-min
-              (marker check on box: chunks_exact=1 best_dist=1)
-  Both phases verified to recompile (18.2s / 18.34s; not a cached-binary skip).
-  Optimized file integrity verified by md5 match local<->box:
-    68f52c4372126e5aeb2e2102c33a139c
+  ONE source tree, src/types.rs swapped between two versions and rebuilt
+  (each phase forced to recompile; 17.65s baseline / 17.93s optimized):
+    BASELINE  scalar `if dist < best_dist` scan   (on-box marker chunks_exact=0 best_dist=3)
+    OPTIMIZED branchless chunked (dist<<8)|idx min (on-box marker chunks_exact=1 best_dist=1)
+  Optimized file integrity verified by md5 local<->box: 68f52c4372126e5aeb2e2102c33a139c
+  CAVEAT: zenbench printed "0 rounds" (single-shot, no statistical rounds). Each
+  number is one measurement. The regression magnitude (~30%) is far outside the
+  decode-control noise band (<=3%) and consistent across both solid encode paths,
+  so the verdict stands; the marginal animation wins (2-6%) are within the
+  single-shot noise and not claimed as a reliable improvement.
 
-result_summary:
-  find_nearest-bound encode path: 1.10x - 1.13x faster (-8.8% to -11.3% wall time).
-  decode path (control, no find_nearest): unchanged within noise (<=0.5%).
+measured_result (zenbench mean, REAL numbers from zengif_arm_bench_FINAL.log):
+  encode/solid/256x256x10            12.6ms -> 16.5ms    0.76x  REGRESSION (-31%)
+  encode/solid/512x512x10            54.5ms -> 70.9ms    0.77x  REGRESSION (-30%)
+  memory_allocation/encode           231.4ms -> 310.2ms  0.76x  REGRESSION (-34%)
+  animation_stress/encode dirty32   517.5ms -> 504.4ms   1.026x marginal
+  animation_stress/encode dirty256  3545.6ms -> 3348.9ms 1.059x marginal
+  decode (control, no find_nearest): unchanged within noise (<=3%)
 
-correctness:
-  Byte-identical encoded GIF output, baseline vs optimized, across all corpus files
-  (benchmarks/zengif_find_nearest_correctness_2026-05-29.tsv). cargo test = 162 passed,
-  0 failed. The (dist<<8)|index packing preserves lowest-index tie-break; the
-  transparent-pixel short-circuit and dist==0 early-exit are retained.
+VERDICT: NOT A WIN on ARM. The optimization regresses the dominant encode/solid
+and memory_allocation paths ~30% while giving only a marginal (single-shot,
+noise-band) improvement on dirty-region animation encode. REVERTED on main.
 
-raw_log: zen-arm-results/zengif/zengif_arm_bench3.log (off-repo; full zenbench output)
+root_cause_hypothesis:
+  Solid / near-solid frames hit an exact palette match at a LOW index. The scalar
+  loop's per-element `dist==0` early-exit returns after ~1 comparison on those
+  pixels. The chunked-min must process a full 8-entry chunk before it can early-
+  exit (the `(best>>8)==0` check is only between chunks), so it does MORE work on
+  the common case. The isolated x86 microbench (grad+full256 1.121x, few+exact
+  1.172x, grad+exact256 1.166x) used palettes/pixels with few index-0 exact hits,
+  so it did not surface this. A future attempt should preserve a cheap per-element
+  exact-match exit (scalar prefix or index-0 probe) before the vector body, then
+  re-bench on ARM.
+
+correctness (still valid, unaffected by the revert):
+  find_nearest output was byte-identical baseline vs optimized across all corpus
+  files (benchmarks/zengif_find_nearest_correctness_2026-05-29.tsv); 162 tests
+  passed. The revert restores the scalar baseline, so output is unchanged.
+
 x86_local_microbench (7950X, isolated find_nearest loop, runtime dispatch):
   grad+full256 1.121x | few+exact 1.172x | grad+exact256 1.166x | 0 mismatches
+  (did NOT predict the ARM end-to-end regression — kept here as a caution.)

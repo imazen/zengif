@@ -11,18 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
-### Changed (performance)
-- `Palette::find_nearest` (the per-pixel nearest-palette-color search that
-  dominated GIF encode self-time in ARM profiling) rewritten as a branchless
-  chunked argmin: each candidate squared distance is packed as
-  `(dist << 8) | index` into a `u32` and reduced with a running `min`, so the
-  fixed-size `[Rgba; 8]` chunk body auto-vectorizes (NEON / SSE / AVX) with no
-  intrinsics or `unsafe`. **Output is byte-identical** — the index packing
-  preserves the original lowest-index tie-break, and the transparent-pixel
-  short-circuit and `dist == 0` exact-match early exit are retained. Verified
-  byte-identical encoded GIF output across all corpus files
-  (`benchmarks/zengif_find_nearest_correctness_2026-05-29.tsv`) plus full test
-  suite. See `benchmarks/zengif_find_nearest_arm_2026-05-29.*`.
+### Investigated (no shipped change)
+- Tried a branchless chunked-min rewrite of `Palette::find_nearest` (pack each
+  candidate as `(dist << 8) | index`, take a running `min` over `[Rgba; 8]`
+  chunks to auto-vectorize). Output was proven byte-identical to the scalar scan
+  (`benchmarks/zengif_find_nearest_correctness_2026-05-29.tsv`, 162 tests pass),
+  but an on-box ARM A/B (Neoverse-N1) showed it **regresses the dominant
+  encode/solid and memory_allocation paths ~30%** while helping dirty-region
+  animation encode only ~2-6% — so it was **reverted**. Root cause: solid frames
+  hit an exact palette match at a low index where the scalar loop's per-element
+  `dist == 0` early-exit returns almost immediately, whereas the chunked-min must
+  finish an 8-entry chunk first. Full numbers + a follow-up approach (cheap
+  per-element exact-match exit before the vector body) are recorded in
+  `benchmarks/zengif_find_nearest_arm_2026-05-29.{tsv,meta}`. The correctness/A-B
+  harness lives at `examples/find_nearest_hash.rs` for the next attempt.
 
 ### Fixed
 - `tests/fuzz_regression.rs` now gated on the `std` feature so the

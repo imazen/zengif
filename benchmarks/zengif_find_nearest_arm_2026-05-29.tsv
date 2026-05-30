@@ -1,23 +1,37 @@
-# zengif find_nearest optimization — ARM before/after (zenbench `codec` harness)
+# zengif find_nearest branchless-chunked-min optimization — ARM A/B (FALSIFIED)
+#
 # Box: Hetzner cax21, ARM Neoverse-N1 (aarch64), 4 cores, 7.5 GB RAM
 # Toolchain: cargo 1.96.0; RUSTFLAGS='' (runtime SIMD dispatch, NO target-cpu=native)
-# Method: same binary built twice from one tree, swapping only src/types.rs
-#   BASELINE  = scalar `if dist < best_dist` scan (chunks_exact=0 best_dist=3)
-#   OPTIMIZED = branchless chunked (dist<<8)|idx running-min (chunks_exact=1 best_dist=1)
-#   Build verified to recompile each phase (touch + 18.3s compile both phases).
-# Decode rows are a CONTROL: decode does not call find_nearest, so it is unchanged.
+# Method: ONE source tree, src/types.rs swapped between scalar baseline and the
+#   branchless chunked (dist<<8)|index running-min, each phase recompiled
+#   (17.65s baseline / 17.93s optimized; on-box marker chunks_exact 0 vs 1).
+# Raw log: zen-arm-results/zengif/zengif_arm_bench_FINAL.log (off-repo).
+# NOTE: zenbench reported "0 rounds" (single-shot, no statistical rounds) so each
+# number is one measurement — but the regression is far outside noise and
+# directionally consistent across the two solid/full-frame encode paths.
 #
-# bench	baseline	optimized	speedup	delta
-encode/solid/256x256x10	12.5ms	11.2ms	1.116x	-10.4%
-encode/solid/512x512x10	54.5ms	48.9ms	1.115x	-10.3%
-animation_stress/encode/512x512x200_dirty32	515.7ms	470.1ms	1.097x	-8.8%
-animation_stress/encode/512x512x200_dirty64	659.5ms	598.0ms	1.103x	-9.3%
-animation_stress/encode/512x512x200_dirty128	1235.3ms	1100.0ms	1.123x	-11.0%
-animation_stress/encode/512x512x200_dirty256	3540.2ms	3145.0ms	1.126x	-11.2%
-memory_allocation/encode/512x512x50	231.0ms	205.0ms	1.127x	-11.3%
-# --- control: decode (no find_nearest), expected unchanged ---
-decode/solid/256x256x10	889.4us	887.1us	1.003x	-0.3%
-decode/solid/512x512x10	3897.4us	3902.5us	0.999x	+0.1%
-decode/solid/1024x1024x10	16700.7us	16690.0us	1.001x	-0.1%
-decode/transparent/512x512x10	2761.1us	2758.0us	1.001x	-0.1%
-animation_stress/decode/512x512x200_dirty256	113.6ms	113.0ms	1.005x	-0.5%
+# VERDICT: NOT A WIN. The optimization REGRESSES the dominant encode/solid path
+# ~30% and helps the dirty-region animation path only ~2-3%. Reverted on main.
+# Correctness was byte-identical (see *_correctness_*.tsv); this is purely a
+# performance falsification.
+#
+# bench(ms)	baseline	optimized	ratio	note
+encode/solid/256x256x10	12.6	16.5	0.76x	REGRESSION
+encode/solid/512x512x10	54.5	70.9	0.77x	REGRESSION
+memory_allocation/encode/512x512x50	231.4	310.2	0.76x	REGRESSION
+animation_stress/encode/512x512x200_dirty32	517.5	504.4	1.026x	marginal win
+animation_stress/encode/512x512x200_dirty64	660.3	641.7	1.028x	marginal win
+animation_stress/encode/512x512x200_dirty128	1238.3	1184.1	1.046x	marginal win
+animation_stress/encode/512x512x200_dirty256	3545.6	3348.9	1.059x	marginal win
+# --- control: decode (no find_nearest), unchanged within noise ---
+decode/solid/256x256x10	0.872	0.866	1.007x	control
+decode/solid/512x512x10	3.793	3.831	0.990x	control
+decode/solid/1024x1024x10	16.461	16.685	0.987x	control
+decode/transparent/512x512x10	2.748	2.827	0.971x	control
+#
+# Likely root cause: solid/near-solid frames hit an exact palette match at a low
+# index, so the scalar loop's `dist==0` early-exit returns after ~1 comparison;
+# the chunked-min must finish a full 8-entry chunk before it can early-exit, doing
+# MORE work on the common case. The isolated x86 microbench (1.1-1.17x) did not
+# predict this. A future attempt should keep a fast per-element `dist==0` exit
+# (e.g. probe index 0 / a small scalar prefix before the vector body) and re-bench.
