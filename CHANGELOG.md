@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Changed
+- Removed `tests/**` and `benches/**` from the `include` list in `Cargo.toml`; published tarball now ships only `src/`, `examples/`, and the standard metadata files — downstream consumers never build the test suite or benches.
+
 ### Investigated (no shipped change)
 - Tried a branchless chunked-min rewrite of `Palette::find_nearest` (pack each
   candidate as `(dist << 8) | index`, take a running `min` over `[Rgba; 8]`

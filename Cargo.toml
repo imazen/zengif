@@ -12,8 +12,6 @@ categories = ["multimedia::images", "encoding"]
 readme = "README.md"
 include = [
     "/src/**",
-    "/tests/**",
-    "/benches/**",
     "/examples/**",
     "/README.md",
     "/CHANGELOG.md",
