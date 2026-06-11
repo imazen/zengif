@@ -5,7 +5,7 @@
 # all-features section.
 # DO NOT EDIT BY HAND — commit regenerated changes together with the code.
 
-## default features (846 items)
+## default features (933 items)
 
 pub mod zengif
 pub use zengif::Stop
@@ -164,6 +164,93 @@ pub fn zengif::heuristics::estimate_decode_streaming(u32, u32) -> zengif::heuris
 pub fn zengif::heuristics::estimate_encode(u32, u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
 pub fn zengif::heuristics::estimate_encode_shared_palette(u32, u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
 pub fn zengif::heuristics::estimate_encode_streaming(u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
+pub mod zengif::sweep
+pub enum zengif::sweep::QualityGrid
+pub zengif::sweep::QualityGrid::Explicit(alloc::vec::Vec<u8>)
+pub zengif::sweep::QualityGrid::Step5
+impl zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::points(&self) -> alloc::vec::Vec<u8>
+impl core::clone::Clone for zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::clone(&self) -> zengif::sweep::QualityGrid
+impl core::fmt::Debug for zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::QualityGrid
+impl core::marker::Send for zengif::sweep::QualityGrid
+impl core::marker::Sync for zengif::sweep::QualityGrid
+impl core::marker::Unpin for zengif::sweep::QualityGrid
+impl core::marker::UnsafeUnpin for zengif::sweep::QualityGrid
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::QualityGrid
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::QualityGrid
+pub struct zengif::sweep::SweepAxes
+pub zengif::sweep::SweepAxes::backends: alloc::vec::Vec<zengif::QuantizerBackend>
+pub zengif::sweep::SweepAxes::dithering: alloc::vec::Vec<f32>
+impl zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::modes_full() -> Self
+pub fn zengif::sweep::SweepAxes::rd_core() -> Self
+impl core::clone::Clone for zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::clone(&self) -> zengif::sweep::SweepAxes
+impl core::fmt::Debug for zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepAxes
+impl core::marker::Send for zengif::sweep::SweepAxes
+impl core::marker::Sync for zengif::sweep::SweepAxes
+impl core::marker::Unpin for zengif::sweep::SweepAxes
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepAxes
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepAxes
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepAxes
+pub struct zengif::sweep::SweepCell
+pub zengif::sweep::SweepCell::aliases: alloc::vec::Vec<alloc::string::String>
+pub zengif::sweep::SweepCell::deviations: u8
+pub zengif::sweep::SweepCell::fingerprint: u64
+pub zengif::sweep::SweepCell::id: alloc::string::String
+pub zengif::sweep::SweepCell::variant: zengif::sweep::SweepVariant
+impl core::clone::Clone for zengif::sweep::SweepCell
+pub fn zengif::sweep::SweepCell::clone(&self) -> zengif::sweep::SweepCell
+impl core::fmt::Debug for zengif::sweep::SweepCell
+pub fn zengif::sweep::SweepCell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepCell
+impl core::marker::Send for zengif::sweep::SweepCell
+impl core::marker::Sync for zengif::sweep::SweepCell
+impl core::marker::Unpin for zengif::sweep::SweepCell
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepCell
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepCell
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepCell
+pub struct zengif::sweep::SweepPlan
+pub zengif::sweep::SweepPlan::cells: alloc::vec::Vec<zengif::sweep::SweepCell>
+pub zengif::sweep::SweepPlan::duplicates_merged: usize
+impl core::clone::Clone for zengif::sweep::SweepPlan
+pub fn zengif::sweep::SweepPlan::clone(&self) -> zengif::sweep::SweepPlan
+impl core::fmt::Debug for zengif::sweep::SweepPlan
+pub fn zengif::sweep::SweepPlan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepPlan
+impl core::marker::Send for zengif::sweep::SweepPlan
+impl core::marker::Sync for zengif::sweep::SweepPlan
+impl core::marker::Unpin for zengif::sweep::SweepPlan
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepPlan
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepPlan
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepPlan
+pub struct zengif::sweep::SweepVariant
+pub zengif::sweep::SweepVariant::backend: zengif::QuantizerBackend
+pub zengif::sweep::SweepVariant::dithering: f32
+pub zengif::sweep::SweepVariant::quality: u8
+impl zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::build(&self) -> zengif::EncoderConfig
+pub fn zengif::sweep::SweepVariant::dithering_applies(zengif::QuantizerBackend) -> bool
+impl core::clone::Clone for zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::clone(&self) -> zengif::sweep::SweepVariant
+impl core::fmt::Debug for zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepVariant
+impl core::marker::Send for zengif::sweep::SweepVariant
+impl core::marker::Sync for zengif::sweep::SweepVariant
+impl core::marker::Unpin for zengif::sweep::SweepVariant
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepVariant
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepVariant
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepVariant
+pub fn zengif::sweep::compiled_backends() -> alloc::vec::Vec<zengif::QuantizerBackend>
+pub fn zengif::sweep::fingerprint(&zengif::sweep::SweepVariant) -> u64
+pub fn zengif::sweep::plan(&zengif::sweep::SweepAxes, &zengif::sweep::QualityGrid) -> zengif::sweep::SweepPlan
+pub fn zengif::sweep::variant_from_cell_id(&str) -> core::result::Result<zengif::sweep::SweepVariant, alloc::string::String>
 #[non_exhaustive] #[repr(u8)] pub enum zengif::DisposalMethod
 pub zengif::DisposalMethod::Background = 2
 pub zengif::DisposalMethod::Keep = 1
@@ -854,7 +941,7 @@ pub type zengif::DecodeError = zengif::GifError
 pub type zengif::EncodeError = zengif::GifError
 pub type zengif::Result<T> = core::result::Result<T, whereat::at::At<zengif::GifError>>
 
-## all features except _* (1126 items)
+## all features except _* (1213 items)
 
 pub mod zengif
 pub use zengif::Stop
@@ -1016,6 +1103,93 @@ pub fn zengif::heuristics::estimate_decode_streaming(u32, u32) -> zengif::heuris
 pub fn zengif::heuristics::estimate_encode(u32, u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
 pub fn zengif::heuristics::estimate_encode_shared_palette(u32, u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
 pub fn zengif::heuristics::estimate_encode_streaming(u32, u32, zengif::heuristics::QuantizerType) -> zengif::heuristics::EncodeEstimate
+pub mod zengif::sweep
+pub enum zengif::sweep::QualityGrid
+pub zengif::sweep::QualityGrid::Explicit(alloc::vec::Vec<u8>)
+pub zengif::sweep::QualityGrid::Step5
+impl zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::points(&self) -> alloc::vec::Vec<u8>
+impl core::clone::Clone for zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::clone(&self) -> zengif::sweep::QualityGrid
+impl core::fmt::Debug for zengif::sweep::QualityGrid
+pub fn zengif::sweep::QualityGrid::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::QualityGrid
+impl core::marker::Send for zengif::sweep::QualityGrid
+impl core::marker::Sync for zengif::sweep::QualityGrid
+impl core::marker::Unpin for zengif::sweep::QualityGrid
+impl core::marker::UnsafeUnpin for zengif::sweep::QualityGrid
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::QualityGrid
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::QualityGrid
+pub struct zengif::sweep::SweepAxes
+pub zengif::sweep::SweepAxes::backends: alloc::vec::Vec<zengif::QuantizerBackend>
+pub zengif::sweep::SweepAxes::dithering: alloc::vec::Vec<f32>
+impl zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::modes_full() -> Self
+pub fn zengif::sweep::SweepAxes::rd_core() -> Self
+impl core::clone::Clone for zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::clone(&self) -> zengif::sweep::SweepAxes
+impl core::fmt::Debug for zengif::sweep::SweepAxes
+pub fn zengif::sweep::SweepAxes::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepAxes
+impl core::marker::Send for zengif::sweep::SweepAxes
+impl core::marker::Sync for zengif::sweep::SweepAxes
+impl core::marker::Unpin for zengif::sweep::SweepAxes
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepAxes
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepAxes
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepAxes
+pub struct zengif::sweep::SweepCell
+pub zengif::sweep::SweepCell::aliases: alloc::vec::Vec<alloc::string::String>
+pub zengif::sweep::SweepCell::deviations: u8
+pub zengif::sweep::SweepCell::fingerprint: u64
+pub zengif::sweep::SweepCell::id: alloc::string::String
+pub zengif::sweep::SweepCell::variant: zengif::sweep::SweepVariant
+impl core::clone::Clone for zengif::sweep::SweepCell
+pub fn zengif::sweep::SweepCell::clone(&self) -> zengif::sweep::SweepCell
+impl core::fmt::Debug for zengif::sweep::SweepCell
+pub fn zengif::sweep::SweepCell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepCell
+impl core::marker::Send for zengif::sweep::SweepCell
+impl core::marker::Sync for zengif::sweep::SweepCell
+impl core::marker::Unpin for zengif::sweep::SweepCell
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepCell
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepCell
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepCell
+pub struct zengif::sweep::SweepPlan
+pub zengif::sweep::SweepPlan::cells: alloc::vec::Vec<zengif::sweep::SweepCell>
+pub zengif::sweep::SweepPlan::duplicates_merged: usize
+impl core::clone::Clone for zengif::sweep::SweepPlan
+pub fn zengif::sweep::SweepPlan::clone(&self) -> zengif::sweep::SweepPlan
+impl core::fmt::Debug for zengif::sweep::SweepPlan
+pub fn zengif::sweep::SweepPlan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepPlan
+impl core::marker::Send for zengif::sweep::SweepPlan
+impl core::marker::Sync for zengif::sweep::SweepPlan
+impl core::marker::Unpin for zengif::sweep::SweepPlan
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepPlan
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepPlan
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepPlan
+pub struct zengif::sweep::SweepVariant
+pub zengif::sweep::SweepVariant::backend: zengif::QuantizerBackend
+pub zengif::sweep::SweepVariant::dithering: f32
+pub zengif::sweep::SweepVariant::quality: u8
+impl zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::build(&self) -> zengif::EncoderConfig
+pub fn zengif::sweep::SweepVariant::dithering_applies(zengif::QuantizerBackend) -> bool
+impl core::clone::Clone for zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::clone(&self) -> zengif::sweep::SweepVariant
+impl core::fmt::Debug for zengif::sweep::SweepVariant
+pub fn zengif::sweep::SweepVariant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for zengif::sweep::SweepVariant
+impl core::marker::Send for zengif::sweep::SweepVariant
+impl core::marker::Sync for zengif::sweep::SweepVariant
+impl core::marker::Unpin for zengif::sweep::SweepVariant
+impl core::marker::UnsafeUnpin for zengif::sweep::SweepVariant
+impl core::panic::unwind_safe::RefUnwindSafe for zengif::sweep::SweepVariant
+impl core::panic::unwind_safe::UnwindSafe for zengif::sweep::SweepVariant
+pub fn zengif::sweep::compiled_backends() -> alloc::vec::Vec<zengif::QuantizerBackend>
+pub fn zengif::sweep::fingerprint(&zengif::sweep::SweepVariant) -> u64
+pub fn zengif::sweep::plan(&zengif::sweep::SweepAxes, &zengif::sweep::QualityGrid) -> zengif::sweep::SweepPlan
+pub fn zengif::sweep::variant_from_cell_id(&str) -> core::result::Result<zengif::sweep::SweepVariant, alloc::string::String>
 #[non_exhaustive] #[repr(u8)] pub enum zengif::DisposalMethod
 pub zengif::DisposalMethod::Background = 2
 pub zengif::DisposalMethod::Keep = 1

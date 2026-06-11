@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `sweep` module (any quantizer feature): variant-generation playbook
+  adoption — metric-class axes (quality grid × dithering × compiled
+  backends), build-feature liveness made structural (uncompiled-backend
+  ids REJECTED by the parser), `gif-<backend>[-d<v>]_q<q>` grammar with
+  totality test, main-effects-first plan. `tests/sweep_validate.rs`
+  gates per-cell decodability, step liveness, and pixel-exact roundtrip
+  of palette-representable content at q100/d0 through every compiled
+  backend. Adoption record: `docs/VARIANT_GENERATION.md` (step-8
+  zenmetrics wiring tracked as open).
+
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->

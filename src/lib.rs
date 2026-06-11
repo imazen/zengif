@@ -231,6 +231,18 @@ pub use types::{
 
 #[cfg(feature = "zencodec")]
 mod codec;
+
+/// Sweep-plan construction over the encoder knob space (variant-
+/// generation playbook; see `zenjpeg/docs/VARIANT_GENERATION.md`).
+/// Requires at least one quantizer feature.
+#[cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
+pub mod sweep;
 #[cfg(feature = "zencodec")]
 pub use codec::{
     GifAnimationFrameDecoder, GifAnimationFrameEncoder, GifDecodeJob, GifDecoder, GifDecoderConfig,
