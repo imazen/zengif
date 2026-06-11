@@ -11,6 +11,19 @@
 //! Corpus: palette bands / noise / odd 509×381 / tiny (pattern 15:
 //! odd dims exercise width-edge paths).
 
+// Mirrors the lib's gating: `zengif::sweep` needs a quantizer backend,
+// `encode_gif`/`decode_gif` need std.
+#![cfg(all(
+    feature = "std",
+    any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    )
+))]
+
 use zengif::sweep::{QualityGrid, SweepAxes, plan};
 use zengif::{FrameInput, Limits, Rgba, decode_gif, encode_gif};
 
