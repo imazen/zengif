@@ -1,5 +1,8 @@
 //! Encoder configuration.
 
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use crate::types::{Repeat, Rgba};
 
 /// Encoder configuration.
@@ -111,6 +114,30 @@ pub struct EncoderConfig {
     ))]
     pub quantizer: Option<crate::quantize::Quantizer>,
 
+    /// Quantizer backend **preference series** — "use the first of
+    /// these this build compiled in".
+    ///
+    /// This is the soft-intent counterpart to the two hard spellings:
+    ///
+    /// - [`Self::quantizer`] (a [`crate::quantize::Quantizer`]) is a
+    ///   REQUIRED choice: its variants are cfg-gated, so demanding a
+    ///   backend the build lacks **fails to compile**.
+    /// - `quantizer_preference` uses [`crate::quantize::QuantizerBackend`],
+    ///   whose variants are ALL representable regardless of features —
+    ///   so a preference order can be configured, serialized, and
+    ///   shipped without knowing the consumer's feature set.
+    ///
+    /// Resolution: the first available backend in the series wins. If
+    /// the series is `Some` and NONE of its entries are compiled in,
+    /// encoding **errors loudly** — an explicit preference is never
+    /// silently substituted with something outside it (that is the
+    /// silent-wrong-encode class). `None` (default) keeps the implicit
+    /// build-default behavior ([`crate::quantize::Quantizer::auto`]).
+    ///
+    /// Precedence: [`Self::quantizer`] (required) beats this; this
+    /// beats the deprecated `quantizer_backend` field and `auto()`.
+    pub quantizer_preference: Option<Vec<crate::quantize::QuantizerBackend>>,
+
     /// Per-frame palette error threshold for hybrid palette mode.
     ///
     /// When `shared_palette` is true and this is `Some(threshold)`, frames
@@ -197,6 +224,7 @@ impl EncoderConfig {
             repeat: Repeat::Infinite,
             global_palette: None,
             use_transparency: true,
+            quantizer_preference: None,
             #[cfg(any(
                 feature = "zenquant",
                 feature = "quantette",
@@ -335,6 +363,20 @@ impl EncoderConfig {
     #[must_use]
     pub fn quantizer(mut self, quantizer: crate::quantize::Quantizer) -> Self {
         self.quantizer = Some(quantizer);
+        self
+    }
+
+    /// Set the quantizer backend preference series (soft intent:
+    /// "first of these that this build compiled in"). See the
+    /// [`Self::quantizer_preference`] field docs for the required-vs-
+    /// preference model and the loud-error contract when nothing in
+    /// the series is available.
+    #[must_use]
+    pub fn quantizer_preference(
+        mut self,
+        series: impl Into<Vec<crate::quantize::QuantizerBackend>>,
+    ) -> Self {
+        self.quantizer_preference = Some(series.into());
         self
     }
 

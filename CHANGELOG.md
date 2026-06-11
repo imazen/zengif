@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `EncoderConfig::quantizer_preference` (+ builder) — the soft-intent
+  counterpart to the two-spelling quantizer model: `Quantizer`
+  (cfg-gated variants) is the REQUIRED choice that fails to compile
+  without the backend's feature; `QuantizerBackend` is the
+  always-representable vocabulary, so a preference SERIES can be
+  configured/serialized without knowing the consumer's feature set.
+  Resolution picks the first compiled entry
+  (`QuantizerBackend::first_available`); an explicit series with no
+  compiled entry errors loudly — never silently substituted. Precedence:
+  required `quantizer` > preference series > deprecated
+  `quantizer_backend` > `auto()`.
+
+### QUEUED BREAKING CHANGES
+
+- Remove the deprecated `quantizer_backend` field — superseded by
+  `quantizer` (required) + `quantizer_preference` (series); ship with
+  the next 0.x minor.
+
+
 - `sweep` module (any quantizer feature): variant-generation playbook
   adoption — metric-class axes (quality grid × dithering × compiled
   backends), build-feature liveness made structural (uncompiled-backend

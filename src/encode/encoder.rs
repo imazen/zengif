@@ -233,11 +233,37 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
+        // Resolution precedence:
+        //   1. `quantizer` — REQUIRED choice (cfg-gated `Quantizer`
+        //      variants: demanding an uncompiled backend fails to
+        //      compile, so reaching here means it exists).
+        //   2. `quantizer_preference` — soft series over the
+        //      always-representable `QuantizerBackend` vocabulary:
+        //      first compiled entry wins, and an explicit series with
+        //      NO compiled entry errors loudly — never silently
+        //      substituted (the silent-wrong-encode class).
+        //   3. deprecated `quantizer_backend`, then `auto()`.
+        if let Some(series) = &config.quantizer_preference
+            && config.quantizer.is_none()
+            && crate::quantize::QuantizerBackend::first_available(series).is_none()
+        {
+            return Err(at!(GifError::QuantizationFailed {
+                message: "none of the quantizer backends in `quantizer_preference` \
+                          are compiled into this build (cargo features gate them)"
+            }));
+        }
         #[allow(deprecated)] // quantizer_backend fallback for backward compat
         let quantizer = config
             .quantizer
             .as_ref()
             .map(|q| q.create_backend())
+            .or_else(|| {
+                config
+                    .quantizer_preference
+                    .as_deref()
+                    .and_then(crate::quantize::QuantizerBackend::first_available)
+                    .and_then(|b| b.create_quantizer())
+            })
             .or_else(|| config.quantizer_backend.create_quantizer())
             .or_else(|| Some(crate::quantize::Quantizer::auto().create_backend()))
             .ok_or_else(|| {
@@ -314,6 +340,7 @@ impl<'a> Encoder<'a> {
     ) -> Result<Self> {
         let config = EncoderConfig {
             repeat: metadata.repeat,
+            quantizer_preference: None,
             global_palette: metadata
                 .global_palette
                 .as_ref()
@@ -1027,3 +1054,68 @@ impl<'a> Encoder<'a> {
 }
 
 // OLD impl block removed - now part of main Encoder<'a> impl
+
+#[cfg(all(test, feature = "std", feature = "zenquant"))]
+mod preference_tests {
+    use crate::quantize::QuantizerBackend;
+    use crate::types::FrameInput;
+    use crate::{EncoderConfig, Limits, encode_gif};
+
+    fn frame() -> (Vec<FrameInput>, u16, u16) {
+        let px = crate::types::Rgba {
+            r: 10,
+            g: 200,
+            b: 30,
+            a: 255,
+        };
+        (vec![FrameInput::new(8, 8, 0, vec![px; 64])], 8, 8)
+    }
+
+    #[test]
+    fn preference_resolves_first_available_backend() {
+        // Quantette is not compiled in the default build; the series
+        // must fall through to Zenquant and encode successfully.
+        let (frames, w, h) = frame();
+        let cfg = EncoderConfig::new().quantizer_preference(vec![
+            QuantizerBackend::Quantette,
+            QuantizerBackend::Zenquant,
+        ]);
+        encode_gif(frames, w, h, cfg, Limits::none(), &enough::Unstoppable)
+            .expect("series with one available backend must encode");
+    }
+
+    #[test]
+    fn preference_with_no_available_backend_errors_loudly() {
+        // Neither entry is compiled in the default build: an explicit
+        // preference is never silently substituted — hard error.
+        let (frames, w, h) = frame();
+        let cfg = EncoderConfig::new().quantizer_preference(vec![
+            QuantizerBackend::Quantette,
+            QuantizerBackend::Quantizr,
+        ]);
+        let err = encode_gif(frames, w, h, cfg, Limits::none(), &enough::Unstoppable)
+            .expect_err("series with no available backend must error");
+        let msg = format!("{err}");
+        assert!(msg.contains("quantizer_preference"), "got {msg}");
+    }
+
+    #[test]
+    fn empty_preference_series_errors_loudly() {
+        // Some(vec![]) is an explicit "nothing acceptable".
+        let (frames, w, h) = frame();
+        let cfg = EncoderConfig::new().quantizer_preference(Vec::new());
+        assert!(encode_gif(frames, w, h, cfg, Limits::none(), &enough::Unstoppable).is_err());
+    }
+
+    #[test]
+    fn required_quantizer_beats_preference() {
+        // Both set: the required (cfg-gated) choice wins; the dead
+        // series underneath is irrelevant.
+        let (frames, w, h) = frame();
+        let cfg = EncoderConfig::new()
+            .quantizer(crate::quantize::Quantizer::Zenquant { dithering: 0.5 })
+            .quantizer_preference(vec![QuantizerBackend::Quantizr]);
+        encode_gif(frames, w, h, cfg, Limits::none(), &enough::Unstoppable)
+            .expect("required choice must win over the preference series");
+    }
+}

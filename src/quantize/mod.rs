@@ -119,6 +119,13 @@ impl QuantizeConfig {
 
 /// Quantizer selection with backend-specific configuration.
 ///
+/// NOTE on intent: `Quantizer` is the **required-choice** spelling —
+/// its variants are cfg-gated per cargo feature, so demanding a backend
+/// this build lacks *fails to compile*. For the soft spelling ("first
+/// of these that is compiled in"), use
+/// [`EncoderConfig::quantizer_preference`](crate::EncoderConfig) with
+/// [`QuantizerBackend`], whose variants are always representable.
+///
 /// # Example
 ///
 /// ```rust,ignore
@@ -645,6 +652,20 @@ impl QuantizerBackend {
             QuantizerBackend::Quantizr => cfg!(feature = "quantizr"),
             QuantizerBackend::ColorQuant => cfg!(feature = "color_quant"),
         }
+    }
+
+    /// First backend in `series` that this build compiled in, if any.
+    ///
+    /// This is the resolution primitive for
+    /// [`EncoderConfig::quantizer_preference`](crate::EncoderConfig):
+    /// every [`QuantizerBackend`] variant is representable in every
+    /// build (unlike [`Quantizer`], whose variants are cfg-gated), so a
+    /// preference series can be written, serialized, and shipped
+    /// without knowing the consumer's feature set — the build's
+    /// capabilities pick the winner at resolution time.
+    #[must_use]
+    pub fn first_available(series: &[QuantizerBackend]) -> Option<QuantizerBackend> {
+        series.iter().copied().find(QuantizerBackend::is_available)
     }
 }
 
