@@ -1,0 +1,109 @@
+# zengif public API — additions from non-default features
+# features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub types (struct/enum/trait/alias)        12
+#   inherent methods                           34
+#   struct fields                               5
+#   enum variants                               5
+#   trait roster entries (type × trait)        25
+#   auto-trait-complete types                   5
+#   auto-trait exceptions                       7
+#
+# per-module pub lines:
+#   (root)                           56
+
+## items (56 lines)
+
+pub GifError::UnsupportedOperation(zencodec::capabilities::UnsupportedOperation)
+pub Quantizer::ColorQuant
+pub Quantizer::ColorQuant::sample_factor: i32
+pub Quantizer::Imagequant
+pub Quantizer::Imagequant::dithering: f32
+pub Quantizer::Imagequant::quality: u8
+pub Quantizer::Quantette
+pub Quantizer::Quantette::dithering: f32
+pub Quantizer::Quantizr
+pub Quantizer::Quantizr::dithering: f32
+pub fn Quantizer::color_quant() -> Self
+pub fn Quantizer::color_quant_with_sample_factor(i32) -> Self
+pub fn Quantizer::imagequant() -> Self
+pub fn Quantizer::imagequant_with_settings(u8, f32) -> Self
+pub fn Quantizer::quantette() -> Self
+pub fn Quantizer::quantette_with_dithering(f32) -> Self
+pub fn Quantizer::quantizr() -> Self
+pub fn Quantizer::quantizr_with_dithering(f32) -> Self
+pub struct ColorQuantQuantizer
+pub fn ColorQuantQuantizer::new() -> Self
+pub fn ComposedFrame::as_imgref(&self) -> imgref::ImgVec<rgb::RGBA8>
+pub fn ComposedFrame::into_imgvec(self) -> imgref::ImgVec<rgb::RGBA8>
+pub fn FrameInput::from_imgref(u16, imgref::ImgRef<'_, rgb::RGBA8>) -> Self
+pub fn FrameInput::from_imgvec(u16, imgref::ImgVec<rgb::RGBA8>) -> Self
+pub struct GifAnimationFrameDecoder
+pub struct GifAnimationFrameEncoder
+pub struct GifDecodeJob
+pub struct GifDecoder<'a>
+pub struct GifDecoderConfig
+pub fn GifDecoderConfig::decode(&self, &[u8]) -> core::result::Result<zencodec::output::DecodeOutput, whereat::at::At<GifError>>
+pub fn GifDecoderConfig::new() -> Self
+pub fn GifDecoderConfig::probe_full(&self, &[u8]) -> core::result::Result<zencodec::info::ImageInfo, whereat::at::At<GifError>>
+pub fn GifDecoderConfig::probe_header(&self, &[u8]) -> core::result::Result<zencodec::info::ImageInfo, whereat::at::At<GifError>>
+pub struct GifEncodeJob
+pub struct GifEncoder
+pub struct GifEncoderConfig
+pub fn GifEncoderConfig::inner(&self) -> &EncoderConfig
+pub fn GifEncoderConfig::inner_mut(&mut self) -> &mut EncoderConfig
+pub fn GifEncoderConfig::new() -> Self
+pub fn GifEncoderConfig::with_dithering(self, f32) -> Self
+pub fn GifEncoderConfig::with_global_palette(self, alloc::vec::Vec<Rgba>) -> Self
+pub fn GifEncoderConfig::with_lossy_tolerance(self, u8) -> Self
+pub fn GifEncoderConfig::with_max_buffer_bytes(self, usize) -> Self
+pub fn GifEncoderConfig::with_max_buffer_frames(self, usize) -> Self
+pub fn GifEncoderConfig::with_palette_error_threshold(self, core::option::Option<f32>) -> Self
+pub fn GifEncoderConfig::with_quality(self, f32) -> Self
+pub fn GifEncoderConfig::with_quantizer(self, Quantizer) -> Self
+pub fn GifEncoderConfig::with_repeat(self, Repeat) -> Self
+pub fn GifEncoderConfig::with_shared_palette(self, bool) -> Self
+pub fn GifEncoderConfig::with_transparency(self, bool) -> Self
+pub struct ImagequantQuantizer
+pub fn ImagequantQuantizer::new() -> Self
+pub struct QuantetteQuantizer
+pub fn QuantetteQuantizer::new() -> Self
+pub struct QuantizrQuantizer
+pub fn QuantizrQuantizer::new() -> Self
+
+## trait impls (15 types)
+
+ColorQuantQuantizer: Default, QuantizerTrait
+ComposedFrame: From<(usize, u16, imgref::Img<alloc::vec::Vec<rgb::formats::rgba::Rgba<u8>>>)>
+GifAnimationFrameDecoder: zencodec::traits::decoder::AnimationFrameDecoder
+GifAnimationFrameEncoder: zencodec::traits::encoder::AnimationFrameEncoder
+GifDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+GifDecoder<'_>: zencodec::traits::decoder::Decode
+GifDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+GifEncodeJob: zencodec::traits::encoding::EncodeJob
+GifEncoder: zencodec::traits::encoder::Encoder
+GifEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+GifError: From<zencodec::capabilities::UnsupportedOperation>
+ImagequantQuantizer: Default, QuantizerTrait
+QuantetteQuantizer: Default, QuantizerTrait
+QuantizrQuantizer: Default, QuantizerTrait
+detect::GifProbe: zencodec::detect::SourceEncodingDetails
+
+## auto traits
+
+5 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+GifAnimationFrameDecoder: !Freeze !RefUnwindSafe !Sync !UnwindSafe
+GifAnimationFrameEncoder: !Freeze !RefUnwindSafe !Sync !UnwindSafe
+GifDecodeJob: !RefUnwindSafe !UnwindSafe
+GifDecoder<'a>: !RefUnwindSafe !UnwindSafe
+GifEncodeJob: !RefUnwindSafe !UnwindSafe
+GifEncoder: !RefUnwindSafe !UnwindSafe
+ImagequantQuantizer: !RefUnwindSafe !UnwindSafe
