@@ -1102,9 +1102,10 @@ mod preference_tests {
     }
 
     #[test]
+    #[cfg(not(any(feature = "quantette", feature = "quantizr")))]
     fn preference_with_no_available_backend_errors_loudly() {
-        // Neither entry is compiled in the default build: an explicit
-        // preference is never silently substituted — hard error.
+        // Premise: neither series entry is compiled (cfg above), so an
+        // explicit preference is never silently substituted — hard error.
         let (frames, w, h) = frame();
         let cfg = EncoderConfig::new().quantizer_preference(vec![
             QuantizerBackend::Quantette,
