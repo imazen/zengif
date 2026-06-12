@@ -226,13 +226,6 @@ impl<'a> Encoder<'a> {
             (Some(enc), Vec::new(), has_global)
         };
 
-        #[cfg(any(
-            feature = "zenquant",
-            feature = "quantette",
-            feature = "imagequant",
-            feature = "quantizr",
-            feature = "color_quant"
-        ))]
         // Resolution precedence:
         //   1. `quantizer` — REQUIRED choice (cfg-gated `Quantizer`
         //      variants: demanding an uncompiled backend fails to
@@ -243,35 +236,59 @@ impl<'a> Encoder<'a> {
         //      NO compiled entry errors loudly — never silently
         //      substituted (the silent-wrong-encode class).
         //   3. deprecated `quantizer_backend`, then `auto()`.
-        if let Some(series) = &config.quantizer_preference
-            && config.quantizer.is_none()
-            && crate::quantize::QuantizerBackend::first_available(series).is_none()
-        {
+        #[cfg(any(
+            feature = "zenquant",
+            feature = "quantette",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "color_quant"
+        ))]
+        #[allow(deprecated)] // quantizer_backend fallback for backward compat
+        let quantizer = {
+            if let Some(series) = &config.quantizer_preference
+                && config.quantizer.is_none()
+                && crate::quantize::QuantizerBackend::first_available(series).is_none()
+            {
+                return Err(at!(GifError::QuantizationFailed {
+                    message: "none of the quantizer backends in `quantizer_preference` \
+                              are compiled into this build (cargo features gate them)"
+                }));
+            }
+            config
+                .quantizer
+                .as_ref()
+                .map(|q| q.create_backend())
+                .or_else(|| {
+                    config
+                        .quantizer_preference
+                        .as_deref()
+                        .and_then(crate::quantize::QuantizerBackend::first_available)
+                        .and_then(|b| b.create_quantizer())
+                })
+                .or_else(|| config.quantizer_backend.create_quantizer())
+                .or_else(|| Some(crate::quantize::Quantizer::auto().create_backend()))
+                .ok_or_else(|| {
+                    at!(GifError::QuantizationFailed {
+                        message: "requested quantizer backend is not available \
+                                  (its feature may not be enabled)"
+                    })
+                })?
+        };
+        // Builds with no quantizer backend cannot honor an explicit
+        // preference series — error loudly rather than silently ignore it.
+        #[cfg(not(any(
+            feature = "zenquant",
+            feature = "quantette",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "color_quant"
+        )))]
+        if config.quantizer_preference.is_some() {
             return Err(at!(GifError::QuantizationFailed {
-                message: "none of the quantizer backends in `quantizer_preference` \
-                          are compiled into this build (cargo features gate them)"
+                message: "`quantizer_preference` is set but this build has no \
+                          quantizer backends compiled in (cargo features gate them)"
             }));
         }
-        #[allow(deprecated)] // quantizer_backend fallback for backward compat
-        let quantizer = config
-            .quantizer
-            .as_ref()
-            .map(|q| q.create_backend())
-            .or_else(|| {
-                config
-                    .quantizer_preference
-                    .as_deref()
-                    .and_then(crate::quantize::QuantizerBackend::first_available)
-                    .and_then(|b| b.create_quantizer())
-            })
-            .or_else(|| config.quantizer_backend.create_quantizer())
-            .or_else(|| Some(crate::quantize::Quantizer::auto().create_backend()))
-            .ok_or_else(|| {
-                at!(GifError::QuantizationFailed {
-                    message: "requested quantizer backend is not available \
-                              (its feature may not be enabled)"
-                })
-            })?;
 
         Ok(Self {
             encoder,
