@@ -17,16 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-frame and shared-palette modes; detection is content-driven (one
   early-exiting scan) so color frames fall straight through to the
   configured quantizer at no cost. The win is **speed and guaranteed
-  losslessness**: measured **~13× faster** and byte-exact on the 12
-  strictly-grayscale scans in the imazen-26 corpus (2550×3300, 255–256
-  gray levels; zenquant baseline), and ~16–30× on solid synthetic
-  grayscale. Output size is within ~1% of the general quantizer — about
-  0.8% *larger* on those document scans, where ≤256 levels already fit so
-  the quantizer is incidentally lossless too; the fast path's advantage
-  there is being lossless *by construction* and far faster, not smaller.
-  See `benchmarks/grayscale_corpus_2026-06-13.tsv`. A reserved transparent
-  slot keeps animation frame-differencing correct; streams using all 256
-  levels with required transparency fall back rather than drop a level.
+  losslessness**, validated on the 28 strictly-grayscale images in the
+  imazen-26 corpus (exact full-res R==G==B; bilevel patent line-art at
+  146 MP, continuous-tone photos at 12–33 MP, document scans, charts,
+  alpha; zenquant baseline): **~8.5× faster mean** (≈8× on photos/patents,
+  ≈13–16× on document scans) and **byte-exact on all 28**, where the
+  quantizer is lossless on only 9 (it is lossy on every continuous-tone
+  image). Output size is **not** smaller — it is within ~1% of the
+  quantizer and slightly *larger* in every case (0/28 smaller, +0.16%
+  total, worst +2.6% on one chart); the advantage is being lossless by
+  construction and far faster, not byte count. See
+  `benchmarks/grayscale_corpus_2026-06-13.tsv`. A reserved transparent slot
+  keeps multi-frame frame-differencing correct; a single ≥64 MB frame that
+  flushes mid-stream reserves no slot (so a full 256-level image stays
+  lossless), and if more frames follow such a flush, differencing is
+  disabled rather than corrupting unrepresentable transparent pixels.
 
 - `EncoderConfig::quantizer_preference` (+ builder) — the soft-intent
   counterpart to the two-spelling quantizer model: `Quantizer`

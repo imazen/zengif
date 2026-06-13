@@ -1,34 +1,60 @@
 # Grayscale fast path vs general quantizer (zenquant) — issue #4 validation
-# date: 2026-06-13   host: lilith   zengif commit (parent of this measurement): fa36a13
-# corpus: /mnt/v/imazen-26  — strictly grayscale subset (R==G==B everywhere), detected via HSL saturation maxima==0 then exact byte check
-# A_gray  = encode_gif (gray fast path, lossless)
-# B_d0.5  = encode_gif_with_quantizer (zenquant, dithering 0.5 — pre-fix behaviour)
-# B0_d0   = encode_gif_with_quantizer (zenquant, dithering 0.0 — best-case lossy baseline)
-# repro: convert <img>[0] -alpha on -depth 8 RGBA:out.rgba ; ./target/release/examples (zzz_gray_corpus, removed post-measurement); see CHANGELOG
-# FINDING: gray path is ~13x faster and always lossless, but ~0.8% LARGER than zenquant
-#          on these scans (255-256 levels fit 256 colours, so zenquant is also lossless here).
+# date: 2026-06-13   host: lilith   zengif commit: 61c9fcb (incl. mid-stream-flush fix)
 #
-name                                            pixels levels    A_gray    B_d0.5     B0_d0    A/B0     Bms      Ams lossless
-office_irs_f1040sa_p01_page1.png               8415000    255    559872    555762    555762   1.007  1040.1    79.86 yes
-office_irs_f1040sb_p01_page1.png               8415000    255    479992    476458    476458   1.007  1056.0    79.98 yes
-office_irs_f1040sc_p01_page1.png               8415000    255    588398    584891    584891   1.006  1058.4    81.56 yes
-office_irs_f1040sd_p01_page1.png               8415000    255    609964    604289    604289   1.009  1036.4    80.99 yes
-office_irs_f1065_p01_page1.png                 8415000    255    612613    607916    607916   1.008  1051.2    81.72 yes
-office_irs_f1120_p01_page1.png                 8415000    255    535749    531456    531456   1.008  1026.2    81.23 yes
-office_irs_f720_p01_page1.png                  8415000    256    470083    465045    465045   1.011  1012.6    81.07 yes
-office_irs_f8949_p01_page1.png                 8415000    255    542066    536601    536601   1.010  1101.0    82.60 yes
-office_irs_f941_p01_page1.png                  8415000    255    482757    479213    479213   1.007  1312.8    81.08 yes
-office_irs_fw4_p01_page1.png                   8415000    255    672889    666914    666914   1.009  1065.6   103.01 yes
-office_irs_fw7_p01_page1.png                   8415000    255    584982    579327    579327   1.010  1110.8    82.18 yes
-office_irs_fw9_p01_page1.png                   8415000    255    700989    695602    695602   1.008  1060.7    83.20 yes
-nps_nps-grsm-GRSM_Area_Map_p01.png            55593720 SKIP non-gray
-nps_nps-grsm-GRSM_Trail_Map_p01.png           48217712 SKIP non-gray
-commons__featured-pictures__1440x900__dpr2.png  45705600 SKIP non-gray
-commons__featured__1440x900__dpr2.png         45705600 SKIP non-gray
+# CORPUS / METHOD: /mnt/v/imazen-26, all 1069 images scanned for strictly
+#   grayscale content by EXACT full-resolution R==G==B (Pillow). 28 qualify.
+#   (An earlier ImageMagick HSL-saturation probe was unreliable — it false-
+#    positived 4 vividly-colored images and false-negatived ~16 real ones —
+#    and is NOT used here.)
+#
+# A_gray  = encode_gif (gray fast path, lossless by construction)
+# B_d0.5  = encode_gif_with_quantizer (zenquant, dither 0.5 — pre-fix behaviour)
+# B0_d0   = encode_gif_with_quantizer (zenquant, dither 0.0)
+# A_ll/B_ll = byte-exact round-trip? (Limits::none, single frame)
+#
+# FINDINGS:
+#   - Speed: gray path ~8.5x faster mean (≈8x photos/patents, ≈13-16x doc scans).
+#   - Lossless: A on 28/28; quantizer only on 9/28 (the 2-level images). On the
+#     19 continuous-tone images the gray path is lossless where zenquant is not.
+#   - Size: A is NEVER smaller (0/28); +0.16% total, worst +2.6% (one chart).
+#     The 'gray is smaller' guess was wrong; the win is speed + losslessness.
+#   - This run also surfaced the mid-stream-flush bug (logan-voss, 33MP/256-level
+#     was lossy pre-fix); fixed in commit 61c9fcb, lossless here.
+#
+name                                              pixels levels    A_gray    B_d0.5     B0_d0    A/B0     Bms      Ams   A_ll   B_ll
+office_uspto-11292620_lunar-landing-pad_p01_title.png 146671250      2    941700    941700    941700   1.000 12770.0  1538.39    yes    yes
+office_uspto-11292620_lunar-landing-pad_p04_drawings.png 146671250      2    445133    445133    445133   1.000 12691.9  1485.80    yes    yes
+office_uspto-11725513_permafrost-mining-propellant_p01_title.png 146671250      2   1198244   1198244   1198244   1.000 12828.3  1760.03    yes    yes
+office_uspto-11725513_permafrost-mining-propellant_p05_drawings.png 146671250      2    535628    535628    535628   1.000 12477.5  1531.38    yes    yes
+office_uspto-12190202_quantum-chip_p01_title.png 146671250      2    977220    977220    977220   1.000 12526.2  1554.59    yes    yes
+office_uspto-12190202_quantum-chip_p04_drawings.png 146671250      2    672079    672079    672079   1.000 12614.5  1566.31    yes    yes
+office_uspto-12353965_ai-driven-quantum-computing_p01_title.png 146671250      2    987791    987791    987791   1.000 12475.7  1542.79    yes    yes
+office_uspto-12353965_ai-driven-quantum-computing_p04_drawings.png 146671250      2   1673651   1673651   1673651   1.000 12612.2  1566.45    yes    yes
+logan-voss-z_e_ZrFty00-unsplash.jpg             33177600    256  20431577  20431577  20431577   1.000  4538.1   539.40    yes     no
+ian-taylor-BloPN4jcI7s-unsplash.jpg             12000000    256   8322582   8312043   8312043   1.001  1667.0   208.51    yes     no
+office_irs_f1040sa_p01_page1.png                 8415000    255    559872    555762    555762   1.007  1060.2    78.60    yes     no
+office_irs_f1040sb_p01_page1.png                 8415000    255    479992    476458    476458   1.007  1017.6    62.57    yes     no
+office_irs_f1040sc_p01_page1.png                 8415000    255    588398    584891    584891   1.006  1066.3    77.45    yes     no
+office_irs_f1040sd_p01_page1.png                 8415000    255    609964    604289    604289   1.009  1021.1    66.05    yes     no
+office_irs_f1065_p01_page1.png                   8415000    255    612613    607916    607916   1.008  1067.2    78.79    yes     no
+office_irs_f1120_p01_page1.png                   8415000    255    535749    531456    531456   1.008   997.0    63.09    yes     no
+office_irs_f720_p01_page1.png                    8415000    256    470083    465045    465045   1.011  1011.5    86.09    yes     no
+office_irs_f8949_p01_page1.png                   8415000    255    542066    536601    536601   1.010   982.2    63.27    yes     no
+office_irs_f941_p01_page1.png                    8415000    255    482757    479213    479213   1.007  1027.9    75.76    yes     no
+office_irs_fw4_p01_page1.png                     8415000    255    672889    666914    666914   1.009  1007.3    65.24    yes     no
+office_irs_fw7_p01_page1.png                     8415000    255    584982    579327    579327   1.010  1048.2    77.36    yes     no
+office_irs_fw9_p01_page1.png                     8415000    255    700989    695602    695602   1.008  1015.5    64.17    yes     no
+gen-line__00127_s7957de6d_1024sq.png             1048576      2     15452     15452     15452   1.000    72.0     8.06    yes    yes
+gen-line-voronoi__00127_s7957de6d_1024sq.png     1048576    256     76639     76588     76588   1.001   105.8     8.74    yes     no
+gen-chart-sparkline__14_contrast_1024sq.qc.png   1048576    256     25289     24660     24660   1.026   103.4     8.57    yes     no
+gen-line-voronoi__00127_s7957de6d_1024sq.png     1048576    256     76639     76588     76588   1.001   106.6     8.79    yes     no
+gen-line-voronoi__00127_s7957de6d_1024sq.png     1048576    256     76639     76588     76588   1.001   104.4     8.72    yes     no
+Screenshot 2024-04-19 125551.png                  933461    256     38075     38073     38073   1.000    93.9     6.63    yes     no
 
-=== aggregate over 12 grayscale images ===
-total bytes:  A_gray=6840354  B_d0.5=6783474  B0_d0=6783474
-A vs B0(d0, lossy):  A smaller in 0/12   total ratio=1.008   median ratio=1.008
-A vs B(d0.5 default): A smaller in 0/12   total ratio=1.008
-mean encode time: A_gray=83.20ms  B_d0.5=1077.66ms  speedup=13.0x
-(A is lossless; B/B0 are lossy quantization at quality 80)
+=== aggregate over 28 EXACT-grayscale images ===
+total bytes:  A_gray=43334692  B_d0.5=43266489  B0_d0=43266489
+A vs B0(d0):   A smaller in 0/28   total ratio=1.0016
+A vs B(d0.5):  A smaller in 0/28   total ratio=1.0016
+mean time:     A_gray=507.20ms  B_d0.5=4289.63ms  speedup=8.5x
+quantizer (B) was also lossless on 9/28 (≤256 levels fit)
+A is lossless by construction on all 28.
