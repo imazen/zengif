@@ -230,6 +230,45 @@ fn fast_path_gated_off_below_quality_100() {
 }
 
 #[test]
+fn partial_gray_change_after_slotless_flush_is_lossless() {
+    // A gray frame flushed before its successors (small buffer) commits a gray
+    // palette with no transparent slot. A later frame that only PARTIALLY
+    // changes must still round-trip exactly: frame differencing is disabled for
+    // it (allow_diff=false) so unchanged regions aren't painted with palette
+    // index 0 instead of showing the previous frame through. Guards that path.
+    let f0: Vec<Rgba> = (0..64u16).map(|i| gray(i as u8)).collect(); // 64 distinct grays
+    let mut f1 = f0.clone();
+    // Change two pixels inside a sub-region (a full-frame bbox makes the diff
+    // bail to a full frame). The diff bounding box (1,1)..(5,5) then contains
+    // many "unchanged" pixels (a == 0) — exactly the ones a missing transparent
+    // slot would paint with palette index 0 instead of leaving them to show
+    // through. Values stay within f0's palette so the remap itself is exact.
+    let at = |r: usize, c: usize| r * 8 + c;
+    f1[at(1, 1)] = gray(40);
+    f1[at(5, 5)] = gray(50);
+    let encoded = encode_gif(
+        vec![
+            FrameInput::new(8, 8, 10, f0.clone()),
+            FrameInput::new(8, 8, 10, f1.clone()),
+        ],
+        8,
+        8,
+        gray_config().max_buffer_frames(1), // flush f0 alone → palette has no slot
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0].pixels, f0, "frame 0 must be exact");
+    assert_eq!(
+        frames[1].pixels, f1,
+        "frame 1 must be exact — unchanged regions must not be painted index 0"
+    );
+}
+
+#[test]
 fn gray_then_color_frame_keeps_its_color() {
     // Force gray mode to engage on frame 0 (buffer of 1 → it flushes before the
     // color frame is seen), then feed a color frame. The hybrid fallback must
