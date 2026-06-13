@@ -400,6 +400,19 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         self.lossless = Some(lossless);
         if lossless {
             self.inner.lossy_tolerance = 0;
+            // Lossless intent ⇒ max quality. This also engages the exact gray
+            // fast path for grayscale input, which is gated on quality 100.
+            self.quality = Some(100.0);
+            #[cfg(any(
+                feature = "zenquant",
+                feature = "quantette",
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "color_quant"
+            ))]
+            {
+                self.inner.quality = 100;
+            }
         }
         self
     }

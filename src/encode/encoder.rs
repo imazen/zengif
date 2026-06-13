@@ -703,9 +703,18 @@ impl<'a> Encoder<'a> {
         // committed palette has no transparent slot, so `prepare_frame_quantized`
         // disables frame differencing for it (encodes full frames, still exact).
         let force_transparent = self.config.use_transparency && frame_refs.len() > 1;
-        let palette_bytes = if let Some(gray) =
-            crate::quantize::grayscale::GrayPalette::try_build(&frame_refs, force_transparent)
-        {
+        // The gray fast path is a LOSSLESS optimization, so engage it only for
+        // lossless intent (quality 100). At lower quality the user asked for
+        // lossy/smaller output, where the configured (rate-aware) quantizer
+        // wins — the exact gray palette is byte-identical to the lossless
+        // backends but larger than the lossy ones, so overriding them would
+        // cost bytes (see benchmarks/grayscale_rd_2026-06-13.md).
+        let gray = (self.config.quality == 100)
+            .then(|| {
+                crate::quantize::grayscale::GrayPalette::try_build(&frame_refs, force_transparent)
+            })
+            .flatten();
+        let palette_bytes = if let Some(gray) = gray {
             let bytes = gray.palette_bytes().to_vec();
             self.gray_mode = Some(gray);
             bytes
@@ -991,51 +1000,59 @@ impl<'a> Encoder<'a> {
         // Use shared palette if available, otherwise per-frame quantization.
         // With hybrid mode (palette_error_threshold is Some), frames that
         // don't fit the shared palette well get their own local color table.
-        let (palette_bytes, pixels, transparent_index, use_local_palette) = if self
-            .computed_palette
-            .is_some()
-        {
-            // Shared palette mode: remap against the pre-computed palette.
-            // A grayscale stream remaps against the exact gray palette built
-            // at flush time (no color search); everything else goes through
-            // the configured quantizer.
-            let quantized = if let Some(ref gray) = self.gray_mode {
-                gray.remap(&frame_pixels)
-            } else {
-                let background = self.previous_frame.as_deref();
-                self.quantizer.quantize_frame_with_palette(
-                    &frame_pixels,
-                    frame_width,
-                    frame_height,
-                    background,
-                    &quant_config,
-                )?
-            };
-
-            // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette.
-            // For grayscale frames the remap is exact (RMSE ~0), so this never
-            // fires; a stray non-gray outlier frame still gets a correct
-            // per-frame palette from the untouched configured quantizer.
-            if let Some(threshold) = self.config.palette_error_threshold {
-                let rmse = compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
-                if rmse > threshold {
-                    // Shared palette too inaccurate — quantize this frame independently
+        let (palette_bytes, pixels, transparent_index, use_local_palette) =
+            if self.computed_palette.is_some() {
+                // Shared palette mode: remap against the pre-computed palette.
+                // A grayscale stream remaps against the exact gray palette built
+                // at flush time (no color search); everything else goes through
+                // the configured quantizer.
+                let quantized = if let Some(ref gray) = self.gray_mode {
+                    gray.remap(&frame_pixels)
+                } else {
                     let background = self.previous_frame.as_deref();
-                    let per_frame = self.quantizer.quantize_frame(
+                    self.quantizer.quantize_frame_with_palette(
                         &frame_pixels,
                         frame_width,
                         frame_height,
                         background,
                         &quant_config,
-                    )?;
-                    (
-                        per_frame.palette,
-                        per_frame.pixels,
-                        per_frame.transparent_index,
-                        true,
-                    )
+                    )?
+                };
+
+                // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette.
+                // For grayscale frames the remap is exact (RMSE ~0), so this never
+                // fires; a stray non-gray outlier frame still gets a correct
+                // per-frame palette from the untouched configured quantizer.
+                if let Some(threshold) = self.config.palette_error_threshold {
+                    let rmse =
+                        compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
+                    if rmse > threshold {
+                        // Shared palette too inaccurate — quantize this frame independently
+                        let background = self.previous_frame.as_deref();
+                        let per_frame = self.quantizer.quantize_frame(
+                            &frame_pixels,
+                            frame_width,
+                            frame_height,
+                            background,
+                            &quant_config,
+                        )?;
+                        (
+                            per_frame.palette,
+                            per_frame.pixels,
+                            per_frame.transparent_index,
+                            true,
+                        )
+                    } else {
+                        // Shared palette is good enough
+                        (
+                            quantized.palette,
+                            quantized.pixels,
+                            quantized.transparent_index,
+                            false,
+                        )
+                    }
                 } else {
-                    // Shared palette is good enough
+                    // No threshold — always use shared palette
                     (
                         quantized.palette,
                         quantized.pixels,
@@ -1044,20 +1061,15 @@ impl<'a> Encoder<'a> {
                     )
                 }
             } else {
-                // No threshold — always use shared palette
-                (
-                    quantized.palette,
-                    quantized.pixels,
-                    quantized.transparent_index,
-                    false,
-                )
-            }
-        } else {
-            // Per-frame quantization (no shared palette). Try the grayscale
-            // fast path first — an exact, lossless palette with no color
-            // search — and fall back to the configured quantizer otherwise.
-            let quantized =
-                if let Some(gray) = crate::quantize::grayscale::try_quantize_frame(&frame_pixels) {
+                // Per-frame quantization (no shared palette). At lossless intent
+                // (quality 100) try the exact gray fast path first; at lower
+                // quality the configured (lossy, rate-aware) quantizer is what the
+                // user asked for and is smaller, so the gray path stays out of the
+                // way (see benchmarks/grayscale_rd_2026-06-13.md).
+                let gray = (self.config.quality == 100)
+                    .then(|| crate::quantize::grayscale::try_quantize_frame(&frame_pixels))
+                    .flatten();
+                let quantized = if let Some(gray) = gray {
                     gray
                 } else {
                     let background = self.previous_frame.as_deref();
@@ -1069,13 +1081,13 @@ impl<'a> Encoder<'a> {
                         &quant_config,
                     )?
                 };
-            (
-                quantized.palette,
-                quantized.pixels,
-                quantized.transparent_index,
-                true,
-            )
-        };
+                (
+                    quantized.palette,
+                    quantized.pixels,
+                    quantized.transparent_index,
+                    true,
+                )
+            };
 
         // Return buffer to scratch for reuse
         self.scratch.frame_pixels = frame_pixels;

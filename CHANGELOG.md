@@ -13,11 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`r == g == b`) — `GRAY8_SRGB` / `GRAYF32_LINEAR` codec input, document
   scans, plots, diagrams — the encoder builds the exact 8-bit gray
   palette directly and skips the general RGBA quantizer's histogram +
-  k-means + color-distance search. Engaged automatically in both
-  per-frame and shared-palette modes; detection is content-driven (one
-  early-exiting scan) so color frames fall straight through to the
-  configured quantizer at no cost. The win is **speed and guaranteed
-  losslessness**, validated on the 28 strictly-grayscale images in the
+  k-means + color-distance search. It is a **lossless** optimization, so it
+  is gated on lossless intent (`quality == 100`, which `with_lossless(true)`
+  now also sets); at lower quality the configured rate-aware quantizer runs,
+  since it is smaller and is what the caller asked for — so engaging the
+  fast path **never costs bytes**. Engaged in both per-frame and
+  shared-palette modes; detection is content-driven (one early-exiting scan)
+  so color frames fall straight through to the configured quantizer at no
+  cost. The win is **speed and guaranteed losslessness**, validated on the
+  28 strictly-grayscale images in the
   imazen-26 corpus (exact full-res R==G==B; bilevel patent line-art at
   146 MP, continuous-tone photos at 12–33 MP, document scans, charts,
   alpha; zenquant baseline): **~8.5× faster mean** (≈8× on photos/patents,

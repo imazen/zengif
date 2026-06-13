@@ -7,11 +7,13 @@
 ))]
 //! Native grayscale fast path (issue #4).
 //!
-//! When every pixel is gray (`r == g == b`), the encoder builds an exact 8-bit
-//! gray palette instead of running the general RGBA quantizer. These tests
-//! exercise that path through the public API and assert the property that only
-//! the exact path can satisfy: a grayscale image round-trips **losslessly**
-//! (the default quantizer, at quality 80 + dithering 0.5, would not).
+//! When every pixel is gray (`r == g == b`) the encoder can build an exact 8-bit
+//! gray palette instead of running the general RGBA quantizer. The fast path is
+//! a **lossless** optimization, so it is gated on lossless intent
+//! (`quality == 100`): at lower quality the configured (lossy, rate-aware)
+//! quantizer runs instead, since it produces smaller output and that is what the
+//! caller asked for. These tests exercise the fast path at q100 and assert the
+//! property only it can satisfy — byte-exact round-trip — plus the gating.
 
 use enough::Unstoppable;
 use zengif::{
@@ -20,6 +22,11 @@ use zengif::{
 
 fn gray(v: u8) -> Rgba {
     Rgba::rgb(v, v, v)
+}
+
+/// Encoder config that engages the gray fast path (lossless intent).
+fn gray_config() -> EncoderConfig {
+    EncoderConfig::new().quality(100)
 }
 
 /// A 16×16 frame walking through all 256 gray levels exactly once.
@@ -33,13 +40,11 @@ fn single_frame_grayscale_is_lossless() {
     let frame = full_range_gray_frame(0);
     let original = frame.pixels.clone();
 
-    // Default config: shared_palette = true, quality 80, dithering 0.5.
-    // If the RGBA quantizer ran, dithering alone would perturb these pixels.
     let encoded = encode_gif(
         vec![frame],
         16,
         16,
-        EncoderConfig::new().repeat(Repeat::Once),
+        gray_config().repeat(Repeat::Once),
         Limits::default(),
         &Unstoppable,
     )
@@ -51,7 +56,7 @@ fn single_frame_grayscale_is_lossless() {
     // Every pixel reproduced exactly — proof the exact gray path was taken.
     assert_eq!(
         frames[0].pixels, original,
-        "grayscale single frame must round-trip losslessly"
+        "grayscale single frame must round-trip losslessly at q100"
     );
 }
 
@@ -61,7 +66,7 @@ fn decoded_palette_is_grayscale() {
         vec![full_range_gray_frame(0)],
         16,
         16,
-        EncoderConfig::new().repeat(Repeat::Once),
+        gray_config().repeat(Repeat::Once),
         Limits::default(),
         &Unstoppable,
     )
@@ -99,7 +104,7 @@ fn grayscale_animation_round_trips_losslessly() {
         vec![frame_a, frame_b],
         8,
         8,
-        EncoderConfig::new(),
+        gray_config(),
         Limits::default(),
         &Unstoppable,
     )
@@ -132,9 +137,7 @@ fn grayscale_lossless_with_per_frame_palette() {
         vec![frame],
         16,
         16,
-        EncoderConfig::new()
-            .shared_palette(false)
-            .repeat(Repeat::Once),
+        gray_config().shared_palette(false).repeat(Repeat::Once),
         Limits::default(),
         &Unstoppable,
     )
@@ -162,7 +165,7 @@ fn full_range_gray_survives_midstream_byte_cap_flush() {
         vec![frame],
         16,
         16,
-        EncoderConfig::new().max_buffer_bytes(1),
+        gray_config().max_buffer_bytes(1),
         Limits::default(),
         &Unstoppable,
     )
@@ -188,6 +191,45 @@ fn full_range_gray_survives_midstream_byte_cap_flush() {
 }
 
 #[test]
+fn fast_path_gated_off_below_quality_100() {
+    // The exact gray fast path is reserved for lossless intent (quality 100).
+    // Below that, the configured quantizer runs instead — so the output differs
+    // from the q100 fast-path bytes, and the q100 path alone produces the exact
+    // ascending 256-gray palette.
+    let frame = full_range_gray_frame(0);
+    let at = |q: u8| {
+        encode_gif(
+            vec![frame.clone()],
+            16,
+            16,
+            EncoderConfig::new().quality(q).repeat(Repeat::Once),
+            Limits::default(),
+            &Unstoppable,
+        )
+        .unwrap()
+    };
+    let q100 = at(100);
+    let q80 = at(80);
+    assert_ne!(
+        q100, q80,
+        "q80 must route through the quantizer, not the exact gray fast path"
+    );
+
+    let pal100 = decode_gif(&q100, Limits::default(), &Unstoppable)
+        .unwrap()
+        .1[0]
+        .palette
+        .clone()
+        .expect("q100 frame palette");
+    let expected: Vec<Rgba> = (0..256u16).map(|i| gray(i as u8)).collect();
+    assert_eq!(
+        pal100.colors(),
+        expected.as_slice(),
+        "q100 must be the exact ascending gray fast-path palette"
+    );
+}
+
+#[test]
 fn gray_then_color_frame_keeps_its_color() {
     // Force gray mode to engage on frame 0 (buffer of 1 → it flushes before the
     // color frame is seen), then feed a color frame. The hybrid fallback must
@@ -200,7 +242,7 @@ fn gray_then_color_frame_keeps_its_color() {
         vec![gray_frame, red_frame],
         8,
         8,
-        EncoderConfig::new().max_buffer_frames(1),
+        gray_config().max_buffer_frames(1),
         Limits::default(),
         &Unstoppable,
     )
@@ -247,7 +289,7 @@ fn gray_path_never_larger_than_lossless_quantizer() {
             vec![FrameInput::new(w, h, 0, px.clone())],
             w,
             h,
-            EncoderConfig::new().repeat(Repeat::Once),
+            gray_config().repeat(Repeat::Once),
             Limits::none(),
             &Unstoppable,
         )
@@ -284,7 +326,7 @@ fn streaming_grayscale_round_trips_losslessly() {
     let frame = full_range_gray_frame(0);
     let original = frame.pixels.clone();
 
-    let config = EncoderConfig::new().repeat(Repeat::Once);
+    let config = gray_config().repeat(Repeat::Once);
     let limits = Limits::default();
     let mut encoder = EncodeRequest::new(&config, 16, 16)
         .limits(&limits)
