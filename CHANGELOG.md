@@ -16,12 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   k-means + color-distance search. Engaged automatically in both
   per-frame and shared-palette modes; detection is content-driven (one
   early-exiting scan) so color frames fall straight through to the
-  configured quantizer at no cost. The result is both **faster**
-  (measured ~16–30× on solid grayscale at 256²–1024²) and **lossless**
-  (≤256 gray levels fit a palette exactly, no dithering). A reserved
-  transparent slot keeps animation frame-differencing correct; streams
-  using all 256 levels with required transparency fall back rather than
-  drop a level.
+  configured quantizer at no cost. The win is **speed and guaranteed
+  losslessness**: measured **~13× faster** and byte-exact on the 12
+  strictly-grayscale scans in the imazen-26 corpus (2550×3300, 255–256
+  gray levels; zenquant baseline), and ~16–30× on solid synthetic
+  grayscale. Output size is within ~1% of the general quantizer — about
+  0.8% *larger* on those document scans, where ≤256 levels already fit so
+  the quantizer is incidentally lossless too; the fast path's advantage
+  there is being lossless *by construction* and far faster, not smaller.
+  See `benchmarks/grayscale_corpus_2026-06-13.tsv`. A reserved transparent
+  slot keeps animation frame-differencing correct; streams using all 256
+  levels with required transparency fall back rather than drop a level.
 
 - `EncoderConfig::quantizer_preference` (+ builder) — the soft-intent
   counterpart to the two-spelling quantizer model: `Quantizer`

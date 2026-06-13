@@ -1,0 +1,34 @@
+# Grayscale fast path vs general quantizer (zenquant) — issue #4 validation
+# date: 2026-06-13   host: lilith   zengif commit (parent of this measurement): fa36a13
+# corpus: /mnt/v/imazen-26  — strictly grayscale subset (R==G==B everywhere), detected via HSL saturation maxima==0 then exact byte check
+# A_gray  = encode_gif (gray fast path, lossless)
+# B_d0.5  = encode_gif_with_quantizer (zenquant, dithering 0.5 — pre-fix behaviour)
+# B0_d0   = encode_gif_with_quantizer (zenquant, dithering 0.0 — best-case lossy baseline)
+# repro: convert <img>[0] -alpha on -depth 8 RGBA:out.rgba ; ./target/release/examples (zzz_gray_corpus, removed post-measurement); see CHANGELOG
+# FINDING: gray path is ~13x faster and always lossless, but ~0.8% LARGER than zenquant
+#          on these scans (255-256 levels fit 256 colours, so zenquant is also lossless here).
+#
+name                                            pixels levels    A_gray    B_d0.5     B0_d0    A/B0     Bms      Ams lossless
+office_irs_f1040sa_p01_page1.png               8415000    255    559872    555762    555762   1.007  1040.1    79.86 yes
+office_irs_f1040sb_p01_page1.png               8415000    255    479992    476458    476458   1.007  1056.0    79.98 yes
+office_irs_f1040sc_p01_page1.png               8415000    255    588398    584891    584891   1.006  1058.4    81.56 yes
+office_irs_f1040sd_p01_page1.png               8415000    255    609964    604289    604289   1.009  1036.4    80.99 yes
+office_irs_f1065_p01_page1.png                 8415000    255    612613    607916    607916   1.008  1051.2    81.72 yes
+office_irs_f1120_p01_page1.png                 8415000    255    535749    531456    531456   1.008  1026.2    81.23 yes
+office_irs_f720_p01_page1.png                  8415000    256    470083    465045    465045   1.011  1012.6    81.07 yes
+office_irs_f8949_p01_page1.png                 8415000    255    542066    536601    536601   1.010  1101.0    82.60 yes
+office_irs_f941_p01_page1.png                  8415000    255    482757    479213    479213   1.007  1312.8    81.08 yes
+office_irs_fw4_p01_page1.png                   8415000    255    672889    666914    666914   1.009  1065.6   103.01 yes
+office_irs_fw7_p01_page1.png                   8415000    255    584982    579327    579327   1.010  1110.8    82.18 yes
+office_irs_fw9_p01_page1.png                   8415000    255    700989    695602    695602   1.008  1060.7    83.20 yes
+nps_nps-grsm-GRSM_Area_Map_p01.png            55593720 SKIP non-gray
+nps_nps-grsm-GRSM_Trail_Map_p01.png           48217712 SKIP non-gray
+commons__featured-pictures__1440x900__dpr2.png  45705600 SKIP non-gray
+commons__featured__1440x900__dpr2.png         45705600 SKIP non-gray
+
+=== aggregate over 12 grayscale images ===
+total bytes:  A_gray=6840354  B_d0.5=6783474  B0_d0=6783474
+A vs B0(d0, lossy):  A smaller in 0/12   total ratio=1.008   median ratio=1.008
+A vs B(d0.5 default): A smaller in 0/12   total ratio=1.008
+mean encode time: A_gray=83.20ms  B_d0.5=1077.66ms  speedup=13.0x
+(A is lossless; B/B0 are lossy quantization at quality 80)
