@@ -23,11 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alpha; zenquant baseline): **~8.5× faster mean** (≈8× on photos/patents,
   ≈13–16× on document scans) and **byte-exact on all 28**, where the
   quantizer is lossless on only 9 (it is lossy on every continuous-tone
-  image). Output size is **not** smaller — it is within ~1% of the
-  quantizer and slightly *larger* in every case (0/28 smaller, +0.16%
-  total, worst +2.6% on one chart); the advantage is being lossless by
-  construction and far faster, not byte count. See
-  `benchmarks/grayscale_corpus_2026-06-13.tsv`. A reserved transparent slot
+  image). On **compression: 0% loss at matched fidelity** — the gray path
+  is byte-for-byte identical to the optimal lossless backends
+  (`quantizr`, `imagequant@q100`) on all 28 images, i.e. it already sits on
+  the lossless optimum (LZW size is invariant to palette order, and a gray
+  image's exact palette *is* what a lossless quantizer converges to). The
+  only smaller results come from backends running **lossy** (discarding
+  gray levels); an SSE-optimal 1D scalar quantizer cannot cleanly match
+  them either, because GIF rate ≠ SSE (they trade fidelity for a more
+  compressible index field). So the gray path is not made smaller — there
+  is no lossless byte to recover, and going lossy is out of scope. See
+  `benchmarks/grayscale_rd_2026-06-13.md` (RD analysis) and
+  `benchmarks/grayscale_corpus_2026-06-13.tsv` (speed/size run); guarded by
+  `gray_path_never_larger_than_lossless_quantizer`. A reserved transparent slot
   keeps multi-frame frame-differencing correct; a single ≥64 MB frame that
   flushes mid-stream reserves no slot (so a full 256-level image stays
   lossless), and if more frames follow such a flush, differencing is

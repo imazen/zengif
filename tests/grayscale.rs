@@ -222,6 +222,62 @@ fn gray_then_color_frame_keeps_its_color() {
     );
 }
 
+/// The gray fast path must never be *larger* than the optimal lossless
+/// quantizer (quantizr at q100, dithering 0). Proven byte-identical across the
+/// imazen-26 grayscale subset (28/28); this guards that 0%-compression-loss
+/// property — at matched (lossless) fidelity — against regressions.
+#[cfg(feature = "quantizr")]
+#[test]
+fn gray_path_never_larger_than_lossless_quantizer() {
+    use zengif::{QuantizrQuantizer, encode_gif_with_quantizer};
+
+    // Diverse grayscale content: smooth gradient, sparse "document", and a
+    // deterministic high-entropy field — the three regimes that stress LZW.
+    type Pat = fn(usize) -> u8;
+    let cases: [(&str, Pat); 3] = [
+        ("gradient", |i| (i % 256) as u8),
+        ("document", |i| if i % 37 < 3 { 0 } else { 255 }),
+        ("hi_entropy", |i| (i.wrapping_mul(2654435761) >> 13) as u8),
+    ];
+    let (w, h) = (128u16, 128u16);
+    for (name, f) in cases {
+        let px: Vec<Rgba> = (0..w as usize * h as usize).map(|i| gray(f(i))).collect();
+
+        let g = encode_gif(
+            vec![FrameInput::new(w, h, 0, px.clone())],
+            w,
+            h,
+            EncoderConfig::new().repeat(Repeat::Once),
+            Limits::none(),
+            &Unstoppable,
+        )
+        .unwrap();
+
+        let qz = encode_gif_with_quantizer(
+            vec![FrameInput::new(w, h, 0, px.clone())],
+            w,
+            h,
+            EncoderConfig::new()
+                .repeat(Repeat::Once)
+                .quality(100)
+                .dithering(0.0),
+            Limits::none(),
+            &Unstoppable,
+            QuantizrQuantizer::new(),
+        )
+        .unwrap();
+
+        assert!(
+            g.len() <= qz.len(),
+            "{name}: gray path ({} bytes) must not exceed lossless quantizr ({} bytes)",
+            g.len(),
+            qz.len()
+        );
+        let (_, frames, _) = decode_gif(&g, Limits::none(), &Unstoppable).unwrap();
+        assert_eq!(frames[0].pixels, px, "{name}: gray path must be lossless");
+    }
+}
+
 #[test]
 fn streaming_grayscale_round_trips_losslessly() {
     // Drive the streaming Encoder directly (the path codec callers use).
