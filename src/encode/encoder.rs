@@ -904,11 +904,11 @@ impl<'a> Encoder<'a> {
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
         use crate::quantize::QuantizeConfig;
 
-        // Frame differencing marks unchanged pixels `a == 0`, so it requires a
-        // transparent palette slot to map them to. A grayscale stream whose
-        // shared palette is full (256 levels, no slot) has nowhere to put them —
-        // diffing there would corrupt the unchanged regions. Encode full frames
-        // instead (still exact, just no inter-frame transparency optimization).
+        // Frame differencing marks unchanged pixels `a == 0`. A slot-less gray
+        // palette can't represent those, so don't diff such a stream — keep
+        // whole frames. (A frame that then still carries transparency, from the
+        // source, is deferred to the quantizer below with full content to work
+        // from, rather than a degenerate diff region.)
         let allow_diff = self.config.use_transparency
             && self
                 .gray_mode
@@ -1002,63 +1002,59 @@ impl<'a> Encoder<'a> {
         // don't fit the shared palette well get their own local color table.
         let (palette_bytes, pixels, transparent_index, use_local_palette) =
             if self.computed_palette.is_some() {
-                // Shared palette mode: remap against the pre-computed palette.
-                // A grayscale stream remaps against the exact gray palette built
-                // at flush time (no color search); everything else goes through
-                // the configured quantizer.
-                let quantized = if let Some(ref gray) = self.gray_mode {
-                    gray.remap(&frame_pixels)
+                // Remap against the pre-computed shared palette. A grayscale
+                // stream uses the exact gray palette (no color search);
+                // everything else the configured quantizer.
+                //
+                // A gray palette can only represent a frame whose transparency
+                // (a == 0, from source OR frame differencing) fits its reserved
+                // slot. With no slot it would flatten transparent pixels to an
+                // opaque gray, so such a frame is quantized independently
+                // instead (`shared = None` → the per-frame fallback below).
+                let shared = if let Some(ref gray) = self.gray_mode {
+                    let representable =
+                        gray.transparent_index().is_some() || frame_pixels.iter().all(|p| p.a != 0);
+                    representable.then(|| gray.remap(&frame_pixels))
                 } else {
                     let background = self.previous_frame.as_deref();
-                    self.quantizer.quantize_frame_with_palette(
+                    Some(self.quantizer.quantize_frame_with_palette(
                         &frame_pixels,
                         frame_width,
                         frame_height,
                         background,
                         &quant_config,
-                    )?
+                    )?)
                 };
 
-                // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette.
-                // For grayscale frames the remap is exact (RMSE ~0), so this never
-                // fires; a stray non-gray outlier frame still gets a correct
-                // per-frame palette from the untouched configured quantizer.
-                if let Some(threshold) = self.config.palette_error_threshold {
-                    let rmse =
-                        compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
-                    if rmse > threshold {
-                        // Shared palette too inaccurate — quantize this frame independently
-                        let background = self.previous_frame.as_deref();
-                        let per_frame = self.quantizer.quantize_frame(
-                            &frame_pixels,
-                            frame_width,
-                            frame_height,
-                            background,
-                            &quant_config,
-                        )?;
-                        (
-                            per_frame.palette,
-                            per_frame.pixels,
-                            per_frame.transparent_index,
-                            true,
-                        )
-                    } else {
-                        // Shared palette is good enough
-                        (
-                            quantized.palette,
-                            quantized.pixels,
-                            quantized.transparent_index,
-                            false,
-                        )
-                    }
-                } else {
-                    // No threshold — always use shared palette
+                // Fall back to an independent per-frame palette when the shared
+                // palette can't represent the frame at all, or (hybrid mode)
+                // remaps it past the error threshold. For an exact gray remap
+                // RMSE is ~0, so the threshold never fires there.
+                let needs_per_frame = match &shared {
+                    None => true,
+                    Some(q) => self.config.palette_error_threshold.is_some_and(|t| {
+                        compute_remap_rmse(&frame_pixels, &q.pixels, &q.palette) > t
+                    }),
+                };
+
+                if needs_per_frame {
+                    let background = self.previous_frame.as_deref();
+                    let per_frame = self.quantizer.quantize_frame(
+                        &frame_pixels,
+                        frame_width,
+                        frame_height,
+                        background,
+                        &quant_config,
+                    )?;
                     (
-                        quantized.palette,
-                        quantized.pixels,
-                        quantized.transparent_index,
-                        false,
+                        per_frame.palette,
+                        per_frame.pixels,
+                        per_frame.transparent_index,
+                        true,
                     )
+                } else {
+                    let q = shared.expect("shared is Some when needs_per_frame is false");
+                    (q.palette, q.pixels, q.transparent_index, false)
                 }
             } else {
                 // Per-frame quantization (no shared palette). At lossless intent

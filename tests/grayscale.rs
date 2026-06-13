@@ -233,9 +233,10 @@ fn fast_path_gated_off_below_quality_100() {
 fn partial_gray_change_after_slotless_flush_is_lossless() {
     // A gray frame flushed before its successors (small buffer) commits a gray
     // palette with no transparent slot. A later frame that only PARTIALLY
-    // changes must still round-trip exactly: frame differencing is disabled for
-    // it (allow_diff=false) so unchanged regions aren't painted with palette
-    // index 0 instead of showing the previous frame through. Guards that path.
+    // changes must still round-trip exactly: it carries diff transparency the
+    // slot-less palette can't represent, so it is deferred to the quantizer
+    // (which allocates its own transparent slot) rather than flattening the
+    // unchanged regions to palette index 0. Guards that deferral.
     let f0: Vec<Rgba> = (0..64u16).map(|i| gray(i as u8)).collect(); // 64 distinct grays
     let mut f1 = f0.clone();
     // Change two pixels inside a sub-region (a full-frame bbox makes the diff
@@ -266,6 +267,43 @@ fn partial_gray_change_after_slotless_flush_is_lossless() {
         frames[1].pixels, f1,
         "frame 1 must be exact — unchanged regions must not be painted index 0"
     );
+}
+
+#[test]
+fn later_frame_source_transparency_is_not_dropped() {
+    // A slot-less shared gray palette (committed from an opaque first frame
+    // flushed alone) must not flatten a LATER frame's SOURCE-transparent pixels
+    // to an opaque gray. That frame is deferred to the quantizer so the
+    // transparency survives (a == 0 here is in the input, not from differencing).
+    let p = 20usize;
+    let mut f0 = vec![gray(10); 64];
+    f0[p] = gray(200); // the previous frame shows gray200 at p
+    let mut f1 = vec![gray(10); 64];
+    f1[p] = Rgba::new(30, 30, 30, 0); // transparent input pixel (a == 0)
+
+    let encoded = encode_gif(
+        vec![
+            FrameInput::new(8, 8, 10, f0.clone()),
+            FrameInput::new(8, 8, 10, f1.clone()),
+        ],
+        8,
+        8,
+        gray_config().max_buffer_frames(1), // flush f0 alone → palette has no slot
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    // Transparent pixel shows the previous frame through (gray200) — NOT a
+    // flattened opaque gray (which would be ~gray10, the nearest palette entry).
+    assert_eq!(
+        frames[1].pixels[p],
+        gray(200),
+        "source-transparent pixel must show the previous frame, not a flattened gray"
+    );
+    // The opaque background is unchanged.
+    assert_eq!(frames[1].pixels[0], gray(10));
 }
 
 #[test]
