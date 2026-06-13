@@ -143,6 +143,22 @@ pub struct Encoder<'a> {
     ))]
     quantizer: Box<dyn crate::quantize::QuantizerTrait>,
 
+    /// Exact grayscale palette, set when the stream is detected as grayscale.
+    ///
+    /// When `Some`, frames are remapped against this exact palette instead of
+    /// running the general RGBA quantizer (see `quantize::grayscale`). In
+    /// shared-palette mode it is the global gray table; the configured
+    /// `quantizer` stays intact for the hybrid per-frame fallback path used by
+    /// any non-gray outlier frame.
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    gray_mode: Option<crate::quantize::grayscale::GrayPalette>,
+
     /// Reusable scratch buffer to avoid per-frame allocations.
     scratch: ScratchBuffer,
 
@@ -335,6 +351,14 @@ impl<'a> Encoder<'a> {
                 feature = "color_quant"
             ))]
             quantizer,
+            #[cfg(any(
+                feature = "zenquant",
+                feature = "quantette",
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "color_quant"
+            ))]
+            gray_mode: None,
             scratch: ScratchBuffer::default(),
             cumulative_duration_ms: 0,
         })
@@ -628,7 +652,8 @@ impl<'a> Encoder<'a> {
             || self.buffered_bytes >= self.config.max_buffer_bytes;
 
         if should_flush {
-            self.flush_buffer()?;
+            // Mid-stream flush: more frames may still arrive.
+            self.flush_buffer(false)?;
         }
 
         Ok(())
@@ -642,7 +667,7 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn flush_buffer(&mut self) -> Result<()> {
+    fn flush_buffer(&mut self, is_final: bool) -> Result<()> {
         use crate::quantize::QuantizeConfig;
 
         if self.buffered_frames.is_empty() {
@@ -666,14 +691,30 @@ impl<'a> Encoder<'a> {
             .map(|f| f.pixels.as_slice())
             .collect();
 
-        // Build shared palette
-        let palette_bytes = self.quantizer.build_shared_palette(
-            &frame_refs,
-            self.width,
-            self.height,
-            &quant_config,
-            &self.stop,
-        )?;
+        // Grayscale fast path: when every buffered frame is grayscale, build an
+        // exact gray palette directly and skip the RGBA quantizer's histogram +
+        // k-means. Reserve a transparent slot when later frames may introduce
+        // transparency via frame differencing — i.e. more than one frame is
+        // present, or this is a mid-stream flush with frames still to come. A
+        // single terminal frame (the common document-scan case) needs no slot,
+        // so a full 256-level gray image still fits exactly.
+        let force_transparent = self.config.use_transparency && (frame_refs.len() > 1 || !is_final);
+        let palette_bytes = if let Some(gray) =
+            crate::quantize::grayscale::GrayPalette::try_build(&frame_refs, force_transparent)
+        {
+            let bytes = gray.palette_bytes().to_vec();
+            self.gray_mode = Some(gray);
+            bytes
+        } else {
+            // Build shared palette via the configured quantizer.
+            self.quantizer.build_shared_palette(
+                &frame_refs,
+                self.width,
+                self.height,
+                &quant_config,
+                &self.stop,
+            )?
+        };
 
         // Create the gif encoder with the shared palette as global color table.
         // This avoids writing redundant local color tables on every frame.
@@ -936,49 +977,51 @@ impl<'a> Encoder<'a> {
         // Use shared palette if available, otherwise per-frame quantization.
         // With hybrid mode (palette_error_threshold is Some), frames that
         // don't fit the shared palette well get their own local color table.
-        let (palette_bytes, pixels, transparent_index, use_local_palette) =
-            if self.computed_palette.is_some() {
-                // Shared palette mode: remap with pre-computed palette
+        let (palette_bytes, pixels, transparent_index, use_local_palette) = if self
+            .computed_palette
+            .is_some()
+        {
+            // Shared palette mode: remap against the pre-computed palette.
+            // A grayscale stream remaps against the exact gray palette built
+            // at flush time (no color search); everything else goes through
+            // the configured quantizer.
+            let quantized = if let Some(ref gray) = self.gray_mode {
+                gray.remap(&frame_pixels)
+            } else {
                 let background = self.previous_frame.as_deref();
-                let quantized = self.quantizer.quantize_frame_with_palette(
+                self.quantizer.quantize_frame_with_palette(
                     &frame_pixels,
                     frame_width,
                     frame_height,
                     background,
                     &quant_config,
-                )?;
+                )?
+            };
 
-                // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette
-                if let Some(threshold) = self.config.palette_error_threshold {
-                    let rmse =
-                        compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
-                    if rmse > threshold {
-                        // Shared palette too inaccurate — quantize this frame independently
-                        let background = self.previous_frame.as_deref();
-                        let per_frame = self.quantizer.quantize_frame(
-                            &frame_pixels,
-                            frame_width,
-                            frame_height,
-                            background,
-                            &quant_config,
-                        )?;
-                        (
-                            per_frame.palette,
-                            per_frame.pixels,
-                            per_frame.transparent_index,
-                            true,
-                        )
-                    } else {
-                        // Shared palette is good enough
-                        (
-                            quantized.palette,
-                            quantized.pixels,
-                            quantized.transparent_index,
-                            false,
-                        )
-                    }
+            // Hybrid check: if RMSE exceeds threshold, fall back to per-frame palette.
+            // For grayscale frames the remap is exact (RMSE ~0), so this never
+            // fires; a stray non-gray outlier frame still gets a correct
+            // per-frame palette from the untouched configured quantizer.
+            if let Some(threshold) = self.config.palette_error_threshold {
+                let rmse = compute_remap_rmse(&frame_pixels, &quantized.pixels, &quantized.palette);
+                if rmse > threshold {
+                    // Shared palette too inaccurate — quantize this frame independently
+                    let background = self.previous_frame.as_deref();
+                    let per_frame = self.quantizer.quantize_frame(
+                        &frame_pixels,
+                        frame_width,
+                        frame_height,
+                        background,
+                        &quant_config,
+                    )?;
+                    (
+                        per_frame.palette,
+                        per_frame.pixels,
+                        per_frame.transparent_index,
+                        true,
+                    )
                 } else {
-                    // No threshold — always use shared palette
+                    // Shared palette is good enough
                     (
                         quantized.palette,
                         quantized.pixels,
@@ -987,22 +1030,38 @@ impl<'a> Encoder<'a> {
                     )
                 }
             } else {
-                // Per-frame quantization (no shared palette)
-                let background = self.previous_frame.as_deref();
-                let quantized = self.quantizer.quantize_frame(
-                    &frame_pixels,
-                    frame_width,
-                    frame_height,
-                    background,
-                    &quant_config,
-                )?;
+                // No threshold — always use shared palette
                 (
                     quantized.palette,
                     quantized.pixels,
                     quantized.transparent_index,
-                    true,
+                    false,
                 )
-            };
+            }
+        } else {
+            // Per-frame quantization (no shared palette). Try the grayscale
+            // fast path first — an exact, lossless palette with no color
+            // search — and fall back to the configured quantizer otherwise.
+            let quantized =
+                if let Some(gray) = crate::quantize::grayscale::try_quantize_frame(&frame_pixels) {
+                    gray
+                } else {
+                    let background = self.previous_frame.as_deref();
+                    self.quantizer.quantize_frame(
+                        &frame_pixels,
+                        frame_width,
+                        frame_height,
+                        background,
+                        &quant_config,
+                    )?
+                };
+            (
+                quantized.palette,
+                quantized.pixels,
+                quantized.transparent_index,
+                true,
+            )
+        };
 
         // Return buffer to scratch for reuse
         self.scratch.frame_pixels = frame_pixels;
@@ -1045,7 +1104,7 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
-        self.flush_buffer()?;
+        self.flush_buffer(true)?;
 
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.

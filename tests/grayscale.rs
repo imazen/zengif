@@ -1,0 +1,203 @@
+#![cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
+//! Native grayscale fast path (issue #4).
+//!
+//! When every pixel is gray (`r == g == b`), the encoder builds an exact 8-bit
+//! gray palette instead of running the general RGBA quantizer. These tests
+//! exercise that path through the public API and assert the property that only
+//! the exact path can satisfy: a grayscale image round-trips **losslessly**
+//! (the default quantizer, at quality 80 + dithering 0.5, would not).
+
+use enough::Unstoppable;
+use zengif::{
+    EncodeRequest, EncoderConfig, FrameInput, Limits, Repeat, Rgba, decode_gif, encode_gif,
+};
+
+fn gray(v: u8) -> Rgba {
+    Rgba::rgb(v, v, v)
+}
+
+/// A 16×16 frame walking through all 256 gray levels exactly once.
+fn full_range_gray_frame(delay: u16) -> FrameInput {
+    let pixels: Vec<Rgba> = (0..256u16).map(|v| gray(v as u8)).collect();
+    FrameInput::new(16, 16, delay, pixels)
+}
+
+#[test]
+fn single_frame_grayscale_is_lossless() {
+    let frame = full_range_gray_frame(0);
+    let original = frame.pixels.clone();
+
+    // Default config: shared_palette = true, quality 80, dithering 0.5.
+    // If the RGBA quantizer ran, dithering alone would perturb these pixels.
+    let encoded = encode_gif(
+        vec![frame],
+        16,
+        16,
+        EncoderConfig::new().repeat(Repeat::Once),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(frames.len(), 1);
+
+    // Every pixel reproduced exactly — proof the exact gray path was taken.
+    assert_eq!(
+        frames[0].pixels, original,
+        "grayscale single frame must round-trip losslessly"
+    );
+}
+
+#[test]
+fn decoded_palette_is_grayscale() {
+    let encoded = encode_gif(
+        vec![full_range_gray_frame(0)],
+        16,
+        16,
+        EncoderConfig::new().repeat(Repeat::Once),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    let palette = frames[0]
+        .palette
+        .as_ref()
+        .expect("decoded frame should expose its palette");
+
+    for c in palette.colors() {
+        assert!(
+            c.r == c.g && c.g == c.b,
+            "palette entry {c:?} is not a true gray"
+        );
+    }
+}
+
+#[test]
+fn grayscale_animation_round_trips_losslessly() {
+    // Two frames that differ in a sub-region, so frame differencing (and thus
+    // the reserved transparent slot in the shared gray palette) is exercised.
+    let a = vec![gray(40); 8 * 8];
+    let mut b = vec![gray(40); 8 * 8];
+    for y in 2..6 {
+        for x in 2..6 {
+            b[y * 8 + x] = gray(200);
+        }
+    }
+    let frame_a = FrameInput::new(8, 8, 10, a.clone());
+    let frame_b = FrameInput::new(8, 8, 10, b.clone());
+
+    let encoded = encode_gif(
+        vec![frame_a, frame_b],
+        8,
+        8,
+        EncoderConfig::new(),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (meta, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(frames.len(), 2);
+    assert_eq!(meta.width, 8);
+
+    // Composited frames reconstruct the originals exactly (disposal=Keep +
+    // 1-bit transparency restore the unchanged pixels).
+    assert_eq!(frames[0].pixels, a, "frame 0 must match exactly");
+    assert_eq!(frames[1].pixels, b, "frame 1 must match exactly");
+
+    // The shared palette across both gray frames must itself be grayscale.
+    let palette = frames[1].palette.as_ref().unwrap();
+    for c in palette.colors() {
+        assert!(c.r == c.g && c.g == c.b, "shared palette must be grayscale");
+    }
+}
+
+#[test]
+fn grayscale_lossless_with_per_frame_palette() {
+    // shared_palette = false routes each frame through the per-frame fast path
+    // (a different code branch than the shared/flush path above).
+    let frame = full_range_gray_frame(0);
+    let original = frame.pixels.clone();
+
+    let encoded = encode_gif(
+        vec![frame],
+        16,
+        16,
+        EncoderConfig::new()
+            .shared_palette(false)
+            .repeat(Repeat::Once),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(
+        frames[0].pixels, original,
+        "per-frame grayscale path must also be lossless"
+    );
+}
+
+#[test]
+fn gray_then_color_frame_keeps_its_color() {
+    // Force gray mode to engage on frame 0 (buffer of 1 → it flushes before the
+    // color frame is seen), then feed a color frame. The hybrid fallback must
+    // give that frame a real per-frame color palette — never silently
+    // desaturate it through the committed gray palette.
+    let gray_frame = FrameInput::new(8, 8, 10, vec![gray(100); 64]);
+    let red_frame = FrameInput::new(8, 8, 10, vec![Rgba::rgb(220, 10, 10); 64]);
+
+    let encoded = encode_gif(
+        vec![gray_frame, red_frame],
+        8,
+        8,
+        EncoderConfig::new().max_buffer_frames(1),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(frames.len(), 2);
+
+    let p0 = frames[0].pixels[0];
+    assert!(
+        p0.r == p0.g && p0.g == p0.b,
+        "frame 0 should stay gray, got {p0:?}"
+    );
+
+    let p1 = frames[1].pixels[0];
+    assert!(
+        p1.r > 150 && p1.g < 80 && p1.b < 80,
+        "color frame must keep its color through the hybrid fallback, got {p1:?}"
+    );
+}
+
+#[test]
+fn streaming_grayscale_round_trips_losslessly() {
+    // Drive the streaming Encoder directly (the path codec callers use).
+    let frame = full_range_gray_frame(0);
+    let original = frame.pixels.clone();
+
+    let config = EncoderConfig::new().repeat(Repeat::Once);
+    let limits = Limits::default();
+    let mut encoder = EncodeRequest::new(&config, 16, 16)
+        .limits(&limits)
+        .stop(&Unstoppable)
+        .build()
+        .unwrap();
+    encoder.add_frame(frame).unwrap();
+    let encoded = encoder.finish().unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(frames[0].pixels, original);
+}

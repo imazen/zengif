@@ -26,6 +26,17 @@ use enough::Stop;
 #[allow(unused_imports)]
 use whereat::at;
 
+// Native grayscale fast path (content-driven, not a configurable backend).
+// Only referenced by the quantizer-enabled encoder path.
+#[cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
+pub(crate) mod grayscale;
+
 // Backend implementations
 #[cfg(feature = "color_quant")]
 mod color_quant_impl;

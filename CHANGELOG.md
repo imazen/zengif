@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Native grayscale fast path (#4): when every opaque pixel is gray
+  (`r == g == b`) — `GRAY8_SRGB` / `GRAYF32_LINEAR` codec input, document
+  scans, plots, diagrams — the encoder builds the exact 8-bit gray
+  palette directly and skips the general RGBA quantizer's histogram +
+  k-means + color-distance search. Engaged automatically in both
+  per-frame and shared-palette modes; detection is content-driven (one
+  early-exiting scan) so color frames fall straight through to the
+  configured quantizer at no cost. The result is both **faster**
+  (measured ~16–30× on solid grayscale at 256²–1024²) and **lossless**
+  (≤256 gray levels fit a palette exactly, no dithering). A reserved
+  transparent slot keeps animation frame-differencing correct; streams
+  using all 256 levels with required transparency fall back rather than
+  drop a level.
+
 - `EncoderConfig::quantizer_preference` (+ builder) — the soft-intent
   counterpart to the two-spelling quantizer model: `Quantizer`
   (cfg-gated variants) is the REQUIRED choice that fails to compile
