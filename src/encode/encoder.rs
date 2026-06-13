@@ -652,8 +652,7 @@ impl<'a> Encoder<'a> {
             || self.buffered_bytes >= self.config.max_buffer_bytes;
 
         if should_flush {
-            // Mid-stream flush: more frames may still arrive.
-            self.flush_buffer(false)?;
+            self.flush_buffer()?;
         }
 
         Ok(())
@@ -667,7 +666,7 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn flush_buffer(&mut self, is_final: bool) -> Result<()> {
+    fn flush_buffer(&mut self) -> Result<()> {
         use crate::quantize::QuantizeConfig;
 
         if self.buffered_frames.is_empty() {
@@ -693,12 +692,17 @@ impl<'a> Encoder<'a> {
 
         // Grayscale fast path: when every buffered frame is grayscale, build an
         // exact gray palette directly and skip the RGBA quantizer's histogram +
-        // k-means. Reserve a transparent slot when later frames may introduce
-        // transparency via frame differencing — i.e. more than one frame is
-        // present, or this is a mid-stream flush with frames still to come. A
-        // single terminal frame (the common document-scan case) needs no slot,
-        // so a full 256-level gray image still fits exactly.
-        let force_transparent = self.config.use_transparency && (frame_refs.len() > 1 || !is_final);
+        // k-means. Reserve a transparent slot only when MORE THAN ONE frame is
+        // buffered (frame differencing between them introduces transparency).
+        //
+        // A single buffered frame needs no slot — even when it flushes mid-stream
+        // because it exceeds `max_buffer_bytes` (a >64 MB single frame). The old
+        // `!is_final` guard wrongly reserved a slot there, which pushed a full
+        // 256-level grayscale image to 257 entries → `try_build` bailed to the
+        // (lossy) quantizer. If more frames *do* arrive after such a flush, the
+        // committed palette has no transparent slot, so `prepare_frame_quantized`
+        // disables frame differencing for it (encodes full frames, still exact).
+        let force_transparent = self.config.use_transparency && frame_refs.len() > 1;
         let palette_bytes = if let Some(gray) =
             crate::quantize::grayscale::GrayPalette::try_build(&frame_refs, force_transparent)
         {
@@ -891,34 +895,32 @@ impl<'a> Encoder<'a> {
     fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
         use crate::quantize::QuantizeConfig;
 
+        // Frame differencing marks unchanged pixels `a == 0`, so it requires a
+        // transparent palette slot to map them to. A grayscale stream whose
+        // shared palette is full (256 levels, no slot) has nowhere to put them —
+        // diffing there would corrupt the unchanged regions. Encode full frames
+        // instead (still exact, just no inter-frame transparency optimization).
+        let allow_diff = self.config.use_transparency
+            && self
+                .gray_mode
+                .as_ref()
+                .is_none_or(|g| g.transparent_index().is_some());
+
         // Check if we can optimize using frame differencing
-        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
-            if self.config.use_transparency {
-                if let Some(ref prev) = self.previous_frame {
-                    if let Some(diff) = compute_frame_diff_pooled(
-                        &input.pixels,
-                        prev,
-                        input.width,
-                        input.height,
-                        self.config.lossy_tolerance,
-                        &mut self.scratch,
-                    ) {
-                        // Use the optimized diff region
-                        (diff.pixels, diff.left, diff.top, diff.width, diff.height)
-                    } else {
-                        // No optimization possible, use full frame with pooled buffer
-                        self.scratch.frame_pixels.clear();
-                        self.scratch.frame_pixels.extend_from_slice(&input.pixels);
-                        (
-                            core::mem::take(&mut self.scratch.frame_pixels),
-                            0,
-                            0,
-                            input.width,
-                            input.height,
-                        )
-                    }
+        let (frame_pixels, frame_left, frame_top, frame_width, frame_height) = if allow_diff {
+            if let Some(ref prev) = self.previous_frame {
+                if let Some(diff) = compute_frame_diff_pooled(
+                    &input.pixels,
+                    prev,
+                    input.width,
+                    input.height,
+                    self.config.lossy_tolerance,
+                    &mut self.scratch,
+                ) {
+                    // Use the optimized diff region
+                    (diff.pixels, diff.left, diff.top, diff.width, diff.height)
                 } else {
-                    // First frame, no diff possible - use pooled buffer
+                    // No optimization possible, use full frame with pooled buffer
                     self.scratch.frame_pixels.clear();
                     self.scratch.frame_pixels.extend_from_slice(&input.pixels);
                     (
@@ -930,7 +932,7 @@ impl<'a> Encoder<'a> {
                     )
                 }
             } else {
-                // Transparency optimization disabled - use pooled buffer
+                // First frame, no diff possible - use pooled buffer
                 self.scratch.frame_pixels.clear();
                 self.scratch.frame_pixels.extend_from_slice(&input.pixels);
                 (
@@ -940,7 +942,19 @@ impl<'a> Encoder<'a> {
                     input.width,
                     input.height,
                 )
-            };
+            }
+        } else {
+            // Transparency optimization disabled - use pooled buffer
+            self.scratch.frame_pixels.clear();
+            self.scratch.frame_pixels.extend_from_slice(&input.pixels);
+            (
+                core::mem::take(&mut self.scratch.frame_pixels),
+                0,
+                0,
+                input.width,
+                input.height,
+            )
+        };
 
         // If frame has a palette, use it directly (pass-through mode)
         if let Some(ref palette) = input.palette {
@@ -1104,7 +1118,7 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
-        self.flush_buffer(true)?;
+        self.flush_buffer()?;
 
         // If encoder was never created (0 frames with deferred creation),
         // return the pending writer directly.

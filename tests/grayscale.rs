@@ -148,6 +148,46 @@ fn grayscale_lossless_with_per_frame_palette() {
 }
 
 #[test]
+fn full_range_gray_survives_midstream_byte_cap_flush() {
+    // Regression for the logan-voss bug (issue #4 corpus run): a single
+    // 256-level grayscale frame that exceeds `max_buffer_bytes` flushes
+    // mid-stream. The fast path must still engage losslessly — not bail to the
+    // lossy quantizer because a *speculative* transparent slot pushed the
+    // palette to 257 entries. Forcing a tiny buffer reproduces the >64 MB
+    // single-frame flush on a 16×16 image.
+    let frame = full_range_gray_frame(0); // all 256 gray levels
+    let original = frame.pixels.clone();
+
+    let encoded = encode_gif(
+        vec![frame],
+        16,
+        16,
+        EncoderConfig::new().max_buffer_bytes(1),
+        Limits::default(),
+        &Unstoppable,
+    )
+    .unwrap();
+
+    let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
+    assert_eq!(
+        frames[0].pixels, original,
+        "256-level grayscale must stay lossless even when it flushes mid-stream"
+    );
+
+    // Discriminator: the exact gray path emits all 256 levels as an ascending
+    // [i,i,i] palette. The quantizer fallback (the bug) would select/order
+    // colors differently, so this proves the fast path actually engaged rather
+    // than relying on the quantizer happening to be lossless on tiny input.
+    let palette = frames[0].palette.as_ref().expect("frame palette");
+    let expected: Vec<Rgba> = (0..256u16).map(|i| gray(i as u8)).collect();
+    assert_eq!(
+        palette.colors(),
+        expected.as_slice(),
+        "expected the exact ascending 256-gray fast-path palette"
+    );
+}
+
+#[test]
 fn gray_then_color_frame_keeps_its_color() {
     // Force gray mode to engage on frame 0 (buffer of 1 → it flushes before the
     // color frame is seen), then feed a color frame. The hybrid fallback must

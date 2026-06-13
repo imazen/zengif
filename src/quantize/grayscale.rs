@@ -137,6 +137,16 @@ impl GrayPalette {
         &self.palette
     }
 
+    /// The reserved transparent slot index, if any.
+    ///
+    /// `None` means this palette has no transparent entry — the caller must not
+    /// feed it frame-differenced pixels (which mark unchanged areas `a == 0`),
+    /// because there is no index to map them to. Used by the encoder to disable
+    /// frame differencing for a full 256-level gray palette.
+    pub(crate) fn transparent_index(&self) -> Option<u8> {
+        self.transparent_index
+    }
+
     /// Remap a frame's pixels to palette indices.
     ///
     /// Exact for grayscale pixels (`r == g == b` maps to that level's index).
