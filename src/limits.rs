@@ -75,7 +75,7 @@ impl Default for Limits {
         Self {
             max_width: Some(16384),
             max_height: Some(16384),
-            max_total_pixels: Some(100_000_000),
+            max_total_pixels: Some(120_000_000),
             max_frame_count: Some(10_000),
             max_file_size: Some(100 * 1024 * 1024),
             max_memory: Some(1024 * 1024 * 1024),
