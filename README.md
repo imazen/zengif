@@ -29,7 +29,7 @@ fn main() -> zengif::Result<()> {
     println!("{}x{}, {} frames",
         decoder.metadata().width,
         decoder.metadata().height,
-        decoder.metadata().frame_count_hint.unwrap_or(0));
+        decoder.metadata().frame_count);
 
     while let Some(frame) = decoder.next_frame()? {
         // frame.pixels: Vec<Rgba> - fully composited with transparency
@@ -141,6 +141,33 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
       ╰─ validating frame 3
    at src/decode/mod.rs:89:5
       ╰─ in decode_frame
+```
+
+A zengif `Result<T>` is `Result<T, whereat::At<GifError>>`. Printing the error
+(`{e}`) logs the variant plus the `file:line` trace shown above. To branch on the
+cause — for example to pick an HTTP status on an image proxy — borrow the inner
+error with `.error()` (or take it by value with `.decompose().0`). `GifError` is
+`#[non_exhaustive]`, so keep a wildcard arm:
+
+```rust
+use zengif::GifError;
+
+match decode_result {
+    Ok(frames) => { /* ... */ }
+    Err(e) => match e.error() {
+        GifError::Cancelled => { /* 499: client disconnected */ }
+        GifError::DimensionsTooLarge { .. }
+        | GifError::TotalPixelsTooLarge { .. }
+        | GifError::TooManyFrames { .. }
+        | GifError::FileTooLarge { .. }
+        | GifError::MemoryLimitExceeded { .. }
+        | GifError::DecompressionRatioExceeded { .. } => { /* 413: too large */ }
+        GifError::InvalidHeader
+        | GifError::MalformedLzw { .. }
+        | GifError::UnexpectedEof => { /* 400: malformed input */ }
+        _ => { /* 500: encode / system error */ }
+    }
+}
 ```
 
 ## High-Quality Encoding
