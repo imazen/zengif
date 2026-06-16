@@ -57,6 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   required `quantizer` > preference series > deprecated
   `quantizer_backend` > `auto()`.
 
+### Fixed
+
+- README: documented the `Limits::default()` security posture (it is
+  bomb-protected, NOT unbounded — 16384² dims / 120 MP / 10k frames /
+  100 MB file / 1 GB memory / 1000× decompression guard), that `Limits`
+  is `Clone` (reuse one posture for decode + encode), and added a
+  complete decode→re-encode (transcode) example covering full-canvas
+  `ComposedFrame` feedback, loop-count carry via `Metadata::repeat` →
+  `EncoderConfig::repeat`, and centisecond timing preservation. Also
+  documents `ComposedFrame`'s fields (full-canvas `pixels`, no offset).
+  Found via an insulated external-developer usability test that had only
+  the README.
+
 ### QUEUED BREAKING CHANGES
 
 - Remove the deprecated `quantizer_backend` field — superseded by

@@ -74,6 +74,93 @@ fn main() -> zengif::Result<()> {
 }
 ```
 
+### Decode → re-encode (transcode)
+
+A server that re-compresses uploaded GIFs decodes to composited frames, optionally
+processes them, then re-encodes. The decoder hands you **full-canvas** RGBA frames and the
+loop count; you feed those straight back into the encoder. Loop count and per-frame timing
+carry across the round-trip by reading `metadata.repeat` and each frame's `delay`:
+
+```rust
+use zengif::{
+    decode_gif, EncodeRequest, EncoderConfig, FrameInput, Limits, Unstoppable,
+};
+
+fn transcode(input: &[u8]) -> zengif::Result<Vec<u8>> {
+    // Build one Limits posture and reuse it (Limits is Clone).
+    let limits = Limits::default().max_dimensions(4096, 4096);
+
+    // 1. Decode. `decode_gif` reads every frame, so `meta.repeat` (the loop
+    //    count, parsed from the NETSCAPE extension during iteration) is final.
+    let (meta, frames, _stats) = decode_gif(input, limits.clone(), &Unstoppable)?;
+
+    // 2. Carry the source loop count into the encoder config.
+    //    meta.repeat is a `Repeat` (Once | Infinite | Count(n)) — pass it directly.
+    //    `.for_round_trip()` zeroes dithering + shares one palette to minimise bloat
+    //    when re-encoding already-quantized content. (It needs a quantizer feature,
+    //    which the default build has; drop it if you built `--no-default-features`.)
+    let config = EncoderConfig::new()
+        .repeat(meta.repeat)
+        .for_round_trip();
+
+    let mut encoder = EncodeRequest::new(&config, meta.width, meta.height)
+        .limits(&limits)
+        .stop(&Unstoppable)
+        .build()?;
+
+    // 3. Re-encode. Each `ComposedFrame` is already the full canvas size, so it
+    //    maps 1:1 onto a full-canvas `FrameInput`. `frame.delay` (centiseconds)
+    //    carries the original timing; the encoder recomputes frame differencing
+    //    and offsets internally — you always supply whole-canvas frames.
+    for frame in frames {
+        encoder.add_frame(FrameInput::new(
+            frame.width,   // == meta.width  (canvas dims)
+            frame.height,  // == meta.height
+            frame.delay,   // centiseconds, preserved from source
+            frame.pixels,  // Vec<Rgba>, full-canvas composited
+        ))?;
+    }
+
+    encoder.finish()
+}
+```
+
+**Key points for round-tripping correctly:**
+
+- **Feed composited (full-canvas) frames back, not sub-frames.** `ComposedFrame` is the
+  result *after* disposal + transparency are applied, so its `pixels` is always
+  `width * height` for the full canvas. There is **no offset field** — and you don't need
+  one. The encoder derives per-frame dirty rectangles and offsets itself from successive
+  full-canvas frames. (If you only need the bytes, `frame.as_bytes()` gives a zero-copy
+  `&[u8]` RGBA view.)
+- **Loop count.** Read it from `meta.repeat` after decode and pass it to
+  `EncoderConfig::repeat(..)`. In the streaming `Decoder` path the NETSCAPE loop extension
+  is parsed *during* frame iteration, so `decoder.metadata().repeat` (and `decoder.repeat()`)
+  is only final after you've read the frames; `decode_gif` reads them all for you, so its
+  returned `meta.repeat` is already correct.
+- **Timing.** Each `ComposedFrame.delay` is in centiseconds (1/100 s); `FrameInput.delay`
+  uses the same unit, so timing is preserved exactly when you copy the field across.
+- **For large/streaming inputs**, swap `decode_gif` for `Decoder::new(reader, limits, &stop)`
+  and pull frames with `next_frame()` instead of materializing the whole `Vec`. Read the
+  loop count *after* the iteration completes.
+
+### `ComposedFrame` fields
+
+`decoder.next_frame()` / `decode_gif` yield `ComposedFrame`:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `index` | `usize` | 0-based frame index |
+| `width` | `u16` | **Canvas** width (not a sub-frame width) |
+| `height` | `u16` | **Canvas** height |
+| `delay` | `u16` | Frame delay in centiseconds (1/100 s) |
+| `pixels` | `Vec<Rgba>` | Full-canvas composited RGBA, length `width * height` |
+| `palette` | `Option<Palette>` | Effective palette (local if present, else global) — handy for pass-through re-encoding |
+
+Because `pixels` is full-canvas (disposal + transparency already applied), you size a
+`FrameInput` with the same `width`/`height` and never deal with frame offsets on the
+re-encode side.
+
 ## Why zengif?
 
 If you're building a server that handles untrusted GIF uploads, you need:
@@ -96,7 +183,24 @@ zengif builds on the excellent [`gif`](https://crates.io/crates/gif) crate, addi
 
 ## Memory Protection
 
-Protect your server from malicious inputs:
+**`Limits::default()` is bomb-protected, not unbounded.** zengif's `Limits::default()`
+already enforces server-safe ceilings, so the quick-start examples above are guarded out of
+the box — you do not have to opt in to protection. The defaults are:
+
+| Limit | `Limits::default()` value |
+|-------|---------------------------|
+| Max dimensions | 16384 × 16384 |
+| Max total pixels | 120 megapixels |
+| Max frame count | 10,000 |
+| Max file size | 100 MB |
+| Max memory | 1 GB |
+| Max decompression ratio (zip-bomb guard) | 1000× |
+| Max animation duration | unbounded (`None`) |
+| Max output bytes | unbounded (`None`) |
+
+For an untrusted-GIF proxy you almost certainly want **tighter** caps than the defaults.
+Start from `Limits::default()` and clamp down — every setter is a `#[must_use]` chainable
+builder:
 
 ```rust
 use zengif::Limits;
@@ -104,10 +208,27 @@ use zengif::Limits;
 let limits = Limits::default()
     .max_dimensions(4096, 4096)       // Reject huge canvases
     .max_frame_count(1000)            // Limit animation length
-    .max_memory(256 * 1024 * 1024);   // 256 MB peak memory
+    .max_memory(256 * 1024 * 1024)    // 256 MB peak memory
+    .max_animation_ms(30_000);        // Reject >30s animations (off by default)
 ```
 
-The decoder will return an error before allocating if limits would be exceeded.
+The decoder rejects oversized dimensions **from the header, before allocating** (via
+`pre_validate_header`), and enforces the memory/frame-count/decompression-ratio caps as
+each frame is read.
+
+`Limits::none()` opts out of all bounds — **only for trusted inputs.** Never hand
+`Limits::none()` to data you didn't produce.
+
+`Limits` is `#[derive(Clone)]` (and `Debug`, `#[non_exhaustive]`), so you can build one
+posture once and reuse it for both decode and encode:
+
+```rust
+use zengif::Limits;
+
+let limits = Limits::default().max_dimensions(4096, 4096);
+let decode_limits = limits.clone();   // for Decoder::new / decode_gif
+let encode_limits = limits;           // for EncodeRequest::limits
+```
 
 ## Cancellation
 
