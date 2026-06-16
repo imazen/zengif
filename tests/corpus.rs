@@ -518,7 +518,7 @@ fn bomb_tiny_valid_sanity() {
 #[test]
 fn bomb_total_pixels_limit() {
     // Create a GIF that's 10000x10000 = 100 megapixels
-    // This fits dimension limits (16384) but exceeds default total pixel limit (100 megapixels)
+    // This fits dimension limits (16384); the test sets an explicit 50 MP limit (below it) to trip the total-pixel guard.
     let mut data = Vec::new();
     data.extend_from_slice(b"GIF89a");
     data.extend_from_slice(&10000u16.to_le_bytes()); // width

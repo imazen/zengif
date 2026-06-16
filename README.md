@@ -143,29 +143,30 @@ Error: InvalidFrameBounds { frame_left: 0, frame_top: 0, frame_width: 5000,
       ╰─ in decode_frame
 ```
 
-A zengif `Result<T>` is `Result<T, whereat::At<GifError>>`. Printing the error
-(`{e}`) logs the variant plus the `file:line` trace shown above. To branch on the
-cause — for example to pick an HTTP status on an image proxy — borrow the inner
-error with `.error()` (or take it by value with `.decompose().0`). `GifError` is
-`#[non_exhaustive]`, so keep a wildcard arm:
+To branch on the failure in code, borrow the inner error with `e.error()` and read the
+capture site with `e.location()` (`GifError` is `#[non_exhaustive]`, so keep a wildcard arm):
 
 ```rust
-use zengif::GifError;
+use zengif::{decode_gif, GifError, Limits, Unstoppable};
 
-match decode_result {
-    Ok(frames) => { /* ... */ }
-    Err(e) => match e.error() {
-        GifError::Cancelled => { /* 499: client disconnected */ }
-        GifError::DimensionsTooLarge { .. }
-        | GifError::TotalPixelsTooLarge { .. }
-        | GifError::TooManyFrames { .. }
-        | GifError::FileTooLarge { .. }
-        | GifError::MemoryLimitExceeded { .. }
-        | GifError::DecompressionRatioExceeded { .. } => { /* 413: too large */ }
-        GifError::InvalidHeader
-        | GifError::MalformedLzw { .. }
-        | GifError::UnexpectedEof => { /* 400: malformed input */ }
-        _ => { /* 500: encode / system error */ }
+// `decode_gif` is the one-shot for in-memory `&[u8]`; the streaming `Decoder::new`
+// above takes any `std::io::Read` (wrap a slice with `std::io::Cursor::new(bytes)`).
+match decode_gif(gif_bytes, Limits::default(), &Unstoppable) {
+    Ok((meta, frames, _stats)) => { /* meta.width, meta.height, frames: Vec<ComposedFrame> */ }
+    Err(e) => {
+        if let Some(loc) = e.location() {       // whereat capture site (file:line)
+            eprintln!("gif decode failed at {}:{}", loc.file(), loc.line());
+        }
+        match e.error() {
+            GifError::Cancelled => { /* a Stop token fired — HTTP 499 */ }
+            GifError::DimensionsTooLarge { .. }
+            | GifError::TotalPixelsTooLarge { .. }
+            | GifError::FileTooLarge { .. }
+            | GifError::MemoryLimitExceeded { .. }
+            | GifError::DecompressionRatioExceeded { .. }
+            | GifError::TooManyFrames { .. } => { /* resource limit — HTTP 413 */ }
+            other => eprintln!("malformed GIF: {other:?}"), // HTTP 400
+        }
     }
 }
 ```

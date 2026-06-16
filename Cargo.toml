@@ -150,10 +150,3 @@ required-features = ["std"]
 name = "decode_bench"
 harness = false
 required-features = ["std"]
-
-[patch.crates-io]
-# Weezl wuffs branch: Streaming LZW decoder (wuffs-inspired), default=Streaming.
-# Based on image-rs/lzw wuffs branch, version bumped to 0.1.99 to satisfy
-# gif's ^0.1.10, and default TableStrategy changed to Streaming.
-# Benchmarked: 25-29% decode speedup at 256x256-1024x1024, 7-13% at 4096x4096.
-weezl = { git = "https://github.com/lilith/weezl", branch = "wuffs-compat" }
