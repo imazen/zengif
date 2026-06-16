@@ -29,7 +29,7 @@ fn main() -> zengif::Result<()> {
     println!("{}x{}, {} frames",
         decoder.metadata().width,
         decoder.metadata().height,
-        decoder.metadata().frame_count_hint.unwrap_or(0));
+        decoder.metadata().frame_count);
 
     while let Some(frame) = decoder.next_frame()? {
         // frame.pixels: Vec<Rgba> - fully composited with transparency
@@ -161,7 +161,9 @@ match decode_gif(gif_bytes, Limits::default(), &Unstoppable) {
             GifError::Cancelled => { /* a Stop token fired — HTTP 499 */ }
             GifError::DimensionsTooLarge { .. }
             | GifError::TotalPixelsTooLarge { .. }
+            | GifError::FileTooLarge { .. }
             | GifError::MemoryLimitExceeded { .. }
+            | GifError::DecompressionRatioExceeded { .. }
             | GifError::TooManyFrames { .. } => { /* resource limit — HTTP 413 */ }
             other => eprintln!("malformed GIF: {other:?}"), // HTTP 400
         }
