@@ -185,6 +185,66 @@ pub enum QuantizerType {
 }
 
 impl QuantizerType {
+    /// Map a [`QuantizerBackend`](crate::quantize::QuantizerBackend) to the
+    /// nearest resource profile understood by these heuristics.
+    ///
+    /// The estimator only models four resource profiles (passthrough,
+    /// imagequant, quantizr, color_quant). `zenquant` and `quantette` are
+    /// k-means perceptual backends with imagequant-class cost, so they map to
+    /// [`Self::Imagequant`] for estimation purposes.
+    #[cfg(feature = "zencodec")]
+    pub(crate) fn from_backend(backend: crate::quantize::QuantizerBackend) -> Self {
+        use crate::quantize::QuantizerBackend;
+        match backend {
+            QuantizerBackend::Imagequant
+            | QuantizerBackend::Zenquant
+            | QuantizerBackend::Quantette => Self::Imagequant,
+            QuantizerBackend::Quantizr => Self::Quantizr,
+            QuantizerBackend::ColorQuant => Self::ColorQuant,
+        }
+    }
+
+    /// Resolve the resource profile for an [`EncoderConfig`](crate::EncoderConfig),
+    /// matching the encoder's own backend-resolution precedence
+    /// (explicit `quantizer` → `quantizer_preference` → build default)
+    /// without touching the deprecated `quantizer_backend` field.
+    #[cfg(feature = "zencodec")]
+    pub(crate) fn from_encoder_config(config: &crate::encode::EncoderConfig) -> Self {
+        // 1. An explicit cfg-gated `Quantizer` choice wins.
+        #[cfg(any(
+            feature = "zenquant",
+            feature = "quantette",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "color_quant"
+        ))]
+        if let Some(quantizer) = config.quantizer.as_ref() {
+            use crate::quantize::Quantizer;
+            return match quantizer {
+                #[cfg(feature = "zenquant")]
+                Quantizer::Zenquant { .. } => Self::Imagequant,
+                #[cfg(feature = "quantette")]
+                Quantizer::Quantette { .. } => Self::Imagequant,
+                #[cfg(feature = "imagequant")]
+                Quantizer::Imagequant { .. } => Self::Imagequant,
+                #[cfg(feature = "quantizr")]
+                Quantizer::Quantizr { .. } => Self::Quantizr,
+                #[cfg(feature = "color_quant")]
+                Quantizer::ColorQuant { .. } => Self::ColorQuant,
+            };
+        }
+
+        // 2. A preference series: first backend this build compiled in.
+        if let Some(series) = config.quantizer_preference.as_deref()
+            && let Some(backend) = crate::quantize::QuantizerBackend::first_available(series)
+        {
+            return Self::from_backend(backend);
+        }
+
+        // 3. Otherwise the build default (auto-selected best available backend).
+        Self::from_backend(crate::quantize::QuantizerBackend::default())
+    }
+
     /// Get the quantizer memory bytes per pixel.
     fn bytes_per_pixel(self) -> f64 {
         match self {

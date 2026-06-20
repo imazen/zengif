@@ -66,7 +66,7 @@ bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (optional, gated on `zencodec` feature)
-zencodec = { version = "0.1.19", optional = true }
+zencodec = { version = "0.1.24", optional = true }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
@@ -100,6 +100,10 @@ zenbench = { version = "0.1.7", features = ["criterion-compat"] }
 fast-ssim2 = { version = "0.7.1", features = ["imgref"] }
 # PNG decoding for quantizer quality tests
 png = "0.18.1"
+
+[patch.crates-io]
+# TEMPORARY: zencodec::estimate is unpublished; drop when zencodec 0.1.24 publishes.
+zencodec = { git = "https://github.com/imazen/zencodec.git", rev = "0f71295" }
 
 [profile.release]
 lto = "thin"

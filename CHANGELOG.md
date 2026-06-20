@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+
+- Drop the temporary `[patch.crates-io]` git pin of `zencodec` (rev `0f71295`)
+  and lower the `zencodec` dependency requirement from `0.1.24` back to a
+  published version once `zencodec` 0.1.24 (with the `zencodec::estimate`
+  unified resource API) is released to crates.io.
+
 ### Added
 
+- `GifEncoderConfig::estimate_encode_resources(&ImageCharacteristics,
+  &ComputeEnvironment)` overrides the `zencodec::EncoderConfig` default,
+  delegating to the calibrated `heuristics::estimate_encode` (per-frame_count,
+  per-quantizer) and folding in cores via `ResourceEstimate::at_cores`. The GIF
+  encode core is serial, so the estimate reports
+  `ThreadingInformation::SERIAL`. (Requires the unreleased `zencodec` 0.1.24
+  `estimate` API, pinned via a temporary `[patch.crates-io]` git rev — see
+  QUEUED BREAKING CHANGES.)
 - `InternalParams` cross-codec bundle (`__expert`). `zengif::InternalParams`
   (`quantizer_preference` + `quality` + `dithering` + `use_transparency`, all
   `Option<_>`; `quality`/`dithering` are quantizer-backend-feature-gated) +
