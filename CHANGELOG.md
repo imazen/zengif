@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `InternalParams` cross-codec bundle (`__expert`). `zengif::InternalParams`
+  (`quantizer_preference` + `quality` + `dithering` + `use_transparency`, all
+  `Option<_>`; `quality`/`dithering` are quantizer-backend-feature-gated) +
+  `EncoderConfig::with_internal_params`, gated behind the new pure-visibility
+  `__expert` feature — mirrors `zenjpeg`'s bundle so one picker model drives
+  every zen codec with the same Option-bundle shape. Fields mirror the
+  `sweep::SweepVariant` axes (backend/dithering/quality) plus `use_transparency`;
+  the backend axis uses the feature-portable `QuantizerBackend` preference series.
+  No new tunables (fields route through existing public setters).
 - Native grayscale fast path (#4): when every opaque pixel is gray
   (`r == g == b`) — `GRAY8_SRGB` / `GRAYF32_LINEAR` codec input, document
   scans, plots, diagrams — the encoder builds the exact 8-bit gray

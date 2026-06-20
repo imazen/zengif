@@ -180,6 +180,8 @@ mod types;
 // Public API
 #[cfg(feature = "std")]
 pub use decode::{Decoder, FrameIterator, decode_gif};
+#[cfg(all(feature = "std", feature = "__expert"))]
+pub use encode::InternalParams;
 #[cfg(feature = "std")]
 pub use encode::{EncodeRequest, Encoder, EncoderConfig, PaletteStrategy, encode_gif};
 #[cfg(all(

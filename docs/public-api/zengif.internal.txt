@@ -1,5 +1,5 @@
 # zengif public API — doc(hidden) items and excluded-feature surface
-# excluded features: (none)
+# excluded features: __expert
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -9,19 +9,26 @@
 
 ## summary
 #
-#   inherent methods                           10
-#   struct fields                               1
-#   trait roster entries (type × trait)         9
+#   pub types (struct/enum/trait/alias)         1
+#   inherent methods                           14
+#   struct fields                               5
+#   trait roster entries (type × trait)        12
+#   auto-trait-complete types                   1
 #
 # per-module pub lines:
-#   (root)                            8
+#   (root)                           17
 #   detect                            2
 #   heuristics                        1
 
-## items (11 lines)
+## items (20 lines)
 
+#[non_exhaustive] pub struct InternalParams
 pub fn DisposalMethod::assert_fields_are_eq(&self)
 pub fn EncoderConfig::quantizer_backend(self, QuantizerBackend) -> Self
+pub fn EncoderConfig::with_internal_params(self, InternalParams) -> Self
+pub fn InternalParams::clone(&self) -> InternalParams
+pub fn InternalParams::default() -> InternalParams
+pub fn InternalParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub fn PaletteStrategy::assert_fields_are_eq(&self)
 pub fn QuantizerBackend::assert_fields_are_eq(&self)
 pub fn Repeat::assert_fields_are_eq(&self)
@@ -31,10 +38,15 @@ pub fn detect::FormatSuggestion::assert_fields_are_eq(&self)
 pub fn detect::ProbeError::assert_fields_are_eq(&self)
 pub fn heuristics::QuantizerType::assert_fields_are_eq(&self)
 pub EncoderConfig::quantizer_backend: QuantizerBackend
+pub InternalParams::dithering: core::option::Option<f32>
+pub InternalParams::quality: core::option::Option<u8>
+pub InternalParams::quantizer_preference: core::option::Option<alloc::vec::Vec<QuantizerBackend>>
+pub InternalParams::use_transparency: core::option::Option<bool>
 
-## trait impls (9 types)
+## trait impls (10 types)
 
 DisposalMethod: TrivialClone
+InternalParams: Clone, Debug, Default
 PaletteStrategy: TrivialClone
 QuantizerBackend: TrivialClone
 Repeat: TrivialClone
@@ -43,3 +55,7 @@ StatsSnapshot: TrivialClone
 heuristics::DecodeEstimate: TrivialClone
 heuristics::EncodeEstimate: TrivialClone
 heuristics::QuantizerType: TrivialClone
+
+## auto traits
+
+1 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe

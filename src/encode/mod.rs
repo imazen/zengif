@@ -60,12 +60,21 @@ use crate::types::{Repeat, Rgba};
 // Module declarations
 mod config;
 mod encoder;
+/// Cross-codec uniformity bundle (`__expert`-gated). Mirrors `zenjpeg`'s
+/// `InternalParams` so external pipelines (calibration sweeps, picker
+/// training) can drive every codec the same way. See
+/// [`internal_params::InternalParams`] and
+/// [`EncoderConfig::with_internal_params`].
+#[cfg(feature = "__expert")]
+pub mod internal_params;
 mod palette;
 mod request;
 
 // Re-exports
 pub use config::EncoderConfig;
 pub use encoder::Encoder;
+#[cfg(feature = "__expert")]
+pub use internal_params::InternalParams;
 pub use palette::PaletteStrategy;
 pub use request::EncodeRequest;
 

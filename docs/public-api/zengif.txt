@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zengif.txt 470 lines (supported surface) | zengif.features.txt 79 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant) | zengif.internal.txt 20 lines (20 hidden + 0 excluded-feature)
+# files: zengif.txt 470 lines (supported surface) | zengif.features.txt 79 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant) | zengif.internal.txt 31 lines (20 hidden + 19 excluded-feature)
 
 ## summary
 #
