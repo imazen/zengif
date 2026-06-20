@@ -56,9 +56,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled entry errors loudly — never silently substituted. Precedence:
   required `quantizer` > preference series > deprecated
   `quantizer_backend` > `auto()`.
+- Sweep compute-budget surface (`sweep`), porting the variant-generation
+  playbook patterns 17–18 (`zenjpeg/docs/VARIANT_GENERATION.md`): a public
+  `compute_tier(&SweepVariant) -> u8` that orders cells by encode cost
+  (quantizer-backend-dominated — `ColorQuant` < `Quantizr` < `Imagequant`
+  < `Quantette` < `Zenquant`, plus a small term for non-zero dithering;
+  quality does not enter, being a metric dial), `SweepAxes::scalar_dense()`
+  (dithering laddered `0.0..=1.0` step `0.1` plus the dense backend set —
+  the shape a scalar/compute head fits), `QualityGrid::TrainingDense`
+  (q step 5 over `0..=70` then step 2 over `72..=100`), and
+  `plan_constrained(axes, grid, compute_limit, max_deviations)` which drops
+  over-budget / over-deviation cells and records the dropped ids in the new
+  `SweepPlan::compute_tier_skipped` field (never silently capped); `plan()`
+  now delegates to it with `(None, None)`. All additive — `plan()`'s
+  signature is unchanged.
 
 ### Fixed
 
+- Slot-less grayscale palette no longer corrupts transparent frames (#4):
+  in shared-palette mode the exact gray remap is now gated on the frame
+  being representable by the committed gray palette. A palette with no
+  reserved transparent slot can only encode an all-opaque frame, so a
+  later frame carrying transparency — from the source OR from frame
+  differencing — is deferred to the per-frame quantizer (which allocates
+  its own transparent slot) instead of flattening those pixels to an
+  opaque gray. Unified with the hybrid RMSE fallback under one
+  `needs_per_frame` path. Adds coverage for both source-transparency and
+  partial-diff-after-slot-less-flush cases (9434d85).
 - README: documented the `Limits::default()` security posture (it is
   bomb-protected, NOT unbounded — 16384² dims / 120 MP / 10k frames /
   100 MB file / 1 GB memory / 1000× decompression guard), that `Limits`

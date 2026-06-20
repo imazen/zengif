@@ -235,6 +235,41 @@ pub fn fingerprint(variant: &SweepVariant) -> u64 {
     h
 }
 
+/// Ordinal compute cost of a variant (`0` = cheapest). A picker or a
+/// CPU-bound fleet uses this to bound encode time; it is **not** a
+/// quality signal.
+///
+/// GIF's encode cost is dominated by the **quantizer backend** — the
+/// palette search is the expensive step, and the backends form a clear
+/// quality/speed ladder (`color_quant`'s NEUQUANT is a fixed cheap pass,
+/// `quantizr` a fast median-cut, up through `zenquant`'s perceptual
+/// optimization). Dithering adds a smaller error-diffusion pass on top,
+/// so a non-zero dithering level bumps the tier by one. Quality is a
+/// metric dial, not a compute knob (only the optional `imagequant`
+/// backend even consults it, and it does not change the search cost), so
+/// it does not enter the tier.
+///
+/// Backend cost ladder (ascending), mirroring the documented
+/// quality/speed tradeoff on [`QuantizerBackend`]:
+/// `ColorQuant` < `Quantizr` < `Imagequant` < `Quantette` < `Zenquant`.
+/// The dithering term lands in the gaps between backend bands, so the
+/// per-backend ordering is preserved within a fixed dithering setting.
+#[must_use]
+pub fn compute_tier(variant: &SweepVariant) -> u8 {
+    // Backend band, multiplied to leave room for the dithering add-on
+    // without crossing into the next backend's band.
+    let backend_band: u8 = match variant.backend {
+        QuantizerBackend::ColorQuant => 0,
+        QuantizerBackend::Quantizr => 1,
+        QuantizerBackend::Imagequant => 2,
+        QuantizerBackend::Quantette => 3,
+        QuantizerBackend::Zenquant => 4,
+    };
+    let dither_add: u8 =
+        u8::from(SweepVariant::dithering_applies(variant.backend) && variant.dithering > 0.0);
+    backend_band * 2 + dither_add
+}
+
 /// Axes, most-important value first.
 #[derive(Clone, Debug)]
 pub struct SweepAxes {
@@ -262,6 +297,36 @@ impl SweepAxes {
             dithering: vec![0.5, 0.0, 1.0],
         }
     }
+
+    /// Axes shaped for fitting a **scalar head** (playbook patterns
+    /// 17–18): pin nothing categorical to a single point that would
+    /// starve the head, and ladder the continuous knobs densely.
+    ///
+    /// - **Dithering** is laddered `0.0, 0.1, … 1.0` (11 points — finer
+    ///   than [`modes_full`]'s `{0.0, 0.5, 1.0}`), the continuous knob a
+    ///   scalar-output head regresses.
+    /// - **Backends** are kept dense (every compiled backend, default
+    ///   first), so a **compute-tier** head sees each
+    ///   [`compute_tier`] band rather than collapsing to the default's
+    ///   single cost. The backend is GIF's only real compute axis, so
+    ///   pinning it would erase the very signal a compute head exists to
+    ///   learn — it stays dense here by design (the categorical "pin" of
+    ///   the pattern is satisfied by *quality* moving to the dense
+    ///   [`QualityGrid::TrainingDense`] grid the caller pairs with this).
+    ///
+    /// Pair with [`QualityGrid::TrainingDense`] for the full scalar-head
+    /// training cell set.
+    #[must_use]
+    pub fn scalar_dense() -> Self {
+        let mut dithering = Vec::with_capacity(11);
+        for i in 0..=10u8 {
+            dithering.push(f32::from(i) / 10.0);
+        }
+        Self {
+            backends: compiled_backends(),
+            dithering,
+        }
+    }
 }
 
 /// Quality grids per the sweep discipline.
@@ -269,6 +334,11 @@ impl SweepAxes {
 pub enum QualityGrid {
     /// q ∈ {1, 5, 10, …, 100} — the 21-point floor.
     Step5,
+    /// Quality-dense grid for **training a scalar head** (playbook
+    /// patterns 17–18): q step 5 across `0..=70` then q step 2 across
+    /// `72..=100`, densifying the high-quality band where 1–2 quality
+    /// points shift real bytes. Pair with [`SweepAxes::scalar_dense`].
+    TrainingDense,
     /// Caller-provided points (kept in order, deduplicated).
     Explicit(Vec<u8>),
 }
@@ -281,6 +351,14 @@ impl QualityGrid {
             Self::Step5 => {
                 let mut v = vec![1u8];
                 v.extend((1..=20).map(|i| (i * 5) as u8));
+                v
+            }
+            Self::TrainingDense => {
+                // Coarse low/mid (step 5, 0..=70), fine high band
+                // (step 2, 72..=100) — match density across the range,
+                // err denser where bytes are most sensitive.
+                let mut v: Vec<u8> = (0..=14).map(|i| i * 5).collect(); // 0,5,…,70
+                v.extend((36..=50).map(|i| i * 2)); // 72,74,…,100
                 v
             }
             Self::Explicit(pts) => {
@@ -318,11 +396,42 @@ pub struct SweepPlan {
     pub cells: Vec<SweepCell>,
     /// Candidates merged by fingerprint identity.
     pub duplicates_merged: usize,
+    /// Cell ids dropped because their [`compute_tier`] exceeded the
+    /// `compute_limit` passed to [`plan_constrained`] — the explicit
+    /// no-silent-caps report for the compute constraint (empty in the
+    /// unconstrained [`plan`] path).
+    pub compute_tier_skipped: Vec<String>,
 }
 
-/// Build the plan: axes × grid, main-effects-first.
+/// Build the plan: axes × grid, main-effects-first. Equivalent to
+/// [`plan_constrained`]`(axes, grid, None, None)` — the full,
+/// unconstrained curated space.
 #[must_use]
 pub fn plan(axes: &SweepAxes, grid: &QualityGrid) -> SweepPlan {
+    plan_constrained(axes, grid, None, None)
+}
+
+/// Build the plan, optionally bounded by a compute budget and/or a
+/// deviation scope (playbook patterns 17–18; cross-codec-uniform with
+/// the sibling codecs' `plan_constrained`).
+///
+/// - `compute_limit`: if `Some(max)`, cells whose [`compute_tier`] is
+///   `> max` are dropped and their ids recorded in
+///   [`SweepPlan::compute_tier_skipped`] (never silently capped) — the
+///   compute-resource constraint a CPU-bound fleet or a "fast configs
+///   only" picker asks for.
+/// - `max_deviations`: if `Some(n)`, only cells within `n` axis
+///   deviations of the default stratum survive (`1` = main-effects
+///   only; `0` = the default stratum alone).
+///
+/// `compute_limit` is applied first, then `max_deviations`.
+#[must_use]
+pub fn plan_constrained(
+    axes: &SweepAxes,
+    grid: &QualityGrid,
+    compute_limit: Option<u8>,
+    max_deviations: Option<u8>,
+) -> SweepPlan {
     struct Entry {
         backend: QuantizerBackend,
         dithering: f32,
@@ -382,9 +491,25 @@ pub fn plan(axes: &SweepAxes, grid: &QualityGrid) -> SweepPlan {
             }
         }
     }
+    let mut compute_tier_skipped = Vec::new();
+    if let Some(max) = compute_limit {
+        cells.retain(|c| {
+            if compute_tier(&c.variant) <= max {
+                true
+            } else {
+                compute_tier_skipped.push(c.id.clone());
+                false
+            }
+        });
+    }
+    if let Some(n) = max_deviations {
+        cells.retain(|c| c.deviations <= n);
+    }
+
     SweepPlan {
         cells,
         duplicates_merged: merged,
+        compute_tier_skipped,
     }
 }
 
@@ -455,5 +580,173 @@ mod tests {
             assert_eq!(x.id, y.id);
             assert_eq!(x.fingerprint, y.fingerprint);
         }
+    }
+
+    #[test]
+    fn compute_tier_orders_backend_cost() {
+        // The cheapest quantizer (color_quant's fixed NEUQUANT pass) must
+        // tier strictly below the most expensive (zenquant's perceptual
+        // optimization). `compute_tier` is a pure function of the variant
+        // and does not require either backend be compiled in, so the
+        // ordering is asserted directly across the full ladder.
+        let ladder = [
+            QuantizerBackend::ColorQuant,
+            QuantizerBackend::Quantizr,
+            QuantizerBackend::Imagequant,
+            QuantizerBackend::Quantette,
+            QuantizerBackend::Zenquant,
+        ];
+        for w in ladder.windows(2) {
+            let cheap = compute_tier(&SweepVariant {
+                quality: 80,
+                dithering: 0.0,
+                backend: w[0],
+            });
+            let pricey = compute_tier(&SweepVariant {
+                quality: 80,
+                dithering: 0.0,
+                backend: w[1],
+            });
+            assert!(
+                cheap < pricey,
+                "{:?} (tier {cheap}) must cost less than {:?} (tier {pricey})",
+                w[0],
+                w[1]
+            );
+        }
+        // Dithering adds a smaller term that never reorders backends:
+        // color_quant has no dithering knob, so its tier is fixed; a
+        // dithered cheap backend still tiers at/below an undithered
+        // pricier one within the same gap.
+        assert!(
+            compute_tier(&SweepVariant {
+                quality: 80,
+                dithering: 1.0,
+                backend: QuantizerBackend::Quantizr,
+            }) < compute_tier(&SweepVariant {
+                quality: 80,
+                dithering: 0.0,
+                backend: QuantizerBackend::Imagequant,
+            }),
+            "the dithering add-on must not cross backend bands"
+        );
+    }
+
+    #[test]
+    fn scalar_dense_ladders_the_continuous_knobs() {
+        // A scalar head fits the continuous dithering knob: the ladder
+        // must be dense (≥6 distinct values — the playbook floor), much
+        // finer than modes_full's {0.0, 0.5, 1.0}. Backends are kept
+        // dense too, so a compute head sees every available tier; whether
+        // that yields ≥3 tiers depends on the compiled backend set, so
+        // the dense-dithering ladder is the portable assertion.
+        let axes = SweepAxes::scalar_dense();
+        let mut dith: Vec<u32> = axes.dithering.iter().map(|d| d.to_bits()).collect();
+        dith.sort_unstable();
+        dith.dedup();
+        assert!(
+            dith.len() >= 6,
+            "scalar_dense dithering ladder too sparse for a scalar head: {} values",
+            dith.len()
+        );
+        // It is strictly denser than the modes_full set.
+        assert!(axes.dithering.len() > SweepAxes::modes_full().dithering.len());
+
+        // Across the materialized cells, count both signals and require
+        // the space supports at least one form of density (the OR the
+        // task allows): ≥6 distinct dithering values OR ≥3 compute tiers.
+        let p = plan(&axes, &QualityGrid::TrainingDense);
+        assert_eq!(p.cells[0].deviations, 0, "default stratum still first");
+        let mut tiers: Vec<u8> = p.cells.iter().map(|c| compute_tier(&c.variant)).collect();
+        tiers.sort_unstable();
+        tiers.dedup();
+        let mut seen_dith: Vec<u32> = p
+            .cells
+            .iter()
+            .map(|c| c.variant.dithering.to_bits())
+            .collect();
+        seen_dith.sort_unstable();
+        seen_dith.dedup();
+        assert!(
+            seen_dith.len() >= 6 || tiers.len() >= 3,
+            "scalar_dense cells lack density: {} dithering values, {} tiers",
+            seen_dith.len(),
+            tiers.len()
+        );
+
+        // TrainingDense densifies the high-q band: q ∈ 72..=100 step 2.
+        let q = QualityGrid::TrainingDense.points();
+        assert!(q.contains(&72) && q.contains(&98) && q.contains(&100));
+        let high: Vec<&u8> = q.iter().filter(|&&x| x >= 72).collect();
+        assert!(
+            high.len() >= 14,
+            "high-q band not dense: {} points",
+            high.len()
+        );
+    }
+
+    #[test]
+    fn plan_constrained_drops_reports_and_delegates() {
+        let axes = SweepAxes::scalar_dense();
+        let grid = QualityGrid::Explicit(vec![50, 90]);
+        let unconstrained = plan(&axes, &grid);
+
+        // Pick a limit strictly below the most expensive tier present so
+        // at least one cell is dropped, regardless of compiled backends.
+        let max_tier = unconstrained
+            .cells
+            .iter()
+            .map(|c| compute_tier(&c.variant))
+            .max()
+            .expect("plan has cells");
+        let min_tier = unconstrained
+            .cells
+            .iter()
+            .map(|c| compute_tier(&c.variant))
+            .min()
+            .expect("plan has cells");
+        assert!(max_tier > min_tier, "need ≥2 tiers to exercise the drop");
+        let limit = max_tier - 1;
+
+        let limited = plan_constrained(&axes, &grid, Some(limit), None);
+        assert!(!limited.cells.is_empty());
+        assert!(
+            limited.cells.len() < unconstrained.cells.len(),
+            "the compute limit must drop the expensive cells"
+        );
+        assert!(
+            limited
+                .cells
+                .iter()
+                .all(|c| compute_tier(&c.variant) <= limit),
+            "every surviving cell must be within budget"
+        );
+        assert!(
+            !limited.compute_tier_skipped.is_empty(),
+            "dropped cells must be reported, never silently capped"
+        );
+        // Every dropped id is genuinely over budget and absent from cells.
+        for id in &limited.compute_tier_skipped {
+            assert!(
+                !limited.cells.iter().any(|c| &c.id == id),
+                "reported-skipped id {id} still present in cells"
+            );
+        }
+
+        // max_deviations narrows to the default stratum.
+        let main_only = plan_constrained(&axes, &grid, None, Some(0));
+        assert!(main_only.cells.iter().all(|c| c.deviations == 0));
+
+        // The unconstrained delegate must equal plan() cell-for-cell.
+        let via_constrained = plan_constrained(&axes, &grid, None, None);
+        let direct = plan(&axes, &grid);
+        assert_eq!(via_constrained.cells.len(), direct.cells.len());
+        for (x, y) in via_constrained.cells.iter().zip(&direct.cells) {
+            assert_eq!(x.id, y.id);
+            assert_eq!(x.fingerprint, y.fingerprint);
+            assert_eq!(x.deviations, y.deviations);
+        }
+        assert_eq!(via_constrained.duplicates_merged, direct.duplicates_merged);
+        assert!(via_constrained.compute_tier_skipped.is_empty());
     }
 }

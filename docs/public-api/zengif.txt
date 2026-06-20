@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zengif.txt 462 lines (supported surface) | zengif.features.txt 79 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant) | zengif.internal.txt 20 lines (20 hidden + 0 excluded-feature)
+# files: zengif.txt 470 lines (supported surface) | zengif.features.txt 79 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant) | zengif.internal.txt 20 lines (20 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 4
 #   pub types (struct/enum/trait/alias)        41
 #   pub consts/statics                          7
-#   free functions                             17
-#   inherent methods                          134
-#   struct fields                             158
-#   enum variants                              59
+#   free functions                             19
+#   inherent methods                          137
+#   struct fields                             160
+#   enum variants                              60
 #   re-exports                                  2
 #   trait roster entries (type × trait)       116
 #   auto-trait-complete types                  32
 #   auto-trait exceptions                       5
 #
 # per-module pub lines:
-#   (root)                          329
+#   (root)                          332
 #   detect                           35
 #   heuristics                       30
-#   sweep                            28
+#   sweep                            33
 
-## items (422 lines)
+## items (430 lines)
 
 pub mod zengif
 pub use Stop
@@ -104,12 +104,14 @@ pub mod sweep
 pub enum sweep::QualityGrid
 pub sweep::QualityGrid::Explicit(alloc::vec::Vec<u8>)
 pub sweep::QualityGrid::Step5
+pub sweep::QualityGrid::TrainingDense
 pub fn sweep::QualityGrid::points(&self) -> alloc::vec::Vec<u8>
 pub struct sweep::SweepAxes
 pub sweep::SweepAxes::backends: alloc::vec::Vec<QuantizerBackend>
 pub sweep::SweepAxes::dithering: alloc::vec::Vec<f32>
 pub fn sweep::SweepAxes::modes_full() -> Self
 pub fn sweep::SweepAxes::rd_core() -> Self
+pub fn sweep::SweepAxes::scalar_dense() -> Self
 pub struct sweep::SweepCell
 pub sweep::SweepCell::aliases: alloc::vec::Vec<alloc::string::String>
 pub sweep::SweepCell::deviations: u8
@@ -118,6 +120,7 @@ pub sweep::SweepCell::id: alloc::string::String
 pub sweep::SweepCell::variant: sweep::SweepVariant
 pub struct sweep::SweepPlan
 pub sweep::SweepPlan::cells: alloc::vec::Vec<sweep::SweepCell>
+pub sweep::SweepPlan::compute_tier_skipped: alloc::vec::Vec<alloc::string::String>
 pub sweep::SweepPlan::duplicates_merged: usize
 pub struct sweep::SweepVariant
 pub sweep::SweepVariant::backend: QuantizerBackend
@@ -126,8 +129,10 @@ pub sweep::SweepVariant::quality: u8
 pub fn sweep::SweepVariant::build(&self) -> EncoderConfig
 pub fn sweep::SweepVariant::dithering_applies(QuantizerBackend) -> bool
 pub fn sweep::compiled_backends() -> alloc::vec::Vec<QuantizerBackend>
+pub fn sweep::compute_tier(&sweep::SweepVariant) -> u8
 pub fn sweep::fingerprint(&sweep::SweepVariant) -> u64
 pub fn sweep::plan(&sweep::SweepAxes, &sweep::QualityGrid) -> sweep::SweepPlan
+pub fn sweep::plan_constrained(&sweep::SweepAxes, &sweep::QualityGrid, core::option::Option<u8>, core::option::Option<u8>) -> sweep::SweepPlan
 pub fn sweep::variant_from_cell_id(&str) -> core::result::Result<sweep::SweepVariant, alloc::string::String>
 #[non_exhaustive] #[repr(u8)] pub enum DisposalMethod
 pub DisposalMethod::Background = 2
@@ -222,6 +227,7 @@ pub QuantizerBackend::Quantette = 4
 pub QuantizerBackend::Quantizr = 2
 pub QuantizerBackend::Zenquant = 0
 pub fn QuantizerBackend::create_quantizer(&self) -> core::option::Option<alloc::boxed::Box<dyn QuantizerTrait>>
+pub fn QuantizerBackend::first_available(&[QuantizerBackend]) -> core::option::Option<QuantizerBackend>
 pub fn QuantizerBackend::is_available(&self) -> bool
 #[non_exhaustive] pub enum Repeat
 pub Repeat::Count(u16)
@@ -278,6 +284,7 @@ pub EncoderConfig::max_buffer_frames: usize
 pub EncoderConfig::palette_error_threshold: core::option::Option<f32>
 pub EncoderConfig::quality: u8
 pub EncoderConfig::quantizer: core::option::Option<Quantizer>
+pub EncoderConfig::quantizer_preference: core::option::Option<alloc::vec::Vec<QuantizerBackend>>
 pub EncoderConfig::repeat: Repeat
 pub EncoderConfig::shared_palette: bool
 pub EncoderConfig::use_transparency: bool
@@ -291,6 +298,7 @@ pub fn EncoderConfig::new() -> Self
 pub fn EncoderConfig::palette_error_threshold(self, core::option::Option<f32>) -> Self
 pub fn EncoderConfig::quality(self, u8) -> Self
 pub fn EncoderConfig::quantizer(self, Quantizer) -> Self
+pub fn EncoderConfig::quantizer_preference(self, impl core::convert::Into<alloc::vec::Vec<QuantizerBackend>>) -> Self
 pub fn EncoderConfig::repeat(self, Repeat) -> Self
 pub fn EncoderConfig::shared_palette(self, bool) -> Self
 pub fn EncoderConfig::use_transparency(self, bool) -> Self
