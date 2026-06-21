@@ -432,12 +432,15 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         // pulls rayon internally; for estimation we model it as serial.
         let frame_count = image.frame_count().max(1);
         let quantizer = crate::heuristics::QuantizerType::from_encoder_config(&self.inner);
-        let est =
-            crate::heuristics::estimate_encode(image.width(), image.height(), frame_count, quantizer);
+        let est = crate::heuristics::estimate_encode(
+            image.width(),
+            image.height(),
+            frame_count,
+            quantizer,
+        );
 
-        ResourceEstimate::new(est.peak_memory_bytes, est.time_ms)
-            .with_peak_range(est.peak_memory_bytes_min, est.peak_memory_bytes_max)
-            .with_output_bytes(est.output_bytes)
+        ResourceEstimate::new(est.peak_memory_bytes, est.time_ms as u64)
+            .with_peak_max(est.peak_memory_bytes_max)
             .with_threading(ThreadingInformation::SERIAL)
             .at_cores(compute.cores())
     }
