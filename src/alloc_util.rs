@@ -228,7 +228,7 @@ mod tests {
         // memory-limit check.
         let stats = Stats::new();
         let limits = Limits::none();
-        let r = alloc_zeroed(AllocPref::Fallible, true, usize::MAX / 2, &stats, &limits);
+        let r = alloc_zeroed(AllocPref::Fallible, true, usize::MAX, &stats, &limits);
         assert!(r.is_err());
         assert!(matches!(
             r.unwrap_err().error(),
@@ -240,7 +240,7 @@ mod tests {
     fn vec_with_capacity_fallible_oom_returns_err() {
         let stats = Stats::new();
         let limits = Limits::none();
-        let r = vec_with_capacity(AllocPref::Fallible, true, usize::MAX / 2, &stats, &limits);
+        let r = vec_with_capacity(AllocPref::Fallible, true, usize::MAX, &stats, &limits);
         assert!(r.is_err());
         assert!(matches!(
             r.unwrap_err().error(),
