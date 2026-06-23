@@ -479,6 +479,46 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         self.lossless
     }
 
+    /// Honor a [`Fidelity`](zencodec::encode::Fidelity) target as natively as
+    /// GIF allows.
+    ///
+    /// - `Lossless` → sets the lossless flag (engages the exact gray fast path
+    ///   at quality 100). Note: GIF "lossless" is content-dependent — exact only
+    ///   for ≤256-colour input — and this just sets the flag; the
+    ///   content-dependent over-claim is tracked in imazen/zencodec#104, not
+    ///   fixed here.
+    /// - `Lossy(CodecSpecificQuality(q))` → the palette-quantization quality.
+    /// - `Lossy(ApproxSsim2(s))` / `Lossy(ApproxButteraugli(d))` → GIF has no
+    ///   native metric model, so these map coarsely onto the quality dial and
+    ///   are reported as `codec_quality`, honest that no convergence happened.
+    fn with_fidelity(self, fidelity: zencodec::encode::Fidelity) -> Self {
+        use zencodec::encode::{Fidelity, LossyTarget};
+        match fidelity {
+            Fidelity::Lossless => self.with_lossless(true),
+            Fidelity::Lossy(LossyTarget::CodecSpecificQuality(q)) => {
+                self.with_lossless(false).with_generic_quality(q)
+            }
+            Fidelity::Lossy(LossyTarget::ApproxSsim2(s)) => {
+                self.with_lossless(false).with_generic_quality(s)
+            }
+            Fidelity::Lossy(LossyTarget::ApproxButteraugli(d)) => {
+                let q = (100.0 - 12.0 * d).clamp(0.0, 100.0);
+                self.with_lossless(false).with_generic_quality(q)
+            }
+            // `Fidelity` / `LossyTarget` are `#[non_exhaustive]`.
+            _ => self.with_lossless(false),
+        }
+    }
+
+    fn resolved_target_fidelity(&self) -> Option<zencodec::encode::Fidelity> {
+        use zencodec::encode::Fidelity;
+        if self.is_lossless() == Some(true) {
+            Some(Fidelity::Lossless)
+        } else {
+            self.generic_quality().map(Fidelity::codec_quality)
+        }
+    }
+
     fn estimate_encode_resources(
         &self,
         image: &zencodec::estimate::ImageCharacteristics,
@@ -1799,6 +1839,36 @@ mod tests {
         assert_eq!(output.width(), 1);
         assert_eq!(output.height(), 1);
         assert_eq!(output.format(), ImageFormat::Gif);
+    }
+
+    #[test]
+    fn fidelity_targets_roundtrip() {
+        use zencodec::encode::Fidelity;
+
+        // Lossless flag (content-dependent in GIF; this just sets the flag).
+        let ll = GifEncoderConfig::new().with_fidelity(Fidelity::Lossless);
+        assert_eq!(ll.resolved_target_fidelity(), Some(Fidelity::Lossless));
+        assert_eq!(ll.is_lossless(), Some(true));
+
+        // Codec quality dial round-trips as itself, on the lossy path.
+        let cq = GifEncoderConfig::new().with_fidelity(Fidelity::codec_quality(70.0));
+        assert_eq!(
+            cq.resolved_target_fidelity(),
+            Some(Fidelity::codec_quality(70.0))
+        );
+        assert_eq!(cq.is_lossless(), Some(false));
+
+        // SSIM2 + butteraugli map onto the quality dial, reported as codec_quality.
+        let s2 = GifEncoderConfig::new().with_fidelity(Fidelity::ssim2(90.0));
+        assert_eq!(
+            s2.resolved_target_fidelity(),
+            Some(Fidelity::codec_quality(90.0))
+        );
+        let bt = GifEncoderConfig::new().with_fidelity(Fidelity::butteraugli(2.0));
+        assert_eq!(
+            bt.resolved_target_fidelity(),
+            Some(Fidelity::codec_quality(76.0))
+        );
     }
 
     #[test]
