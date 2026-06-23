@@ -91,10 +91,12 @@ const ENCODE_FIXED_OVERHEAD: u64 = 100_000;
 // Measured using tracking allocator (examples/memory_profile.rs)
 // These are TOTAL heap allocations including quantizer library internals.
 
-/// Imagequant bytes per pixel.
-/// Measured: 25-50 B/pixel depending on image size (higher overhead ratio at small sizes).
-/// Using ~24 B/pixel (derived from linear regression of measurements).
-const IMAGEQUANT_BYTES_PER_PIXEL: f64 = 24.0;
+/// Imagequant bytes per pixel (per-pixel working set above the fixed overhead).
+/// Heaptrack/VmHWM-recalibrated 2026-06-23 (benchmarks/zengif_encode_mem_2026-06-23.tsv,
+/// bike.png 256²..4096² single-frame, R²=1.000): the measured est slope is 41.5 B/px
+/// total touched RSS = (base 5 + 30) × typ_mult 1.2. The old 24 (→ 28.8 est) under-
+/// predicted ~16% — under-prediction is the unsafe direction for a memory budget.
+const IMAGEQUANT_BYTES_PER_PIXEL: f64 = 30.0;
 
 /// Imagequant fixed overhead.
 /// Measured: ~1.7 MB fixed overhead (kmeans, histogram structures).
@@ -488,7 +490,7 @@ pub fn estimate_encode(
     // Content multipliers vary by quantizer
     let (min_mult, typ_mult, max_mult) = match quantizer {
         QuantizerType::None => (0.8, 1.0, 1.2),
-        QuantizerType::Imagequant => (0.8, 1.2, 1.8), // More memory variation
+        QuantizerType::Imagequant => (0.8, 1.2, 1.4), // heaptrack 2026-06-23: max (requested heap) ~1.1× est (touched RSS); 1.8 grossly over-reserved
         QuantizerType::Quantizr => (0.9, 1.1, 1.4),
         QuantizerType::ColorQuant => (0.9, 1.1, 1.3),
     };

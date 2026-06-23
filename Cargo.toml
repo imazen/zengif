@@ -148,6 +148,12 @@ required-features = ["std", "quantizr"]
 name = "profile_decode"
 required-features = ["std"]
 
+# ENCODE peak-memory probe (VmHWM/heaptrack sweep). Needs a quantizer backend
+# for `.quality()` + actual encode; `zenquant` is in default features.
+[[example]]
+name = "mem_probe_encode"
+required-features = ["std", "zenquant"]
+
 [[bench]]
 name = "codec"
 harness = false

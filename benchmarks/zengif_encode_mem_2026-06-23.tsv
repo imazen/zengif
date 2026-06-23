@@ -1,0 +1,23 @@
+# zengif ENCODE peak-memory sweep (VmHWM marginal), single-frame, 2026-06-23T19:01:47Z
+# host=lilith commit=cf71114 rustc=1.96.0 ; quantizer=zenquant (Imagequant resource profile)
+# fixture=codec-corpus/jxl/reference/conformance/bike.png; probe widens Rgb8->Rgba then quantizes->GIF
+# grid: size{256..4096}² × quality{20,50,80}, 1 rep; GLIBC mmap_threshold=131072
+# FIT marginal=a+b*pixels: ~quality-independent slope. POOLED: 1.6MB + 41.5 B/px (R²=1.000)
+# heaptrack 2048² q50: heap 201.4M / RSS 250.7M (VmHWM-marg 168M) => est(touched)~40 B/px, max(requested)~45 B/px (ratio 1.1x)
+# RECAL: IMAGEQUANT_BYTES_PER_PIXEL 24->30 (old est 28.8 under ~16%); Imagequant max_mult 1.8->1.4 (1.8 over-reserved 1.4x). Only the Imagequant profile measured; Quantizr/ColorQuant/None unchanged.
+w	h	pixels	mode	effort	quality	out_bytes	pre_rss_kb	vmhwm_kb	marginal_kb
+256	256	65536	gif	gif	20	45520	2856	7016	4160
+256	256	65536	gif	gif	50	45260	2984	6988	4004
+256	256	65536	gif	gif	80	45224	2852	6860	4008
+512	512	262144	gif	gif	20	158448	4172	15548	11376
+512	512	262144	gif	gif	50	155382	4200	15708	11508
+512	512	262144	gif	gif	80	155844	4196	15704	11508
+1024	1024	1048576	gif	gif	20	502683	9588	53660	44072
+1024	1024	1048576	gif	gif	50	507366	9564	53828	44264
+1024	1024	1048576	gif	gif	80	512922	9596	53668	44072
+2048	2048	4194304	gif	gif	20	1841135	31020	187108	156088
+2048	2048	4194304	gif	gif	50	1845830	31156	203704	172548
+2048	2048	4194304	gif	gif	80	1866359	31200	203748	172548
+4096	4096	16777216	gif	gif	20	6223689	117052	732572	615520
+4096	4096	16777216	gif	gif	50	6184054	117192	798528	681336
+4096	4096	16777216	gif	gif	80	6247929	117112	797820	680708
