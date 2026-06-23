@@ -537,8 +537,12 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
             quantizer,
         );
 
-        ResourceEstimate::new(est.peak_memory_bytes, est.time_ms as u64)
-            .with_peak_max(est.peak_memory_bytes_max)
+        // heuristics models the encoder's working set (VmHWM marginal); the zencodec
+        // convention (ResourceEstimate::conservative) is total peak = input buffer
+        // (held during encode) + working, so add the caller's input buffer.
+        let input = image.input_bytes();
+        ResourceEstimate::new(est.peak_memory_bytes.saturating_add(input), est.time_ms as u64)
+            .with_peak_max(est.peak_memory_bytes_max.saturating_add(input))
             .with_threading(ThreadingInformation::SERIAL)
             .at_cores(compute.cores())
     }
