@@ -160,6 +160,7 @@ extern crate alloc;
 whereat::define_at_crate_info!();
 
 // Internal modules
+mod alloc_util;
 #[cfg(feature = "std")]
 mod decode;
 /// GIF source analysis and re-encoding recommendations.

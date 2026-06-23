@@ -58,6 +58,16 @@ pub struct Limits {
     /// Maximum encoded output size in bytes.
     /// Checked after encoding completes.
     pub max_output_bytes: Option<u64>,
+
+    /// Per-site allocation-fallibility preference for the decode path.
+    ///
+    /// Internal carrier (`pub(crate)`): the `zencodec` decode path sets it from
+    /// `zencodec::ResourceLimits::prefer_fallible_allocations`; the direct
+    /// [`decode_gif`](crate::decode_gif) API and all other constructors leave it
+    /// [`AllocPref::CodecDefault`](crate::alloc_util::AllocPref::CodecDefault),
+    /// so each allocation site keeps its own default (big untrusted buffers
+    /// fallible, small bounded scratch infallible). See [`crate::alloc_util`].
+    pub(crate) alloc_pref: crate::alloc_util::AllocPref,
 }
 
 impl Default for Limits {
@@ -82,6 +92,7 @@ impl Default for Limits {
             max_decompression_ratio: Some(1000.0),
             max_animation_ms: None,
             max_output_bytes: None,
+            alloc_pref: crate::alloc_util::AllocPref::CodecDefault,
         }
     }
 }
@@ -101,6 +112,7 @@ impl Limits {
             max_decompression_ratio: None,
             max_animation_ms: None,
             max_output_bytes: None,
+            alloc_pref: crate::alloc_util::AllocPref::CodecDefault,
         }
     }
 

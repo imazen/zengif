@@ -236,19 +236,13 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Create the compositing screen
         let screen = ScreenBuilder::from_decoder(&gif_reader).build(&stats, &limits)?;
 
-        // Allocate pixel buffer (fallible)
+        // Allocate the indexed pixel buffer. Sized from the (untrusted) screen
+        // dimensions → default fallible; honours an explicit `Infallible` for
+        // trusted/benchmark paths. Memory tracking (limit enforcement) is
+        // handled inside the helper.
         let buffer_size = width as usize * height as usize;
-        let buffer_bytes = buffer_size;
-        stats.try_alloc(buffer_bytes, &limits)?;
-
-        let mut pixel_buffer = Vec::new();
-        pixel_buffer.try_reserve(buffer_size).map_err(|_| {
-            stats.track_dealloc(buffer_bytes); // Undo tracking
-            at!(GifError::AllocationFailed {
-                requested: buffer_bytes as u64
-            })
-        })?;
-        pixel_buffer.resize(buffer_size, 0u8);
+        let pixel_buffer =
+            crate::alloc_util::alloc_zeroed(limits.alloc_pref, true, buffer_size, &stats, &limits)?;
 
         Ok(Self {
             reader: gif_reader,
@@ -313,6 +307,11 @@ impl<'a, R: Read> Decoder<'a, R> {
     }
 
     /// Ensure the pixel buffer is large enough for the given frame size.
+    ///
+    /// The growth is sized from the (untrusted) frame dimensions → default
+    /// fallible; an explicit `Infallible` resizes directly (faster, aborts on
+    /// OOM). Either way the memory-limit check via `Stats::try_alloc` runs
+    /// first so an `Infallible` preference can't bypass the resource cap.
     fn ensure_buffer_capacity(&mut self, needed: usize) -> Result<()> {
         if self.pixel_buffer.len() >= needed {
             return Ok(());
@@ -320,12 +319,14 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Need to grow the buffer
         let additional = needed - self.pixel_buffer.len();
         self.stats.try_alloc(additional, &self.limits)?;
-        self.pixel_buffer.try_reserve(additional).map_err(|_| {
+        if crate::alloc_util::resolve_fallible(self.limits.alloc_pref, true)
+            && self.pixel_buffer.try_reserve(additional).is_err()
+        {
             self.stats.track_dealloc(additional);
-            at!(GifError::AllocationFailed {
+            return Err(at!(GifError::AllocationFailed {
                 requested: additional as u64
-            })
-        })?;
+            }));
+        }
         self.pixel_buffer.resize(needed, 0);
         Ok(())
     }

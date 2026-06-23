@@ -118,24 +118,24 @@ impl Screen {
         let pixel_count = width as usize * height as usize;
         let canvas_bytes = pixel_count * core::mem::size_of::<Rgba>();
 
-        // Track memory allocation
-        stats.try_alloc(canvas_bytes, limits)?;
-
         // Canvas is always initialized as transparent, matching browser behavior.
         // The GIF background color index is only used for "Restore to Background"
         // disposal, where we also use transparent (matching Chrome/Firefox).
         let _ = background_index; // Acknowledged but intentionally unused for init
         let background = Rgba::TRANSPARENT;
 
-        // Initialize canvas with background color (fallible)
-        let mut pixels = Vec::new();
-        pixels.try_reserve(pixel_count).map_err(|_| {
-            stats.track_dealloc(canvas_bytes); // Undo tracking
-            whereat::at!(crate::error::GifError::AllocationFailed {
-                requested: canvas_bytes as u64
-            })
-        })?;
-        pixels.resize(pixel_count, background);
+        // Initialize canvas with the background color. Sized from the
+        // (untrusted) screen/frame dimensions → default fallible; honours an
+        // explicit `Infallible` for trusted/benchmark paths. Memory tracking
+        // (limit enforcement) is handled inside the helper.
+        let pixels = crate::alloc_util::alloc_filled(
+            limits.alloc_pref,
+            true,
+            pixel_count,
+            background,
+            stats,
+            limits,
+        )?;
 
         Ok(Self {
             width,
@@ -287,19 +287,23 @@ impl Screen {
         // Process frame in place (does all the compositing work)
         let (index, delay) = self.process_frame_in_place(frame, stats, limits)?;
 
-        // Create the composed frame (copy of current canvas, fallible)
+        // Create the composed frame (copy of current canvas). Sized from the
+        // canvas (bounded by the validated screen dims, scales per frame) →
+        // default fallible; an explicit `Infallible` reserves directly.
         let composed_bytes = self.pixels.len() * core::mem::size_of::<Rgba>();
         stats.try_alloc(composed_bytes, limits)?;
 
         let mut composed_pixels = Vec::new();
-        composed_pixels
-            .try_reserve(self.pixels.len())
-            .map_err(|_| {
+        if crate::alloc_util::resolve_fallible(limits.alloc_pref, true) {
+            if composed_pixels.try_reserve(self.pixels.len()).is_err() {
                 stats.track_dealloc(composed_bytes); // Undo tracking
-                whereat::at!(crate::error::GifError::AllocationFailed {
+                return Err(whereat::at!(crate::error::GifError::AllocationFailed {
                     requested: composed_bytes as u64
-                })
-            })?;
+                }));
+            }
+        } else {
+            composed_pixels.reserve(self.pixels.len());
+        }
         composed_pixels.extend_from_slice(&self.pixels);
 
         // Get effective palette (local if present, else global)

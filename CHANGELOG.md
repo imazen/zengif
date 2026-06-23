@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`GifDecoderConfig::estimate_decode_resources(&ImageCharacteristics,
+  &ComputeEnvironment)`** overrides the `zencodec::DecoderConfig` default,
+  delegating to the calibrated `heuristics::estimate_decode` (per-frame_count:
+  RGBA canvas + 1-byte indexed buffer + previous-frame disposal backup + the
+  fixed overhead that includes the ~12 KB LZW dictionary, plus all buffered
+  output frames for `decode_all`). Serial → `ThreadingInformation::SERIAL`,
+  cores folded in via `at_cores`.
+- **Honor `zencodec::AllocPreference` (3-mode, per-site) at untrusted decode
+  allocations.** New internal `src/alloc_util.rs` carries a local 3-mode
+  `AllocPref` (the decode path is `zencodec`-free, so the policy is mapped from
+  `ResourceLimits::prefer_fallible_allocations` → `AllocPref` only at the
+  `zencodec` decode boundary, in `limits_from_resource`/`merge_resource_limits`).
+  The canvas/output buffer, the grow-on-resize indexed buffer, the screen
+  canvas, the per-frame composed-frame copy, and the previous-frame disposal
+  backup default to the fallible `try_reserve` path (graceful
+  `GifError::AllocationFailed` on a malicious Logical Screen / frame header);
+  an explicit `Infallible` forces the fast `vec!` path for trusted/benchmark
+  inputs; `CodecDefault` (and any future non_exhaustive variant) keeps each
+  site's own default. All paths enforce the memory limit via `Stats::try_alloc`.
+  The direct `decode_gif` API is unchanged (`CodecDefault`).
+
+### Fixed
+
+- **GIF encode now consults `zencodec::resolve_color_emit` and retains
+  `with_metadata`** instead of silently discarding both. GIF embeds no
+  ICC/CICP/EXIF/XMP, so the resolved `ColorEmitPlan` carries nothing to the
+  bitstream (output is unchanged, always sRGB) — but running the resolver under
+  the policy's `ColorEmitPolicy` puts GIF on the same color-emission contract as
+  the other codecs and confirms color-managed input is dropped gracefully (no
+  error). `with_metadata` retains the metadata (was a no-op stub); GIF can
+  represent none of its carriers, so nothing is emitted (the loop count, the one
+  GIF-representable signal, travels via `with_loop_count`).
+
 - `GifEncoderConfig::estimate_encode_resources(&ImageCharacteristics,
   &ComputeEnvironment)` overrides the `zencodec::EncoderConfig` default,
   delegating to the calibrated `heuristics::estimate_encode` (per-frame_count,

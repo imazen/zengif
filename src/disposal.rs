@@ -65,17 +65,23 @@ impl Disposal {
             let region_size = width as usize * height as usize;
             let byte_size = region_size * core::mem::size_of::<Rgba>();
 
-            // Check memory limit before allocating
+            // Check memory limit before allocating.
             stats.try_alloc(byte_size, limits)?;
 
-            // Fallible allocation
+            // Reserve the previous-frame backup. Sized from the (untrusted)
+            // frame dimensions → default fallible; an explicit `Infallible`
+            // reserves directly (faster, aborts on OOM).
             let mut saved = Vec::new();
-            saved.try_reserve(region_size).map_err(|_| {
-                stats.track_dealloc(byte_size); // Undo tracking
-                whereat::at!(crate::error::GifError::AllocationFailed {
-                    requested: byte_size as u64
-                })
-            })?;
+            if crate::alloc_util::resolve_fallible(limits.alloc_pref, true) {
+                if saved.try_reserve(region_size).is_err() {
+                    stats.track_dealloc(byte_size); // Undo tracking
+                    return Err(whereat::at!(crate::error::GifError::AllocationFailed {
+                        requested: byte_size as u64
+                    }));
+                }
+            } else {
+                saved.reserve(region_size);
+            }
 
             // Extract the region from the canvas
             // Optimize: single memcpy if region spans full canvas width

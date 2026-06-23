@@ -33,6 +33,62 @@ use whereat::at;
 use crate::{Decoder, GifError, Limits};
 
 /// Build a zengif [`Limits`] from a [`ResourceLimits`], starting from zengif defaults.
+/// Map a [`zencodec::AllocPreference`] onto zengif's local
+/// [`AllocPref`](crate::alloc_util::AllocPref). zengif's decode path is
+/// `zencodec`-free, so the policy is carried as a local enum and translated
+/// only here, at the `zencodec` boundary.
+fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_util::AllocPref {
+    use crate::alloc_util::AllocPref;
+    match pref {
+        zencodec::AllocPreference::Fallible => AllocPref::Fallible,
+        zencodec::AllocPreference::Infallible => AllocPref::Infallible,
+        // CodecDefault + any future #[non_exhaustive] variant → keep each
+        // site's own default.
+        _ => AllocPref::CodecDefault,
+    }
+}
+
+/// Resolve GIF color emission under the encode policy.
+///
+/// Builds a [`zencodec::SourceColor`] from the caller's metadata (ICC / CICP)
+/// and the pixel channel count, then runs [`zencodec::resolve_color_emit`]
+/// against [`GIF_ENCODE_CAPS`]. This puts GIF on the same color-emission
+/// contract as every other zen codec.
+///
+/// GIF, however, embeds **no** color description — no ICC profile chunk, no
+/// CICP — so `GIF_ENCODE_CAPS` advertises no CICP carrier and the returned
+/// [`ColorEmitPlan`](zencodec::ColorEmitPlan) always has `cicp: None` with the
+/// ICC dropped (or kept-but-unwritable). The bitstream is emitted as sRGB,
+/// which is GIF's universally-assumed color space. The call therefore never
+/// changes the output; its value is (1) consulting the policy uniformly and
+/// (2) confirming color-managed input is handled gracefully (no error) instead
+/// of being silently ignored. Returned for inspection; the caller discards it.
+fn resolve_gif_color_emit(
+    metadata: Option<&Metadata>,
+    policy: Option<&zencodec::encode::EncodePolicy>,
+    channel_count: u8,
+) -> zencodec::ColorEmitPlan {
+    let color_policy = policy
+        .map(|p| p.resolve_color(zencodec::ColorEmitPolicy::Balanced))
+        .unwrap_or(zencodec::ColorEmitPolicy::Balanced);
+
+    let mut src = zencodec::SourceColor::default().with_channel_count(channel_count);
+    if let Some(meta) = metadata {
+        if let Some(c) = meta.cicp {
+            src = src
+                .with_cicp(c)
+                .with_color_authority(zencodec::ColorAuthority::Cicp);
+        }
+        if let Some(icc) = &meta.icc_profile {
+            src = src
+                .with_icc_profile(icc.clone())
+                .with_color_authority(zencodec::ColorAuthority::Icc);
+        }
+    }
+
+    zencodec::resolve_color_emit(&src, &GIF_ENCODE_CAPS, color_policy)
+}
+
 fn limits_from_resource(rl: &ResourceLimits) -> Limits {
     let mut limits = Limits::default();
     if let Some(px) = rl.max_pixels {
@@ -59,6 +115,7 @@ fn limits_from_resource(rl: &ResourceLimits) -> Limits {
     if let Some(ob) = rl.max_output_bytes {
         limits.max_output_bytes = Some(ob);
     }
+    limits.alloc_pref = alloc_pref_from_zencodec(rl.prefer_fallible_allocations);
     limits
 }
 
@@ -66,6 +123,7 @@ fn limits_from_resource(rl: &ResourceLimits) -> Limits {
 /// only fields that are `Some` in the `ResourceLimits`.
 fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
     let mut limits = base.clone();
+    limits.alloc_pref = alloc_pref_from_zencodec(rl.prefer_fallible_allocations);
     if let Some(px) = rl.max_pixels {
         limits.max_total_pixels = Some(px);
     }
@@ -451,6 +509,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
             stop: None,
             limits: None,
             policy: None,
+            metadata: None,
             canvas_size: None,
             loop_count: None,
         }
@@ -464,9 +523,14 @@ pub struct GifEncodeJob {
     config: GifEncoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
-    /// Encode policy. Stored for completeness but has no effect —
-    /// GIF has no embeddable metadata (no ICC, EXIF, or XMP).
+    /// Encode policy. Its `ColorEmitPolicy` is consulted in the color decision
+    /// via [`resolve_gif_color_emit`]; GIF embeds no ICC/CICP, so it never
+    /// changes the bitstream but keeps GIF on the shared color contract.
     policy: Option<zencodec::encode::EncodePolicy>,
+    /// Caller-supplied metadata. Retained (not discarded); GIF can represent
+    /// none of its carriers, so it is consulted by the color resolver but
+    /// nothing is emitted (see [`GifEncodeJob::with_metadata`]).
+    metadata: Option<Metadata>,
     canvas_size: Option<(u32, u32)>,
     loop_count: Option<Option<u32>>,
 }
@@ -482,14 +546,26 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
-        // GIF has no embeddable metadata (no ICC, EXIF, or XMP), so this
-        // is stored for completeness but has no behavioral effect.
+        // Stored and consulted in the color decision: its `ColorEmitPolicy`
+        // drives `resolve_color_emit` against GIF's capabilities. GIF carries
+        // no ICC/CICP, so every policy resolves to "emit sRGB pixels, embed no
+        // color description" — but consulting it keeps GIF on the same
+        // color-emission contract as the other codecs (and proves color-managed
+        // input is dropped gracefully rather than erroring).
         self.policy = Some(policy);
         self
     }
 
-    fn with_metadata(self, _meta: Metadata) -> Self {
-        // GIF doesn't support ICC/EXIF/XMP metadata
+    fn with_metadata(mut self, meta: Metadata) -> Self {
+        // Stored (no longer silently discarded). GIF can represent none of the
+        // carriers zencodec's `Metadata` holds — ICC, EXIF, XMP, CICP, the HDR
+        // light-level/mastering blocks, nor EXIF orientation — so nothing is
+        // emitted to the bitstream (a conservative, no-error skip; see
+        // `resolve_gif_color_emit`). The only GIF-representable metadata is the
+        // animation loop count, which travels via `with_loop_count`. We keep
+        // the value so the decision is explicit and so a future GIF-carriable
+        // signal (e.g. a comment extension) has it to hand.
+        self.metadata = Some(meta);
         self
     }
 
@@ -513,6 +589,8 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             config: self.config,
             stop: self.stop,
             limits: self.limits,
+            policy: self.policy,
+            metadata: self.metadata,
         })
     }
 
@@ -526,6 +604,11 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
                 None => Repeat::Once,
             };
         }
+        // Consult the color policy once up front. GIF embeds no ICC/CICP, so
+        // this never alters the output, but it keeps the animation path on the
+        // same color contract and proves color-managed input is handled
+        // gracefully. RGBA frames → 4 channels.
+        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
         // Pre-compute limits so they're ready when the encoder is created
         let base = limits_from_resource(&self.config.limits);
         let gif_limits = match self.limits {
@@ -549,6 +632,11 @@ pub struct GifEncoder {
     config: GifEncoderConfig,
     stop: Option<zencodec::StopToken>,
     limits: Option<ResourceLimits>,
+    /// Encode policy (color emission). See [`resolve_gif_color_emit`].
+    policy: Option<zencodec::encode::EncodePolicy>,
+    /// Caller-supplied metadata. GIF carries none of its signals; retained for
+    /// the color decision and future GIF-representable extensions.
+    metadata: Option<Metadata>,
 }
 
 impl GifEncoder {
@@ -580,6 +668,14 @@ impl GifEncoder {
                 limit: max_mem,
             }));
         }
+
+        // Consult the color-emission policy. GIF embeds no ICC/CICP, so the
+        // plan never carries anything to write — but running the resolver puts
+        // GIF on the same color contract as the other codecs and confirms
+        // color-managed input is dropped gracefully (no error). The GIF
+        // bitstream is always sRGB-described-implicitly. Pixels are RGBA here →
+        // 4 channels.
+        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
 
         let limits = self.build_limits();
         let stop: &dyn enough::Stop = match self.stop {
@@ -901,6 +997,26 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 
     fn capabilities() -> &'static zencodec::decode::DecodeCapabilities {
         &GIF_DECODE_CAPS
+    }
+
+    fn estimate_decode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        use zencodec::estimate::{ResourceEstimate, ThreadingInformation};
+
+        // GIF decode is serial. `estimate_decode` already models the working
+        // set the rollout brief calls out — the RGBA canvas + the 1-byte
+        // indexed buffer + a previous-frame disposal backup + the fixed
+        // overhead (the ~12 KB LZW dictionary lives in that overhead) — and,
+        // for animations, all output frames buffered by `decode_all`.
+        let frame_count = image.frame_count().max(1);
+        let est = crate::heuristics::estimate_decode(image.width(), image.height(), frame_count);
+        ResourceEstimate::new(est.peak_memory_bytes, est.time_ms as u64)
+            .with_peak_max(est.peak_memory_bytes_max)
+            .with_threading(ThreadingInformation::SERIAL)
+            .at_cores(compute.cores())
     }
 
     fn job<'a>(self) -> Self::Job<'a> {
@@ -2464,5 +2580,60 @@ mod tests {
             frame_dec.info().has_alpha,
             "transparent GIF animation_frame_decoder should have has_alpha=true"
         );
+    }
+
+    /// Decoding with `AllocPreference::Fallible` (the `try_reserve` path) and
+    /// with `AllocPreference::Infallible` (the fast `vec!` path) must produce
+    /// byte-identical pixels to the default (`CodecDefault`) decode.
+    #[test]
+    fn fallible_alloc_decode_matches_default() {
+        use zencodec::decode::{Decode as _, DecodeJob as _};
+        use zencodec::{AllocPreference, ResourceLimits};
+
+        // Decode `encoded` under the given AllocPreference and return the raw
+        // decoded bytes (format-agnostic).
+        let decode_bytes = |encoded: &[u8], pref: Option<AllocPreference>| -> Vec<u8> {
+            let job = GifDecoderConfig::new().job();
+            let job = match pref {
+                Some(p) => {
+                    job.with_limits(ResourceLimits::none().with_prefer_fallible_allocations(p))
+                }
+                None => job,
+            };
+            let out = job
+                .decoder(Cow::Borrowed(encoded), &[])
+                .unwrap()
+                .decode()
+                .unwrap();
+            out.into_buffer().copy_to_contiguous_bytes()
+        };
+
+        // All three modes must agree, for the same encoded input.
+        let assert_all_modes_agree = |encoded: &[u8]| {
+            let default = decode_bytes(encoded, None); // CodecDefault
+            let fallible = decode_bytes(encoded, Some(AllocPreference::Fallible));
+            let infallible = decode_bytes(encoded, Some(AllocPreference::Infallible));
+            assert_eq!(
+                default, fallible,
+                "Fallible decode must be byte-identical to the default decode"
+            );
+            assert_eq!(
+                default, infallible,
+                "Infallible decode must be byte-identical to the default decode"
+            );
+        };
+
+        // (1) Static single-frame GIF — exercises the canvas + indexed pixel
+        //     buffer alloc sites.
+        assert_all_modes_agree(MINIMAL_GIF);
+
+        // (2) Multi-frame opaque animation — additionally exercises the
+        //     previous-frame disposal buffer + per-frame composed-frame copy.
+        let anim = build_multi_frame_gif(3, false);
+        assert_all_modes_agree(&anim);
+
+        // (3) Multi-frame transparent animation — transparency + disposal.
+        let anim_t = build_multi_frame_gif(3, true);
+        assert_all_modes_agree(&anim_t);
     }
 }

@@ -17,6 +17,7 @@ static DEFAULT_LIMITS: Limits = Limits {
     max_decompression_ratio: Some(1000.0),
     max_animation_ms: None,
     max_output_bytes: None,
+    alloc_pref: crate::alloc_util::AllocPref::CodecDefault,
 };
 
 static UNSTOPPABLE: Unstoppable = Unstoppable;
