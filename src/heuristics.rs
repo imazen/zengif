@@ -490,7 +490,7 @@ pub fn estimate_encode(
     // Content multipliers vary by quantizer
     let (min_mult, typ_mult, max_mult) = match quantizer {
         QuantizerType::None => (0.8, 1.0, 1.2),
-        QuantizerType::Imagequant => (0.8, 1.2, 1.4), // heaptrack 2026-06-23: max (requested heap) ~1.1× est (touched RSS); 1.8 grossly over-reserved
+        QuantizerType::Imagequant => (0.8, 1.3, 1.4), // heaptrack 2026-06-23: typ (est, the gating value) raised to ~1.3× so it clears the measured cell with ~10% margin (was 1.2 = +1.3% only — too tight for content variance); max headroom 1.4
         QuantizerType::Quantizr => (0.9, 1.1, 1.4),
         QuantizerType::ColorQuant => (0.9, 1.1, 1.3),
     };
