@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (7b07c42).**
+- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (d3b3666).**
   `GifError` now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
   `CODEC_NAME = "zengif"` and an exhaustive `category()` mapping every variant
   to one coarse `ErrorCategory` — so consumers route on the category (HTTP
