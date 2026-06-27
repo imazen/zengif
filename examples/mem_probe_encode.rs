@@ -60,9 +60,7 @@ fn status_kb(field: &str) -> u64 {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     if a.len() < 6 {
-        eprintln!(
-            "usage: mem_probe_encode <rgb8.bin> <w> <h> <effort> <quality 1..=100> [est]"
-        );
+        eprintln!("usage: mem_probe_encode <rgb8.bin> <w> <h> <effort> <quality 1..=100> [est]");
         std::process::exit(2);
     }
     let path = &a[1];
@@ -144,15 +142,8 @@ fn main() {
     // encode-from-RGBA API.
     let pre = status_kb("VmRSS:");
 
-    let out = encode_gif(
-        vec![frame],
-        w16,
-        h16,
-        config,
-        Limits::none(),
-        &Unstoppable,
-    )
-    .expect("encode");
+    let out =
+        encode_gif(vec![frame], w16, h16, config, Limits::none(), &Unstoppable).expect("encode");
 
     // High-water mark immediately after encode — VmHWM is monotonic, so it
     // reflects the peak *during* the encode.

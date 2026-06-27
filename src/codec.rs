@@ -541,10 +541,13 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         // convention (ResourceEstimate::conservative) is total peak = input buffer
         // (held during encode) + working, so add the caller's input buffer.
         let input = image.input_bytes();
-        ResourceEstimate::new(est.peak_memory_bytes.saturating_add(input), est.time_ms as u64)
-            .with_peak_max(est.peak_memory_bytes_max.saturating_add(input))
-            .with_threading(ThreadingInformation::SERIAL)
-            .at_cores(compute.cores())
+        ResourceEstimate::new(
+            est.peak_memory_bytes.saturating_add(input),
+            est.time_ms as u64,
+        )
+        .with_peak_max(est.peak_memory_bytes_max.saturating_add(input))
+        .with_threading(ThreadingInformation::SERIAL)
+        .at_cores(compute.cores())
     }
 
     fn job(self) -> GifEncodeJob {
@@ -1329,7 +1332,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            at!(GifError::GifCrate {
+            at!(GifError::SinkWrite {
                 message: e.to_string(),
             })
         })
@@ -1580,7 +1583,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
     type Error = At<GifError>;
 
     fn wrap_sink_error(err: SinkError) -> At<GifError> {
-        at!(GifError::GifCrate {
+        at!(GifError::SinkWrite {
             message: err.to_string(),
         })
     }

@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (7b07c42).**
+  `GifError` now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
+  `CODEC_NAME = "zengif"` and an exhaustive `category()` mapping every variant
+  to one coarse `ErrorCategory` — so consumers route on the category (HTTP
+  status, retry policy, logging) without naming the enum. Limits map to the
+  closest `LimitKind` (`TooManyFrames`→`Frames`, `MemoryLimitExceeded`/
+  `DecompressionRatioExceeded`→`Memory`, `FileTooLarge`→`InputSize`,
+  `OutputTooLarge`→`OutputSize`, `AnimationTooLong`→`Duration`,
+  `TotalPixelsTooLarge`→`TotalPixels`, `DimensionsTooLarge`→`Width`); the
+  `UnsupportedOperation` arm delegates to the zencodec cause type. Added a new
+  `GifError::SinkWrite { message }` variant (→ `ErrorCategory::Io`) split out of
+  the opaque `GifCrate` catch-all for the two decode-row-sink failure sites
+  (`push_decoder`, `wrap_sink_error` in `src/codec.rs`) — a sink write failure
+  is an output-side error, not a malformed image. Additive (`#[non_exhaustive]`
+  enum + opt-in trait); behind a **temporary `[patch.crates-io]` pin** to the
+  unreleased `cancellation-classification-99` branch — remove the patch and bump
+  the `zencodec` dependency once `zencodec 0.1.26` ships.
 - **`GifDecoderConfig::estimate_decode_resources(&ImageCharacteristics,
   &ComputeEnvironment)`** overrides the `zencodec::DecoderConfig` default,
   delegating to the calibrated `heuristics::estimate_decode` (per-frame_count:
