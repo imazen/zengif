@@ -53,11 +53,8 @@ jobs:
       - name: Test (std only, no quantizer)
         run: cargo test --no-default-features --features std
 
-      - name: Test (zencodec)
-        run: cargo test --features zencodec
-
-      - name: Test (zencodec + quantizr)
-        run: cargo test --features "zencodec,quantizr"
+      - name: Test (quantizr)
+        run: cargo test --features quantizr
 
       - name: Test (quantette)
         run: cargo test --features quantette
@@ -114,8 +111,8 @@ jobs:
       - name: Clippy (all features)
         run: cargo clippy --all-features --all-targets -- -D warnings
 
-      - name: Clippy (zencodec)
-        run: cargo clippy --features zencodec --all-targets -- -D warnings
+      - name: Clippy (default features)
+        run: cargo clippy --all-targets -- -D warnings
 
   fmt:
     name: Format

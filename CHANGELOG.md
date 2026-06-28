@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — `zencodec` is now a REQUIRED dependency; the optional `zencodec`
+  cargo feature has been removed.** zencodec is foundational enough that gating
+  it created dead-code / dual-build friction, so it is now an unconditional
+  dependency (always compiled). The `zencodec` cargo feature is gone; the
+  std-only codec glue (`GifEncoderConfig` / `GifDecoderConfig`, the
+  `CategorizedError` / `SourceEncodingDetails` impls, the `SinkWrite` /
+  `UnsupportedOperation` error variants) is now gated on the existing `std`
+  feature — which the removed `zencodec` feature already implied — so no_std /
+  wasm builds are unaffected. Downstream users on `features = ["zencodec"]` must
+  drop that token; the integration now ships by default (any build with `std`).
 - **deps: migrate to published `zencodec 0.1.24` estimate API; drop git-rev
   patch.** Removed the temporary `[patch.crates-io] zencodec = { git, rev =
   "0f71295" }` now that `zencodec 0.1.24` is on crates.io. Migrated the
@@ -20,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (d3b3666).**
-  `GifError` now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
-  `CODEC_NAME = "zengif"` and an exhaustive `category()` mapping every variant
+  `GifError` now `impl zencodec::CategorizedError` (compiled with the `std` feature — the default) with
+  `codec_name() = Some("zengif")` and an exhaustive `category()` mapping every variant
   to one coarse `ErrorCategory` — so consumers route on the category (HTTP
   status, retry policy, logging) without naming the enum. Limits map to the
   closest `LimitKind` (`TooManyFrames`→`Frames`, `MemoryLimitExceeded`/
@@ -29,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OutputTooLarge`→`OutputSize`, `AnimationTooLong`→`Duration`,
   `TotalPixelsTooLarge`→`TotalPixels`, `DimensionsTooLarge`→`Width`); the
   `UnsupportedOperation` arm delegates to the zencodec cause type. Added a new
-  `GifError::SinkWrite { message }` variant (→ `ErrorCategory::Io`) split out of
+  `GifError::SinkWrite { message }` variant (→ `ErrorCategory::Io(_)`) split out of
   the opaque `GifCrate` catch-all for the two decode-row-sink failure sites
   (`push_decoder`, `wrap_sink_error` in `src/codec.rs`) — a sink write failure
   is an output-side error, not a malformed image. Additive (`#[non_exhaustive]`

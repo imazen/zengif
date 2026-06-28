@@ -232,7 +232,7 @@ pub use types::{
 // #[cfg(feature = "zennode")]
 // pub mod zennode_defs;
 
-#[cfg(feature = "zencodec")]
+#[cfg(feature = "std")]
 mod codec;
 
 /// Sweep-plan construction over the encoder knob space (variant-
@@ -246,7 +246,7 @@ mod codec;
     feature = "color_quant"
 ))]
 pub mod sweep;
-#[cfg(feature = "zencodec")]
+#[cfg(feature = "std")]
 pub use codec::{
     GifAnimationFrameDecoder, GifAnimationFrameEncoder, GifDecodeJob, GifDecoder, GifDecoderConfig,
     GifEncodeJob, GifEncoder, GifEncoderConfig,

@@ -266,7 +266,7 @@ pub enum GifError {
     ///
     /// This is an output-side failure (the sink could not accept the decoded
     /// rows), not malformed input — distinct from [`GifError::GifCrate`].
-    #[cfg(feature = "zencodec")]
+    #[cfg(feature = "std")]
     #[error("decode sink write failed: {message}")]
     SinkWrite {
         /// Description of the sink error.
@@ -274,7 +274,7 @@ pub enum GifError {
     },
 
     /// Unsupported codec operation.
-    #[cfg(feature = "zencodec")]
+    #[cfg(feature = "std")]
     #[error("unsupported operation: {0}")]
     UnsupportedOperation(zencodec::UnsupportedOperation),
 }
@@ -354,7 +354,7 @@ impl From<enough::StopReason> for GifError {
     }
 }
 
-#[cfg(feature = "zencodec")]
+#[cfg(feature = "std")]
 impl From<zencodec::UnsupportedOperation> for GifError {
     fn from(op: zencodec::UnsupportedOperation) -> Self {
         GifError::UnsupportedOperation(op)
@@ -364,9 +364,11 @@ impl From<zencodec::UnsupportedOperation> for GifError {
 // Codec-agnostic error taxonomy (zencodec PR #103). Maps every `GifError`
 // variant to exactly one coarse `ErrorCategory` so consumers can route on the
 // category (HTTP status, retry policy, logging) without naming this enum.
-#[cfg(feature = "zencodec")]
+#[cfg(feature = "std")]
 impl zencodec::CategorizedError for GifError {
-    const CODEC_NAME: &'static str = "zengif";
+    fn codec_name(&self) -> Option<&'static str> {
+        Some("zengif")
+    }
 
     fn category(&self) -> zencodec::ErrorCategory {
         use zencodec::ErrorCategory as C;
@@ -408,8 +410,8 @@ impl zencodec::CategorizedError for GifError {
             GifError::AllocationFailed { .. } => C::OutOfMemory,
 
             // === I/O and output-sink failures ===
-            GifError::Io { .. } => C::Io,
-            GifError::SinkWrite { .. } => C::Io,
+            GifError::Io { .. } => C::Io(zencodec::CodecIoKind::opaque()),
+            GifError::SinkWrite { .. } => C::Io(zencodec::CodecIoKind::opaque()),
 
             // === Cancellation ===
             // The unit variant discards the StopReason (timeout vs cancel), so we
@@ -464,12 +466,12 @@ mod tests {
         assert!(err.frame_count() >= 1);
     }
 
-    #[cfg(feature = "zencodec")]
+    #[cfg(feature = "std")]
     #[test]
     fn error_category_mapping() {
         use zencodec::{CategorizedError, ErrorCategory as C, LimitKind as L};
 
-        assert_eq!(GifError::CODEC_NAME, "zengif");
+        assert_eq!(GifError::InvalidHeader.codec_name(), Some("zengif"));
 
         // Malformed bitstream content.
         assert_eq!(GifError::InvalidHeader.category(), C::MalformedImage);
@@ -565,7 +567,7 @@ mod tests {
                 message: "x".into()
             }
             .category(),
-            C::Io
+            C::Io(zencodec::CodecIoKind::opaque())
         );
         assert_eq!(
             GifError::InvalidEncoderState { message: "x" }.category(),

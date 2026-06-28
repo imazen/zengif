@@ -23,9 +23,11 @@ default = ["std", "zenquant"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
 std = ["gif/std", "enough/std", "whereat/std"]
-# zencodec trait implementations (requires std for I/O)
-zencodec = ["std", "dep:zencodec"]
-# zennode = ["dep:zennode", "zencodec"]
+# zencodec is now a REQUIRED, always-on dependency (no cargo feature). The
+# std-only codec glue (GifEncoderConfig/GifDecoderConfig + the CategorizedError /
+# SourceEncodingDetails impls) is gated on the existing `std` feature — which the
+# removed `zencodec` feature already implied — so no_std/wasm builds are unaffected.
+# zennode = ["dep:zennode"]
 # Expert-only cross-codec uniformity knobs. Pure visibility gate (no deps):
 # exposes `InternalParams` + `EncoderConfig::with_internal_params`, mirroring
 # `zenjpeg`'s `__expert` feature so a single picker model can drive every zen
@@ -65,8 +67,8 @@ bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 # Derive Error/Display for error types (no_std compatible)
 thiserror = { version = "2.0.18", default-features = false }
 
-# Shared codec traits (optional, gated on `zencodec` feature)
-zencodec = { version = "0.1.25", optional = true }
+# Shared codec traits (required, always-on; std-only glue gated on `std`)
+zencodec = { version = "0.1.25" }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }

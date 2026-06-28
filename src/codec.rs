@@ -1817,7 +1817,19 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
 mod tests {
     use super::*;
     use zencodec::decode::DecodeJob as _;
-    use zencodec::encode::{EncodeJob as _, Encoder as _, EncoderConfig as _};
+    use zencodec::encode::EncoderConfig as _;
+    // `EncodeJob`/`Encoder` method-resolution imports are only exercised by the
+    // encode roundtrip tests, which require a quantizer backend; gate them to
+    // match so a `std`-only, no-quantizer build stays free of unused-import
+    // warnings.
+    #[cfg(any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    ))]
+    use zencodec::encode::{EncodeJob as _, Encoder as _};
 
     // Minimal valid GIF89a (1x1 red pixel)
     const MINIMAL_GIF: &[u8] = &[

@@ -194,7 +194,7 @@ impl QuantizerType {
     /// imagequant, quantizr, color_quant). `zenquant` and `quantette` are
     /// k-means perceptual backends with imagequant-class cost, so they map to
     /// [`Self::Imagequant`] for estimation purposes.
-    #[cfg(feature = "zencodec")]
+    #[cfg(feature = "std")]
     pub(crate) fn from_backend(backend: crate::quantize::QuantizerBackend) -> Self {
         use crate::quantize::QuantizerBackend;
         match backend {
@@ -210,7 +210,7 @@ impl QuantizerType {
     /// matching the encoder's own backend-resolution precedence
     /// (explicit `quantizer` → `quantizer_preference` → build default)
     /// without touching the deprecated `quantizer_backend` field.
-    #[cfg(feature = "zencodec")]
+    #[cfg(feature = "std")]
     pub(crate) fn from_encoder_config(config: &crate::encode::EncoderConfig) -> Self {
         // 1. An explicit cfg-gated `Quantizer` choice wins.
         #[cfg(any(
