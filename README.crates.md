@@ -1,4 +1,6 @@
-# zengif [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zengif/ci.yml?style=flat-square&label=CI)](https://github.com/imazen/zengif/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zengif?style=flat-square)](https://crates.io/crates/zengif) [![lib.rs](https://img.shields.io/crates/v/zengif?style=flat-square&label=lib.rs&color=blue)](https://lib.rs/crates/zengif) [![docs.rs](https://img.shields.io/docsrs/zengif?style=flat-square)](https://docs.rs/zengif) [![license](https://img.shields.io/crates/l/zengif?style=flat-square)](#license) [![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field) [![codecov](https://img.shields.io/codecov/c/github/imazen/zengif?style=flat-square)](https://codecov.io/gh/imazen/zengif)
+<!-- GENERATED FROM README.md by zenutils gen-readme-crates.sh — DO NOT EDIT. -->
+
+# zengif
 
 zengif is a GIF codec built for servers: zero-trust decoding of untrusted uploads, bounded and tracked memory, cooperative cancellation, frame-by-frame streaming, and complete animation support (every disposal method, transparency, timing, and loop count). Pure Rust, `#![forbid(unsafe_code)]`, `no_std`-compatible (core types without `std`), built on the well-maintained [`gif`](https://crates.io/crates/gif) crate.
 
@@ -369,36 +371,6 @@ You get core types (`Rgba`, `Limits`, `GifError`, etc.) but not the codec (decod
 `std::io`). Useful when you need to share types between WASM and native code. The core types
 are verified to compile for `wasm32-unknown-unknown`.
 
-<!-- crates.io:skip-start -->
-## Benchmarks
-
-Benchmark sources live in [`benches/`](https://github.com/imazen/zengif/tree/main/benches)
-(`codec.rs`, `decode_bench.rs`); committed results and their provenance are under
-[`benchmarks/`](https://github.com/imazen/zengif/tree/main/benchmarks) — see
-[`benchmarks/README.md`](https://github.com/imazen/zengif/blob/main/benchmarks/README.md)
-for the index and reproduction steps. All runs use runtime SIMD dispatch (**no**
-`-C target-cpu=native`).
-
-Measured, committed findings:
-
-- **Grayscale fast path** ([`grayscale_rd_2026-06-13.md`](https://github.com/imazen/zengif/blob/main/benchmarks/grayscale_rd_2026-06-13.md)) —
-  on the 28 strictly-grayscale images of the imazen-26 corpus, the gray fast path is
-  **byte-for-byte identical to the best lossless backend on all 28** and **~8.5× faster**
-  (mean) than the `zenquant` baseline, with byte-exact round-trips. It already sits on the
-  lossless optimum (LZW size is invariant to palette order), so there is no lossless byte
-  left to recover.
-- **Encode peak memory** ([`zengif_encode_mem_2026-06-23.tsv`](https://github.com/imazen/zengif/blob/main/benchmarks/zengif_encode_mem_2026-06-23.tsv)) —
-  single-frame VmHWM scales as roughly **1.6 MB + 41.5 B/px** (zenquant / imagequant resource
-  profile), the model the `heuristics` resource estimator is calibrated against.
-
-Reproduce the microbenchmarks:
-
-```sh
-git clone https://github.com/imazen/zengif && cd zengif
-cargo bench --bench codec          # encode/decode groups (zenbench, criterion-compat)
-cargo bench --bench decode_bench   # decode-focused groups
-```
-<!-- crates.io:skip-end -->
 
 ## AI-generated code notice
 

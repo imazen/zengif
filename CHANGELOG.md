@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- README overhaul: canonical zen badge row + crosslink footer, `Quick start`
+  with current `decode_gif`/`Decoder`/`EncodeRequest` API, credit-forward "what
+  zengif adds over `gif`" (replacing the competitive scorecard), and a measured
+  `Benchmarks` section (grayscale fast path + encode peak-memory) sourced from
+  committed `benchmarks/` data — removed the prior unverified throughput table.
+  Split the crates.io README into generated `README.crates.md` (no badges,
+  absolute links; `readme = "README.crates.md"`) and added `benchmarks/README.md`
+  indexing the committed results with provenance + reproduction.
+
 ### Changed
 
 - **deps: migrate to published `zencodec 0.1.24` estimate API; drop git-rev
