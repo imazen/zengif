@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `zencodec` trait impls now return `At<zencodec::CodecError>` (the
+  envelope, "Pattern B") instead of `At<GifError>` (imazen/zengif#13).**
+  Corrects the earlier Pattern A: with the bare native error type, a generic
+  consumer lost the `ErrorCategory` and codec name the moment `Dyn*` dispatch
+  erased the error to `Box<dyn Error>` (there was no shared concrete type to
+  downcast to). Every `zencodec` trait impl in `src/codec.rs`
+  (`EncoderConfig` / `EncodeJob` / `Encoder` / `AnimationFrameEncoder` /
+  `DecoderConfig` / `DecodeJob` / `Decode` / `StreamingDecode` /
+  `AnimationFrameDecoder`, plus the `GifDecoderConfig::probe_header` /
+  `probe_full` / `decode` convenience methods) now declares `type Error =
+  At<CodecError>` and wraps via a one-line `impl From<GifError> for
+  At<CodecError>` bridge (`CodecError::of(e.start_at())`, reading category +
+  `codec_name()` from `GifError`) for direct constructions, and
+  `.map_err(CodecError::of)` at the native-API boundary (preserving the
+  `whereat` trace). `GifError` is unchanged and is retained as the envelope's
+  typed **detail** (recover it via `CodecError::detail()` / downcast); its
+  `CategorizedError` impl is the category source. **zengif's own native API
+  (`Decoder`, `EncodeRequest`, `Encoder`, `decode_gif` / `encode_gif`, the
+  `error::Result` alias) keeps `At<GifError>` — only the `zencodec` adapter
+  boundary changed.** A new forcing test
+  (`codec::tests::envelope_category_survives_dyn_erasure`) drives zengif through
+  `DynDecoderConfig`, erases to `BoxedError`, and asserts
+  `error_category() == Some(MalformedImage)` and codec `Some("zengif")` survive.
 - **BREAKING — `zencodec` is now a REQUIRED dependency; the optional `zencodec`
   cargo feature has been removed.** zencodec is foundational enough that gating
   it created dead-code / dual-build friction, so it is now an unconditional

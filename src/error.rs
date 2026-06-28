@@ -430,6 +430,28 @@ impl zencodec::CategorizedError for GifError {
     }
 }
 
+/// Bridge `GifError` into the shared [`CodecError`](zencodec::CodecError)
+/// envelope (zencodec PR #103, "Pattern B").
+///
+/// zengif's own native API keeps `At<GifError>`; the zencodec **trait** impls
+/// (see `crate::codec`) return `At<CodecError>` so a generic consumer recovers
+/// the [`ErrorCategory`](zencodec::ErrorCategory) *and* the codec name even
+/// after `Dyn*` dispatch erases the concrete error to `Box<dyn Error>`.
+///
+/// `.start_at()` begins the location trace; [`CodecError::of`](zencodec::CodecError::of)
+/// then maps the located `At<GifError>` to `At<CodecError>`, keeping the trace on
+/// the outside and reading the category *and* `codec_name()` from the `GifError`
+/// value — which becomes the envelope's retained detail. With this in place, `?`
+/// on any `Result<_, GifError>` auto-wraps into the envelope.
+#[cfg(feature = "std")]
+impl From<GifError> for At<zencodec::CodecError> {
+    #[track_caller]
+    fn from(e: GifError) -> Self {
+        use whereat::ErrorAtExt;
+        zencodec::CodecError::of(e.start_at())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
