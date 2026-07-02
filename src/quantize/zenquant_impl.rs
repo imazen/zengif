@@ -117,7 +117,7 @@ impl QuantizerTrait for ZenquantQuantizer {
         config: &QuantizeConfig,
         stop: &dyn Stop,
     ) -> Result<Vec<u8>> {
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         let zq_config = Self::make_config(config);
         let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
@@ -133,7 +133,7 @@ impl QuantizerTrait for ZenquantQuantizer {
             .map(|pixels| zenquant::ImgRef::new(pixels, width as usize, height as usize))
             .collect();
 
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         let result = zenquant::build_palette_rgba(&img_refs, &zq_config).map_err(|_| {
             at!(GifError::QuantizationFailed {

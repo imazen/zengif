@@ -212,7 +212,7 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
         return encode_gif(frames, width, height, config, limits, stop);
     }
 
-    stop.check().map_err(|_| at!(GifError::Cancelled))?;
+    stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
     // Build quantize config from encoder config
     let quant_config = QuantizeConfig {
@@ -258,7 +258,7 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
     let mut previous_frame: Option<Vec<Rgba>> = None;
 
     for (frame_index, frame) in frames.into_iter().enumerate() {
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
         limits.check_frame_count(frame_index as u64)?;
 
         // Quantize frame with previous frame as background

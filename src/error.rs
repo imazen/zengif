@@ -250,9 +250,14 @@ pub enum GifError {
     },
 
     // === Cancellation ===
-    /// Operation was cancelled via Stop trait.
-    #[error("operation cancelled")]
-    Cancelled,
+    /// Operation was cancelled via a [`enough::Stop`] token.
+    ///
+    /// Carries the [`enough::StopReason`] so callers (and the
+    /// [`CategorizedError`](zencodec::CategorizedError) mapping below) can
+    /// distinguish an explicit cancellation from a timeout instead of
+    /// collapsing both into one undifferentiated "cancelled" state.
+    #[error("operation cancelled: {0}")]
+    Cancelled(enough::StopReason),
 
     // === Wrapped Errors ===
     /// Error from underlying gif crate (malformed bitstream content).
@@ -349,8 +354,8 @@ impl From<gif::EncodingError> for GifError {
 
 // Allow whereat to wrap our errors
 impl From<enough::StopReason> for GifError {
-    fn from(_: enough::StopReason) -> Self {
-        GifError::Cancelled
+    fn from(reason: enough::StopReason) -> Self {
+        GifError::Cancelled(reason)
     }
 }
 
@@ -414,9 +419,15 @@ impl zencodec::CategorizedError for GifError {
             GifError::SinkWrite { .. } => C::Io(zencodec::CodecIoKind::opaque()),
 
             // === Cancellation ===
-            // The unit variant discards the StopReason (timeout vs cancel), so we
-            // map to Cancelled; a TimedOut stop still reads as a cancellation here.
-            GifError::Cancelled => C::Cancelled,
+            // The payload preserves which `StopReason` triggered the stop, so an
+            // explicit cancellation and a timeout map to distinct categories
+            // instead of collapsing into one undifferentiated "cancelled" state.
+            // `StopReason` is `#[non_exhaustive]`, so any future variant besides
+            // `TimedOut` reads as a plain cancellation.
+            GifError::Cancelled(reason) => match reason {
+                enough::StopReason::TimedOut => C::TimedOut,
+                _ => C::Cancelled,
+            },
 
             // === Caller API-protocol violations ===
             GifError::InvalidEncoderState { .. } => C::InvalidState,
@@ -599,7 +610,14 @@ mod tests {
             GifError::QuantizationFailed { message: "x" }.category(),
             C::Internal
         );
-        assert_eq!(GifError::Cancelled.category(), C::Cancelled);
+        assert_eq!(
+            GifError::Cancelled(enough::StopReason::Cancelled).category(),
+            C::Cancelled
+        );
+        assert_eq!(
+            GifError::Cancelled(enough::StopReason::TimedOut).category(),
+            C::TimedOut
+        );
 
         // Delegated zencodec cause type.
         assert_eq!(

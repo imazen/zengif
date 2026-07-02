@@ -180,7 +180,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         let stats = Stats::new();
 
         // Check for cancellation
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
         let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop);
@@ -340,7 +340,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         }
 
         // Check for cancellation periodically
-        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Check frame count limit
         self.limits.check_frame_count(self.frame_index as u64)?;
@@ -460,7 +460,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         }
 
         // Check for cancellation periodically
-        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Check frame count limit
         self.limits.check_frame_count(self.frame_index as u64)?;
@@ -575,7 +575,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         }
 
         // Check for cancellation periodically
-        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Check frame count limit
         self.limits.check_frame_count(self.frame_index as u64)?;
@@ -681,7 +681,7 @@ impl<'a, R: Read> Decoder<'a, R> {
 
         while let Some(frame) = self.next_frame()? {
             // Check cancellation between frames
-            self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+            self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
             // Fallible push
             frames.try_reserve(1).map_err(|_| {

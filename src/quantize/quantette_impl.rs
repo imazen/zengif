@@ -120,7 +120,7 @@ impl QuantizerTrait for QuantetteQuantizer {
 
         let mut all_srgb: Vec<Srgb<u8>> = Vec::new();
         for &idx in &sample_indices {
-            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
             for px in frames[idx] {
                 all_srgb.push(Srgb::new(px.r, px.g, px.b));
             }

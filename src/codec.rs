@@ -954,7 +954,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<(), At<CodecError>> {
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled)?;
+            stop.check().map_err(GifError::Cancelled)?;
         }
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
@@ -972,7 +972,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<EncodeOutput, At<CodecError>> {
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled)?;
+            stop.check().map_err(GifError::Cancelled)?;
         }
         let enc = match self.encoder {
             Some(enc) => enc,
@@ -1624,7 +1624,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         // (lifetime constraint prevents borrowing the job's stop token), so
         // cancellation granularity is per-frame rather than mid-frame.
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled)?;
+            stop.check().map_err(GifError::Cancelled)?;
         }
         // GIF AnimationFrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. AnimationFrame
@@ -1743,7 +1743,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<Option<OwnedAnimationFrame>, At<CodecError>> {
         if let Some(stop) = stop {
-            stop.check().map_err(|_| GifError::Cancelled)?;
+            stop.check().map_err(GifError::Cancelled)?;
         }
 
         loop {
@@ -1905,6 +1905,37 @@ mod tests {
             .probe(b"not a GIF file!!!")
             .expect_err("malformed magic must fail");
         assert_eq!(erased.error_category(), Some(ErrorCategory::MalformedImage));
+        assert_eq!(
+            erased.codec_error().and_then(CodecError::codec),
+            Some("zengif")
+        );
+    }
+
+    /// Pattern B forcing test for the `Cancelled(StopReason)` payload
+    /// (imazen/zengif#13 follow-up): drive a pre-cancelled `Stopper` through
+    /// the **`Dyn`** decode surface — same erasure path as
+    /// `envelope_category_survives_dyn_erasure` above — and confirm the
+    /// `ErrorCategory::Cancelled` (not `MalformedImage`/`Internal`/etc.)
+    /// survives type erasure to `BoxedError`, along with the codec name.
+    /// Guards against the payload change (`Cancelled` → `Cancelled(StopReason)`)
+    /// silently losing its category mapping behind `Box<dyn Error>`.
+    #[test]
+    fn envelope_cancelled_category_survives_dyn_erasure() {
+        use zencodec::decode::DynDecoderConfig;
+        use zencodec::{CodecError, CodecErrorExt, ErrorCategory, StopToken};
+
+        let cfg = GifDecoderConfig::new();
+        let dyn_cfg: &dyn DynDecoderConfig = &cfg;
+        let mut job = dyn_cfg.dyn_job();
+
+        let stopper = almost_enough::Stopper::new();
+        stopper.cancel();
+        job.set_stop(StopToken::new(stopper));
+
+        let erased = job
+            .probe(MINIMAL_GIF)
+            .expect_err("pre-cancelled stop token must fail probe");
+        assert_eq!(erased.error_category(), Some(ErrorCategory::Cancelled));
         assert_eq!(
             erased.codec_error().and_then(CodecError::codec),
             Some("zengif")

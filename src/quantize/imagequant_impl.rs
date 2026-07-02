@@ -145,7 +145,7 @@ impl QuantizerTrait for ImagequantQuantizer {
     ) -> Result<Vec<u8>> {
         use imagequant::Histogram;
 
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         self.attr.set_quality(0, config.quality).map_err(|_| {
             at!(GifError::QuantizationFailed {
@@ -161,7 +161,7 @@ impl QuantizerTrait for ImagequantQuantizer {
         // Add sampled frames to histogram
         for &idx in &sample_indices {
             // Check for cancellation periodically
-            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
             let frame_pixels = frames[idx];
             let rgba_slice = Self::to_imagequant_rgba(frame_pixels);

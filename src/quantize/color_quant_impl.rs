@@ -91,14 +91,14 @@ impl QuantizerTrait for ColorQuantQuantizer {
     ) -> Result<Vec<u8>> {
         use color_quant::NeuQuant;
 
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Collect pixels from sampled frames
         let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
         let mut all_pixels: Vec<u8> = Vec::new();
 
         for &idx in &sample_indices {
-            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
             let frame_pixels = frames[idx];
             for p in frame_pixels {

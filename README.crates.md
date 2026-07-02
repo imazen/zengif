@@ -295,7 +295,7 @@ match decode_gif(gif_bytes, Limits::default(), &Unstoppable) {
             eprintln!("gif decode failed at {}:{}", loc.file(), loc.line());
         }
         match e.error() {
-            GifError::Cancelled => { /* a Stop token fired — HTTP 499 */ }
+            GifError::Cancelled(_) => { /* a Stop token fired — HTTP 499 */ }
             GifError::DimensionsTooLarge { .. }
             | GifError::TotalPixelsTooLarge { .. }
             | GifError::FileTooLarge { .. }

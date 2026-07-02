@@ -114,13 +114,13 @@ impl QuantizerTrait for QuantizrQuantizer {
     ) -> Result<Vec<u8>> {
         use quantizr::{Histogram, Image, Options, QuantizeResult};
 
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         let mut histogram = Histogram::new();
         let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
 
         for &idx in &sample_indices {
-            stop.check().map_err(|_| at!(GifError::Cancelled))?;
+            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
             let frame_pixels = frames[idx];
             let pixel_bytes: Vec<u8> = frame_pixels

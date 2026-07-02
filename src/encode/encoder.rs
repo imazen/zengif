@@ -191,7 +191,7 @@ impl<'a> Encoder<'a> {
         stop: &'a dyn Stop,
     ) -> Result<Self> {
         // Check cancellation
-        stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Validate dimensions
         limits.check_dimensions(width, height)?;
@@ -540,7 +540,7 @@ impl<'a> Encoder<'a> {
     /// encoded. Subsequent frames are encoded immediately with the shared palette.
     pub fn add_frame(&mut self, input: FrameInput) -> Result<()> {
         // Check cancellation
-        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Validate dimensions
         if input.width != self.width || input.height != self.height {
@@ -673,7 +673,7 @@ impl<'a> Encoder<'a> {
             return Ok(());
         }
 
-        self.stop.check().map_err(|_| at!(GifError::Cancelled))?;
+        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Build quantize config
         let quant_config = QuantizeConfig {

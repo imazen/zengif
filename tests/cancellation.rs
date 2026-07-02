@@ -42,7 +42,7 @@ fn decode_with_pre_cancelled_stopper() {
     // Should fail with Cancelled
     match result {
         Ok(_) => panic!("Expected Cancelled error"),
-        Err(err) => assert!(matches!(err.error(), GifError::Cancelled)),
+        Err(err) => assert!(matches!(err.error(), GifError::Cancelled(_))),
     }
 }
 
@@ -89,7 +89,7 @@ fn encode_with_pre_cancelled_stopper() {
     // Should fail with Cancelled
     match result {
         Ok(_) => panic!("Expected Cancelled error"),
-        Err(err) => assert!(matches!(err.error(), GifError::Cancelled)),
+        Err(err) => assert!(matches!(err.error(), GifError::Cancelled(_))),
     }
 }
 
@@ -122,7 +122,10 @@ fn encode_can_be_cancelled_between_frames() {
     let result = encoder.add_frame(frame2);
 
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err().error(), GifError::Cancelled));
+    assert!(matches!(
+        result.unwrap_err().error(),
+        GifError::Cancelled(_)
+    ));
 }
 
 #[test]
