@@ -20,6 +20,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `zencodec` trait impls now return `At<zencodec::CodecError>` (the
+  envelope, "Pattern B") instead of `At<GifError>` (imazen/zengif#13).**
+  Corrects the earlier Pattern A: with the bare native error type, a generic
+  consumer lost the `ErrorCategory` and codec name the moment `Dyn*` dispatch
+  erased the error to `Box<dyn Error>` (there was no shared concrete type to
+  downcast to). Every `zencodec` trait impl in `src/codec.rs`
+  (`EncoderConfig` / `EncodeJob` / `Encoder` / `AnimationFrameEncoder` /
+  `DecoderConfig` / `DecodeJob` / `Decode` / `StreamingDecode` /
+  `AnimationFrameDecoder`, plus the `GifDecoderConfig::probe_header` /
+  `probe_full` / `decode` convenience methods) now declares `type Error =
+  At<CodecError>` and wraps via a one-line `impl From<GifError> for
+  At<CodecError>` bridge (`CodecError::of(e.start_at())`, reading category +
+  `codec_name()` from `GifError`) for direct constructions, and
+  `.map_err(CodecError::of)` at the native-API boundary (preserving the
+  `whereat` trace). `GifError` is unchanged and is retained as the envelope's
+  typed **detail** (recover it via `CodecError::detail()` / downcast); its
+  `CategorizedError` impl is the category source. **zengif's own native API
+  (`Decoder`, `EncodeRequest`, `Encoder`, `decode_gif` / `encode_gif`, the
+  `error::Result` alias) keeps `At<GifError>` — only the `zencodec` adapter
+  boundary changed.** A new forcing test
+  (`codec::tests::envelope_category_survives_dyn_erasure`) drives zengif through
+  `DynDecoderConfig`, erases to `BoxedError`, and asserts
+  `error_category() == Some(MalformedImage)` and codec `Some("zengif")` survive.
+- **BREAKING — `zencodec` is now a REQUIRED dependency; the optional `zencodec`
+  cargo feature has been removed.** zencodec is foundational enough that gating
+  it created dead-code / dual-build friction, so it is now an unconditional
+  dependency (always compiled). The `zencodec` cargo feature is gone; the
+  std-only codec glue (`GifEncoderConfig` / `GifDecoderConfig`, the
+  `CategorizedError` / `SourceEncodingDetails` impls, the `SinkWrite` /
+  `UnsupportedOperation` error variants) is now gated on the existing `std`
+  feature — which the removed `zencodec` feature already implied — so no_std /
+  wasm builds are unaffected. Downstream users on `features = ["zencodec"]` must
+  drop that token; the integration now ships by default (any build with `std`).
 - **deps: migrate to published `zencodec 0.1.24` estimate API; drop git-rev
   patch.** Removed the temporary `[patch.crates-io] zencodec = { git, rev =
   "0f71295" }` now that `zencodec 0.1.24` is on crates.io. Migrated the
@@ -30,6 +63,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (d3b3666).**
+  `GifError` now `impl zencodec::CategorizedError` (compiled with the `std` feature — the default) with
+  `codec_name() = Some("zengif")` and an exhaustive `category()` mapping every variant
+  to one coarse `ErrorCategory` — so consumers route on the category (HTTP
+  status, retry policy, logging) without naming the enum. Limits map to the
+  closest `LimitKind` (`TooManyFrames`→`Frames`, `MemoryLimitExceeded`/
+  `DecompressionRatioExceeded`→`Memory`, `FileTooLarge`→`InputSize`,
+  `OutputTooLarge`→`OutputSize`, `AnimationTooLong`→`Duration`,
+  `TotalPixelsTooLarge`→`TotalPixels`, `DimensionsTooLarge`→`Width`); the
+  `UnsupportedOperation` arm delegates to the zencodec cause type. Added a new
+  `GifError::SinkWrite { message }` variant (→ `ErrorCategory::Io(_)`) split out of
+  the opaque `GifCrate` catch-all for the two decode-row-sink failure sites
+  (`push_decoder`, `wrap_sink_error` in `src/codec.rs`) — a sink write failure
+  is an output-side error, not a malformed image. Additive (`#[non_exhaustive]`
+  enum + opt-in trait); behind a **temporary `[patch.crates-io]` pin** to the
+  unreleased `cancellation-classification-99` branch — remove the patch and bump
+  the `zencodec` dependency once `zencodec 0.1.26` ships.
 - **`GifDecoderConfig::estimate_decode_resources(&ImageCharacteristics,
   &ComputeEnvironment)`** overrides the `zencodec::DecoderConfig` default,
   delegating to the calibrated `heuristics::estimate_decode` (per-frame_count:
