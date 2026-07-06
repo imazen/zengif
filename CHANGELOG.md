@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+<!-- Breaking changes that will ship together in the next major (or minor for 0.x)
+     release. Add items here as you discover them. Do NOT ship these piecemeal —
+     batch them. Confirmed breaking via `cargo semver-checks` against the published
+     0.7.3 baseline (2 major-requiring findings below). -->
+
+- The `zencodec` trait impls (`EncoderConfig` / `EncodeJob` / `Encoder` /
+  `AnimationFrameEncoder` / `DecoderConfig` / `DecodeJob` / `Decode` /
+  `StreamingDecode` / `AnimationFrameDecoder`) now declare `type Error =
+  At<zencodec::CodecError>` instead of `At<GifError>` (imazen/zengif#13, "Pattern
+  B" envelope). See the `### Changed` entry below for the full rationale;
+  zengif's own native API (`Decoder`, `EncodeRequest`, `Encoder`, `decode_gif` /
+  `encode_gif`) is unaffected and still returns `At<GifError>`.
+- `GifError::Cancelled` is now `Cancelled(enough::StopReason)` (was a unit
+  variant) — `cargo semver-checks` flags this as `enum_unit_variant_changed_kind`
+  (major-requiring). The payload lets `CategorizedError::category()` distinguish
+  an explicit cancellation (`ErrorCategory::Cancelled`) from a timeout
+  (`ErrorCategory::TimedOut`) instead of collapsing both into one category. Any
+  `match`/`matches!` on `GifError::Cancelled` needs the payload:
+  `GifError::Cancelled(_)`.
+- Found in passing while confirming the above via `cargo semver-checks`:
+  `ProbeError` (in `src/detect.rs`, already merged, predates this entry) gained
+  a `TooManyFrames { count, max }` struct variant and a `Cancelled` unit
+  variant since the published 0.7.3 — `cargo semver-checks` flags this as
+  `enum_discriminants_undefined_non_unit_variant` (also major-requiring).
+  Riding along with this 0.8.0 bump rather than shipping separately.
+
 ### Documentation
 
 - README overhaul: canonical zen badge row + crosslink footer, `Quick start`
@@ -43,6 +70,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`codec::tests::envelope_category_survives_dyn_erasure`) drives zengif through
   `DynDecoderConfig`, erases to `BoxedError`, and asserts
   `error_category() == Some(MalformedImage)` and codec `Some("zengif")` survive.
+- **BREAKING — `GifError::Cancelled` is now `Cancelled(enough::StopReason)`**
+  (was a unit variant). The payload preserves *why* the operation stopped so
+  `CategorizedError::category()` can map an explicit cancellation to
+  `ErrorCategory::Cancelled` and a timeout to the distinct
+  `ErrorCategory::TimedOut`, instead of collapsing both into one
+  undifferentiated "cancelled" category. Every `stop.check()` call site across
+  `src/codec.rs`, `src/decode/mod.rs`, `src/encode/{mod,encoder}.rs`, and the
+  quantizer backends (`src/quantize/*_impl.rs`) now threads the `StopReason`
+  through (`map_err(|r| at!(GifError::Cancelled(r)))` or the bare
+  `map_err(GifError::Cancelled)` constructor). Any downstream `match`/`matches!`
+  on `GifError::Cancelled` must add the payload: `GifError::Cancelled(_)`. A new
+  forcing test (`codec::tests::envelope_cancelled_category_survives_dyn_erasure`)
+  drives a pre-cancelled `Stopper` through the same `Dyn` erasure path as
+  `envelope_category_survives_dyn_erasure` and asserts
+  `ErrorCategory::Cancelled` + codec name survive `Box<dyn Error>` erasure.
 - **BREAKING — `zencodec` is now a REQUIRED dependency; the optional `zencodec`
   cargo feature has been removed.** zencodec is foundational enough that gating
   it created dead-code / dual-build friction, so it is now an unconditional
