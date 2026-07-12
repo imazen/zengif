@@ -415,7 +415,16 @@ impl zencodec::CategorizedError for GifError {
             GifError::AllocationFailed { .. } => C::OutOfMemory,
 
             // === I/O and output-sink failures ===
-            GifError::Io { .. } => C::Io(zencodec::CodecIoKind::opaque()),
+            // A truncated input stream surfaces as an `UnexpectedEof` io kind
+            // (e.g. `read_exact` past the end of a short slice). That is
+            // incomplete client input, so it must categorize as `UnexpectedEof`
+            // — never `Io`, which would misattribute truncation as an
+            // infrastructure/codec fault (5xx) instead of a malformed-request
+            // (4xx) condition. Other io kinds stay opaque `Io`.
+            GifError::Io { kind, .. } => match kind {
+                std::io::ErrorKind::UnexpectedEof => C::UnexpectedEof,
+                _ => C::Io(zencodec::CodecIoKind::opaque()),
+            },
             GifError::SinkWrite { .. } => C::Io(zencodec::CodecIoKind::opaque()),
 
             // === Cancellation ===

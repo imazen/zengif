@@ -117,6 +117,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Wire the `zencodec-testkit` `check_decode_truncation_series` conformance
+  check (zencodec PR #112)** into the test suite
+  (`tests/decode_truncation_series.rs`): feeds a valid GIF, truncates it at a
+  deterministic series of prefixes, decodes each through the dyn-erased path, and
+  asserts every `ErrorCategory` is in the incomplete-input set (never
+  panic/OOM/Internal). `zencodec` + `zencodec-testkit` are pinned to the same git
+  rev `c3220d51` until 0.1.26 + testkit publish.
+
 - **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103) (d3b3666).**
   `GifError` now `impl zencodec::CategorizedError` (compiled with the `std` feature — the default) with
   `codec_name() = Some("zengif")` and an exhaustive `category()` mapping every variant
@@ -156,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The direct `decode_gif` API is unchanged (`CodecDefault`).
 
 ### Fixed
+
+- **Truncated input now categorizes as `ErrorCategory::UnexpectedEof` instead of
+  `Io`.** A short/truncated stream surfaces as a `std::io::ErrorKind::UnexpectedEof`
+  → `GifError::Io`, which `category()` previously mapped to the opaque `Io`
+  category — misattributing incomplete client input as an infrastructure/codec
+  fault (5xx) rather than a malformed-request (4xx) condition. Surfaced by the new
+  `check_decode_truncation_series` conformance check.
 
 - **GIF encode now consults `zencodec::resolve_color_emit` and retains
   `with_metadata`** instead of silently discarding both. GIF embeds no

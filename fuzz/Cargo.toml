@@ -57,11 +57,12 @@ bench = false
 
 # The fuzz crate is its own cargo workspace, so it does NOT inherit the root
 # Cargo.toml's [patch.crates-io]. Mirror it here so the fuzz targets resolve the
-# same unreleased zencodec (taxonomy: `CategorizedError`/`ErrorCategory`) that
+# same unreleased zencodec (taxonomy: `CategorizedError`/`ErrorCategory`, plus
+# the zencodec-testkit `check_decode_truncation_series` check, PR #112) that
 # zengif is built against. TEMP: until zencodec 0.1.26 ships (PR #103) — remove
 # this patch and bump the zencodec version once 0.1.26 is published.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", branch = "cancellation-classification-99" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "c3220d51d2ef8ec16e8328ada2d5a04c7e6750ee" }
 
 # Recommended profile settings for fuzzing
 [profile.release]
