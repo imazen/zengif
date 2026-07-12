@@ -397,7 +397,7 @@ mod quality_tests {
 
             println!(
                 "{:<40} {:>10} {:>10} {:>10}",
-                short_name, &scores[0], &scores[1], &scores[2],
+                short_name, scores[0], scores[1], scores[2],
             );
         }
 
@@ -545,7 +545,7 @@ mod quality_tests {
 
             println!(
                 "{:<15} {:>12} {:>12} {:>12}",
-                image, &scores[0], &scores[1], &scores[2],
+                image, scores[0], scores[1], scores[2],
             );
         }
 
@@ -642,7 +642,7 @@ mod quality_tests {
 
             println!(
                 "{:<15} {:>12} {:>12} {:>12}",
-                image, &sizes[0], &sizes[1], &sizes[2],
+                image, sizes[0], sizes[1], sizes[2],
             );
         }
     }
