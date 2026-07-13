@@ -486,12 +486,12 @@ impl zencodec::CategorizedError for GifError {
             GifError::SinkWrite { .. } => C::Io(zencodec::CodecIoKind::opaque()),
 
             // === Cancellation ===
-            // `Lifecycle` carries the `StopReason` itself now, so an explicit
+            // `Stopped` carries the `StopReason` itself now, so an explicit
             // cancellation and a timeout are distinguishable via the payload
             // without a separate match here — no lossy collapse, and any future
             // `StopReason` variant (it is `#[non_exhaustive]`) flows through
             // unchanged.
-            GifError::Cancelled(reason) => C::Lifecycle(*reason),
+            GifError::Cancelled(reason) => C::Stopped(*reason),
 
             // === Caller API-protocol violations ===
             GifError::InvalidEncoderState { .. } => C::Request(Req::Invalid(Inv::State)),
@@ -738,11 +738,11 @@ mod tests {
         );
         assert_eq!(
             GifError::Cancelled(enough::StopReason::Cancelled).category(),
-            C::Lifecycle(enough::StopReason::Cancelled)
+            C::Stopped(enough::StopReason::Cancelled)
         );
         assert_eq!(
             GifError::Cancelled(enough::StopReason::TimedOut).category(),
-            C::Lifecycle(enough::StopReason::TimedOut)
+            C::Stopped(enough::StopReason::TimedOut)
         );
 
         // Delegated zencodec cause type.

@@ -1919,7 +1919,7 @@ mod tests {
     /// (imazen/zengif#13 follow-up): drive a pre-cancelled `Stopper` through
     /// the **`Dyn`** decode surface — same erasure path as
     /// `envelope_category_survives_dyn_erasure` above — and confirm the
-    /// `ErrorCategory::Lifecycle(StopReason::Cancelled)` (not
+    /// `ErrorCategory::Stopped(StopReason::Cancelled)` (not
     /// `Image(Malformed)`/`Internal`/etc.) survives type erasure to
     /// `BoxedError`, along with the codec name. Guards against the payload
     /// change (`Cancelled` → `Cancelled(StopReason)`) silently losing its
@@ -1942,7 +1942,7 @@ mod tests {
             .expect_err("pre-cancelled stop token must fail probe");
         assert_eq!(
             erased.error_category(),
-            Some(ErrorCategory::Lifecycle(enough::StopReason::Cancelled))
+            Some(ErrorCategory::Stopped(enough::StopReason::Cancelled))
         );
         assert_eq!(
             erased.codec_error().and_then(CodecError::codec),

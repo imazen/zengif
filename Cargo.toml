@@ -96,7 +96,7 @@ imgref = { version = "1.12.0", optional = true }
 # (e.g. `check_decode_truncation_series`). Pinned to the SAME git rev as the
 # `[patch.crates-io]` zencodec above so both resolve to one unified zencodec.
 # Drop for a crates.io version dep once zencodec 0.1.26 + testkit publish.
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "2427387f86c77fdf773ae2fa219926a49cd32d99" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }
 almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
@@ -182,4 +182,4 @@ required-features = ["std"]
 # conformance check (PR #112), and the `zencodec-testkit` dev-dep is pinned to
 # the SAME rev so both resolve to one unified zencodec. Remove this patch and
 # bump the `zencodec` version dependency once 0.1.26 + testkit publish.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "2427387f86c77fdf773ae2fa219926a49cd32d99" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }

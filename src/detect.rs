@@ -455,7 +455,7 @@ impl zencodec::CategorizedError for ProbeError {
             // No `StopReason` payload is tracked by this variant (unlike
             // `GifError::Cancelled`), so this always reads as a plain
             // cancellation rather than distinguishing a timeout.
-            Self::Cancelled => C::Lifecycle(enough::StopReason::Cancelled),
+            Self::Cancelled => C::Stopped(enough::StopReason::Cancelled),
         }
     }
 }
@@ -605,7 +605,7 @@ mod tests {
         );
         assert_eq!(
             ProbeError::Cancelled.category(),
-            C::Lifecycle(enough::StopReason::Cancelled)
+            C::Stopped(enough::StopReason::Cancelled)
         );
     }
 }

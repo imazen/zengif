@@ -63,7 +63,7 @@ bench = false
 # zengif is built against. TEMP: until zencodec 0.1.26 ships (PR #103) — remove
 # this patch and bump the zencodec version once 0.1.26 is published.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "2427387f86c77fdf773ae2fa219926a49cd32d99" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }
 
 # Recommended profile settings for fuzzing
 [profile.release]
