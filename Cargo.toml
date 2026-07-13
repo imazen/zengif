@@ -22,7 +22,10 @@ include = [
 default = ["std", "zenquant"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
-std = ["gif/std", "enough/std", "whereat/std"]
+# zencodec/std: lets `ErrorCategory::Io`'s `CodecIoKind` carry the real
+# `std::io::ErrorKind` (via `CodecIoKind::from`) instead of only the opaque
+# no_std-safe form — used by `GifError`'s `CategorizedError` impl below.
+std = ["gif/std", "enough/std", "whereat/std", "zencodec/std"]
 # zencodec is now a REQUIRED, always-on dependency (no cargo feature). The
 # std-only codec glue (GifEncoderConfig/GifDecoderConfig + the CategorizedError /
 # SourceEncodingDetails impls) is gated on the existing `std` feature — which the
@@ -93,7 +96,7 @@ imgref = { version = "1.12.0", optional = true }
 # (e.g. `check_decode_truncation_series`). Pinned to the SAME git rev as the
 # `[patch.crates-io]` zencodec above so both resolve to one unified zencodec.
 # Drop for a crates.io version dep once zencodec 0.1.26 + testkit publish.
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "c3220d51d2ef8ec16e8328ada2d5a04c7e6750ee" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "2427387f86c77fdf773ae2fa219926a49cd32d99" }
 almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
@@ -173,9 +176,10 @@ required-features = ["std"]
 
 [patch.crates-io]
 # TEMP: until zencodec 0.1.26 ships (PR #103) — provides the unreleased
-# `CategorizedError` taxonomy (trait + `ErrorCategory`). This rev also carries
-# the zencodec-testkit `check_decode_truncation_series` conformance check (PR
-# #112), and the `zencodec-testkit` dev-dep is pinned to the SAME rev so both
-# resolve to one unified zencodec. Remove this patch and bump the `zencodec`
-# version dependency once 0.1.26 + testkit publish.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "c3220d51d2ef8ec16e8328ada2d5a04c7e6750ee" }
+# `CategorizedError` taxonomy (trait + `ErrorCategory`), now reshaped to the
+# two-level origin-first taxonomy (PR #116, `caterr-reshape` branch). This rev
+# also carries the zencodec-testkit `check_decode_truncation_series`
+# conformance check (PR #112), and the `zencodec-testkit` dev-dep is pinned to
+# the SAME rev so both resolve to one unified zencodec. Remove this patch and
+# bump the `zencodec` version dependency once 0.1.26 + testkit publish.
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "2427387f86c77fdf773ae2fa219926a49cd32d99" }

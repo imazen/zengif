@@ -423,6 +423,43 @@ impl zencodec::SourceEncodingDetails for GifProbe {
     }
 }
 
+/// Codec-agnostic error taxonomy for probe failures (audit finding #7): without
+/// this impl, a generic consumer driving `probe`/`probe_with_limits` through a
+/// dyn-erased or type-erased boundary has no way to route on category — it has
+/// to downcast to the concrete `ProbeError` (or lose the information entirely).
+#[cfg(feature = "std")]
+impl zencodec::CategorizedError for ProbeError {
+    fn codec_name(&self) -> Option<&'static str> {
+        Some("zengif")
+    }
+
+    fn category(&self) -> zencodec::ErrorCategory {
+        use zencodec::ErrorCategory as C;
+        use zencodec::ImageError as Img;
+        use zencodec::LimitKind as L;
+        use zencodec::ResourceError as Res;
+        match self {
+            // Too short to even hold a GIF header — reads as an incomplete
+            // prefix (truncation) rather than content that is definitively
+            // *not* a GIF, since a short-but-legitimate-so-far prefix of a
+            // valid GIF looks identical to this case.
+            Self::TooShort => C::Image(Img::UnexpectedEof),
+            // Signature/version mismatch — this is definitively not (a
+            // version of) a GIF, not a truncated one.
+            Self::NotGif => C::Image(Img::Malformed),
+            // Structurally truncated partway through the block walk.
+            Self::Truncated => C::Image(Img::UnexpectedEof),
+            // Anti-DoS frame-count cap hit while probing — a resource limit,
+            // not a bytes- or request-origin fault.
+            Self::TooManyFrames { .. } => C::Resource(Res::Limits(L::Frames)),
+            // No `StopReason` payload is tracked by this variant (unlike
+            // `GifError::Cancelled`), so this always reads as a plain
+            // cancellation rather than distinguishing a timeout.
+            Self::Cancelled => C::Lifecycle(enough::StopReason::Cancelled),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,5 +576,36 @@ mod tests {
         assert_eq!(info.global_palette_size, 0);
         assert_eq!(info.frame_count, 0);
         assert!(!info.is_animated);
+    }
+
+    /// Audit finding #7: `ProbeError` must implement `CategorizedError` so a
+    /// generic consumer can route on category without downcasting.
+    #[cfg(feature = "std")]
+    #[test]
+    fn probe_error_category_mapping() {
+        use zencodec::{
+            CategorizedError, ErrorCategory as C, ImageError as Img, LimitKind as L,
+            ResourceError as Res,
+        };
+
+        assert_eq!(ProbeError::TooShort.codec_name(), Some("zengif"));
+
+        assert_eq!(
+            ProbeError::TooShort.category(),
+            C::Image(Img::UnexpectedEof)
+        );
+        assert_eq!(ProbeError::NotGif.category(), C::Image(Img::Malformed));
+        assert_eq!(
+            ProbeError::Truncated.category(),
+            C::Image(Img::UnexpectedEof)
+        );
+        assert_eq!(
+            ProbeError::TooManyFrames { count: 9, max: 4 }.category(),
+            C::Resource(Res::Limits(L::Frames))
+        );
+        assert_eq!(
+            ProbeError::Cancelled.category(),
+            C::Lifecycle(enough::StopReason::Cancelled)
+        );
     }
 }

@@ -59,6 +59,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Adopt zencodec's reshaped two-level origin-first `ErrorCategory` taxonomy
+  (zencodec PR #116, `caterr-reshape`, rev `2427387f`).** The flat 17-variant
+  `ErrorCategory` is now `Image(ImageError)` / `Request(RequestError)` /
+  `Resource(ResourceError)` / `Policy(PolicyKind)` / `Lifecycle(StopReason)` /
+  `Io(CodecIoKind)` / `Internal(InternalKind)`. `GifError::category()`
+  (`src/error.rs`) was rewritten variant-by-variant against the new shape, and
+  `ProbeError` (`src/detect.rs`) gained its own `CategorizedError` impl (it had
+  none before — see the `### Added` entry below). No `zengif` API changed —
+  only the *returned* `zencodec::ErrorCategory` shape differs for any consumer
+  matching on it. `zencodec` / `zencodec-testkit` bumped to the same git rev;
+  added `zencodec/std` to zengif's own `std` feature forward so
+  `ErrorCategory::Io`'s `CodecIoKind` can carry a real `std::io::ErrorKind`.
+  Several mapping bugs found auditing the rewrite are recorded under
+  `### Fixed` below.
 - **The `zencodec` trait impls now return `At<zencodec::CodecError>` (the
   envelope, "Pattern B") instead of `At<GifError>` (imazen/zengif#13).**
   Corrects the earlier Pattern A: with the bare native error type, a generic
@@ -117,6 +131,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ProbeError` (`src/detect.rs`) now implements `zencodec::CategorizedError`**
+  so probe failures (`probe` / `probe_with_limits`) are routable by category
+  through a dyn-erased boundary, matching `GifError`'s existing impl. `TooShort`
+  / `Truncated` → `Image(UnexpectedEof)`, `NotGif` → `Image(Malformed)`,
+  `TooManyFrames` → `Resource(Limits(Frames))`, `Cancelled` →
+  `Lifecycle(StopReason::Cancelled)` (this variant carries no `StopReason`
+  payload, so it always reads as a plain cancellation).
 - **Wire the `zencodec-testkit` `check_decode_truncation_series` conformance
   check (zencodec PR #112)** into the test suite
   (`tests/decode_truncation_series.rs`): feeds a valid GIF, truncates it at a
@@ -165,6 +186,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`gif::DecodingError::EndCodeNotFound` (an incomplete LZW stream missing its
+  terminator) now categorizes as truncation** (`Image(UnexpectedEof)`) instead
+  of the opaque `GifCrate` → `Image(Malformed)` path — it is a truncated read,
+  not corrupt bitstream content.
+- **`gif::DecodingError::OutOfMemory` and `MemoryLimit` no longer collapse into
+  the same `GifError` variant.** `OutOfMemory` (a real allocator failure) now
+  maps to `AllocationFailed` → `Resource(OutOfMemory)`; `MemoryLimit` (the
+  `gif` crate's own configured cap) now maps to `MemoryLimitExceeded` →
+  `Resource(Limits(Memory))`. Previously both collapsed to the same
+  `AllocationFailed { requested: 0 }`, discarding the distinction the `gif`
+  crate itself makes between the two causes.
+- **`DimensionsTooLarge` now attributes the axis that actually violated its
+  configured max** (Width vs. Height) instead of always reporting Width,
+  regardless of which dimension exceeded its cap.
+- **`FrameDimensionMismatch` (a caller-supplied wrong-geometry pixel buffer)
+  now categorizes as `Request(Invalid(Buffer))`** instead of `Image(Malformed)`
+  — it is an invocation fault (the caller passed a buffer of the wrong shape),
+  not corrupt image bytes.
+- **`DecompressionRatioExceeded` (zip-bomb guard) now routes to the dedicated
+  `Resource(Limits(DecompressionRatio))` kind** instead of the closest-fit
+  `Memory` kind, so an anti-DoS decompression-bomb signal is distinguishable
+  from an absolute memory-budget cap.
+- **`GifError::Io`'s non-EOF `std::io::ErrorKind`s now carry their real kind**
+  via `CodecIoKind::from` instead of collapsing to opaque.
 - **Truncated input now categorizes as `ErrorCategory::UnexpectedEof` instead of
   `Io`.** A short/truncated stream surfaces as a `std::io::ErrorKind::UnexpectedEof`
   → `GifError::Io`, which `category()` previously mapped to the opaque `Io`

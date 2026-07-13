@@ -1893,18 +1893,22 @@ mod tests {
     #[test]
     fn envelope_category_survives_dyn_erasure() {
         use zencodec::decode::DynDecoderConfig;
-        use zencodec::{CodecError, CodecErrorExt, ErrorCategory};
+        use zencodec::{CodecError, CodecErrorExt, ErrorCategory, ImageError};
 
         let cfg = GifDecoderConfig::new();
         let dyn_cfg: &dyn DynDecoderConfig = &cfg;
         // ≥13 bytes (the GIF header length) with bad magic → the header
-        // pre-validator rejects with `GifError::InvalidHeader` → MalformedImage.
+        // pre-validator rejects with `GifError::InvalidHeader` →
+        // Image(ImageError::Malformed).
         // (A shorter input would EOF inside `read_exact` and map to `Io`.)
         let erased = dyn_cfg
             .dyn_job()
             .probe(b"not a GIF file!!!")
             .expect_err("malformed magic must fail");
-        assert_eq!(erased.error_category(), Some(ErrorCategory::MalformedImage));
+        assert_eq!(
+            erased.error_category(),
+            Some(ErrorCategory::Image(ImageError::Malformed))
+        );
         assert_eq!(
             erased.codec_error().and_then(CodecError::codec),
             Some("zengif")
@@ -1915,10 +1919,11 @@ mod tests {
     /// (imazen/zengif#13 follow-up): drive a pre-cancelled `Stopper` through
     /// the **`Dyn`** decode surface — same erasure path as
     /// `envelope_category_survives_dyn_erasure` above — and confirm the
-    /// `ErrorCategory::Cancelled` (not `MalformedImage`/`Internal`/etc.)
-    /// survives type erasure to `BoxedError`, along with the codec name.
-    /// Guards against the payload change (`Cancelled` → `Cancelled(StopReason)`)
-    /// silently losing its category mapping behind `Box<dyn Error>`.
+    /// `ErrorCategory::Lifecycle(StopReason::Cancelled)` (not
+    /// `Image(Malformed)`/`Internal`/etc.) survives type erasure to
+    /// `BoxedError`, along with the codec name. Guards against the payload
+    /// change (`Cancelled` → `Cancelled(StopReason)`) silently losing its
+    /// category mapping behind `Box<dyn Error>`.
     #[test]
     fn envelope_cancelled_category_survives_dyn_erasure() {
         use zencodec::decode::DynDecoderConfig;
@@ -1935,7 +1940,10 @@ mod tests {
         let erased = job
             .probe(MINIMAL_GIF)
             .expect_err("pre-cancelled stop token must fail probe");
-        assert_eq!(erased.error_category(), Some(ErrorCategory::Cancelled));
+        assert_eq!(
+            erased.error_category(),
+            Some(ErrorCategory::Lifecycle(enough::StopReason::Cancelled))
+        );
         assert_eq!(
             erased.codec_error().and_then(CodecError::codec),
             Some("zengif")

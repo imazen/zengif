@@ -310,14 +310,26 @@ impl From<gif::DecodingError> for GifError {
                 context: Some("during GIF decoding"),
             },
             DecodingError::UnexpectedEof => GifError::UnexpectedEof,
-            DecodingError::OutOfMemory | DecodingError::MemoryLimit => {
-                GifError::AllocationFailed { requested: 0 }
-            }
+            // An incomplete/truncated LZW stream missing its terminator — this is
+            // truncation, not corrupt bitstream *content*, so it must categorize
+            // the same way `UnexpectedEof` does (never as opaque `GifCrate`/
+            // MalformedImage, which would misattribute a short read as corrupt
+            // input instead of incomplete input).
+            DecodingError::EndCodeNotFound => GifError::UnexpectedEof,
+            // Real allocator failure (the `gif` crate could not internally
+            // allocate a buffer) — distinct from a *configured* memory cap below.
+            DecodingError::OutOfMemory => GifError::AllocationFailed { requested: 0 },
+            // The `gif` crate's own `set_memory_limit()` cap was tripped — a
+            // configured ceiling, not a true allocation failure. Neither variant
+            // carries the byte counts, so both use `0` as the existing
+            // `AllocationFailed`/`MemoryLimitExceeded` sentinel pattern already
+            // does elsewhere in this crate.
+            DecodingError::MemoryLimit => GifError::MemoryLimitExceeded {
+                current: 0,
+                limit: 0,
+            },
             DecodingError::LzwError(e) => GifError::GifCrate {
                 message: e.to_string(),
-            },
-            DecodingError::EndCodeNotFound => GifError::GifCrate {
-                message: "LZW end code not found".to_string(),
             },
             DecodingError::DecoderNotFound => GifError::GifCrate {
                 message: "decoder not found".to_string(),
@@ -366,9 +378,10 @@ impl From<zencodec::UnsupportedOperation> for GifError {
     }
 }
 
-// Codec-agnostic error taxonomy (zencodec PR #103). Maps every `GifError`
-// variant to exactly one coarse `ErrorCategory` so consumers can route on the
-// category (HTTP status, retry policy, logging) without naming this enum.
+// Codec-agnostic error taxonomy (zencodec PR #103, reshaped to the two-level
+// origin-first taxonomy by PR #116). Maps every `GifError` variant to exactly
+// one coarse `ErrorCategory` so consumers can route on the category (HTTP
+// status, retry policy, logging) without naming this enum.
 #[cfg(feature = "std")]
 impl zencodec::CategorizedError for GifError {
     fn codec_name(&self) -> Option<&'static str> {
@@ -377,7 +390,13 @@ impl zencodec::CategorizedError for GifError {
 
     fn category(&self) -> zencodec::ErrorCategory {
         use zencodec::ErrorCategory as C;
+        use zencodec::ImageError as Img;
+        use zencodec::InternalKind as Int;
+        use zencodec::InvalidKind as Inv;
         use zencodec::LimitKind as L;
+        use zencodec::RequestError as Req;
+        use zencodec::ResourceError as Res;
+        use zencodec::UnsupportedImageKind as UImg;
         match self {
             // === Malformed / corrupt bitstream content ===
             GifError::InvalidHeader
@@ -388,61 +407,101 @@ impl zencodec::CategorizedError for GifError {
             | GifError::InvalidDisposalMethod { .. }
             | GifError::MalformedLzw { .. }
             | GifError::InvalidMinCodeSize { .. }
-            | GifError::FrameDimensionMismatch { .. }
-            | GifError::GifCrate { .. } => C::MalformedImage,
+            | GifError::GifCrate { .. } => C::Image(Img::Malformed),
+
+            // === Caller-invocation fault: a caller-supplied pixel buffer whose
+            // declared dimensions don't match the encoder's canvas. The bytes
+            // aren't the problem — the caller passed the wrong-shaped buffer —
+            // so this is a Request-origin fault, not an Image-origin one.
+            GifError::FrameDimensionMismatch { .. } => C::Request(Req::Invalid(Inv::Buffer)),
 
             // === Truncated input ===
-            GifError::UnexpectedEof => C::UnexpectedEof,
+            GifError::UnexpectedEof => C::Image(Img::UnexpectedEof),
 
             // === Format/version not handled at all ===
-            GifError::UnsupportedVersion { .. } => C::UnsupportedImageType,
+            GifError::UnsupportedVersion { .. } => C::Image(Img::Unsupported(UImg::Type)),
 
             // === Resource limits (pick the closest LimitKind) ===
-            // Per-dimension width/height cap. No single LimitKind covers "either
-            // dimension exceeded", so use Width as the representative kind.
-            GifError::DimensionsTooLarge { .. } => C::LimitsExceeded(L::Width),
-            GifError::TotalPixelsTooLarge { .. } => C::LimitsExceeded(L::TotalPixels),
-            GifError::TooManyFrames { .. } => C::LimitsExceeded(L::Frames),
-            GifError::FileTooLarge { .. } => C::LimitsExceeded(L::InputSize),
-            GifError::MemoryLimitExceeded { .. } => C::LimitsExceeded(L::Memory),
-            // Zip-bomb guard: a decompression-ratio cap is a memory-blowup limit;
-            // there is no DecompressionRatio kind, so Memory is the closest fit.
-            GifError::DecompressionRatioExceeded { .. } => C::LimitsExceeded(L::Memory),
-            GifError::AnimationTooLong { .. } => C::LimitsExceeded(L::Duration),
-            GifError::OutputTooLarge { .. } => C::LimitsExceeded(L::OutputSize),
+            // Per-dimension width/height cap. Attribute to whichever axis
+            // actually violated its own configured max (the `check_dimensions`
+            // construction sites in `limits.rs` only ever populate one side of
+            // this strictly, since the first violated check returns early), so
+            // the *real* offending dimension survives instead of always
+            // reading Width. The tie-break arms below cover the pathological
+            // `PixelSlice`→u16 overflow-clamp construction in `codec.rs`, where
+            // both `max_width`/`max_height` are clamped to the same `u16::MAX`
+            // sentinel regardless of which axis actually overflowed: there the
+            // offending axis is pinned exactly at that ceiling while the other
+            // axis is comfortably under it.
+            GifError::DimensionsTooLarge {
+                width,
+                height,
+                max_width,
+                max_height,
+            } => {
+                if width > max_width {
+                    C::Resource(Res::Limits(L::Width))
+                } else if height > max_height {
+                    C::Resource(Res::Limits(L::Height))
+                } else if width == max_width && height < max_height {
+                    C::Resource(Res::Limits(L::Width))
+                } else if height == max_height && width < max_width {
+                    C::Resource(Res::Limits(L::Height))
+                } else {
+                    // Fully ambiguous (both axes genuinely tied at their max, or
+                    // neither) — arbitrary default, matches historical behavior.
+                    C::Resource(Res::Limits(L::Width))
+                }
+            }
+            GifError::TotalPixelsTooLarge { .. } => C::Resource(Res::Limits(L::TotalPixels)),
+            GifError::TooManyFrames { .. } => C::Resource(Res::Limits(L::Frames)),
+            GifError::FileTooLarge { .. } => C::Resource(Res::Limits(L::InputSize)),
+            GifError::MemoryLimitExceeded { .. } => C::Resource(Res::Limits(L::Memory)),
+            // Zip-bomb guard: routed directly to the dedicated DecompressionRatio
+            // kind (added alongside this taxonomy reshape) instead of the
+            // closest-fit Memory kind, so an anti-DoS decompression-bomb signal
+            // is distinguishable from an absolute memory-budget cap.
+            GifError::DecompressionRatioExceeded { .. } => {
+                C::Resource(Res::Limits(L::DecompressionRatio))
+            }
+            GifError::AnimationTooLong { .. } => C::Resource(Res::Limits(L::Duration)),
+            GifError::OutputTooLarge { .. } => C::Resource(Res::Limits(L::OutputSize)),
 
             // === Allocation failure (distinct from a configured limit) ===
-            GifError::AllocationFailed { .. } => C::OutOfMemory,
+            GifError::AllocationFailed { .. } => C::Resource(Res::OutOfMemory),
 
             // === I/O and output-sink failures ===
             // A truncated input stream surfaces as an `UnexpectedEof` io kind
             // (e.g. `read_exact` past the end of a short slice). That is
-            // incomplete client input, so it must categorize as `UnexpectedEof`
-            // — never `Io`, which would misattribute truncation as an
-            // infrastructure/codec fault (5xx) instead of a malformed-request
-            // (4xx) condition. Other io kinds stay opaque `Io`.
+            // incomplete client input, so it must categorize as image-origin
+            // `UnexpectedEof` — never `Io`, which would misattribute truncation
+            // as an infrastructure/codec fault (5xx) instead of a
+            // malformed-request (4xx) condition. Other io kinds carry their
+            // real `std::io::ErrorKind` through `CodecIoKind` instead of
+            // collapsing to opaque.
             GifError::Io { kind, .. } => match kind {
-                std::io::ErrorKind::UnexpectedEof => C::UnexpectedEof,
-                _ => C::Io(zencodec::CodecIoKind::opaque()),
+                std::io::ErrorKind::UnexpectedEof => C::Image(Img::UnexpectedEof),
+                _ => C::Io((*kind).into()),
             },
             GifError::SinkWrite { .. } => C::Io(zencodec::CodecIoKind::opaque()),
 
             // === Cancellation ===
-            // The payload preserves which `StopReason` triggered the stop, so an
-            // explicit cancellation and a timeout map to distinct categories
-            // instead of collapsing into one undifferentiated "cancelled" state.
-            // `StopReason` is `#[non_exhaustive]`, so any future variant besides
-            // `TimedOut` reads as a plain cancellation.
-            GifError::Cancelled(reason) => match reason {
-                enough::StopReason::TimedOut => C::TimedOut,
-                _ => C::Cancelled,
-            },
+            // `Lifecycle` carries the `StopReason` itself now, so an explicit
+            // cancellation and a timeout are distinguishable via the payload
+            // without a separate match here — no lossy collapse, and any future
+            // `StopReason` variant (it is `#[non_exhaustive]`) flows through
+            // unchanged.
+            GifError::Cancelled(reason) => C::Lifecycle(*reason),
 
             // === Caller API-protocol violations ===
-            GifError::InvalidEncoderState { .. } => C::InvalidState,
+            GifError::InvalidEncoderState { .. } => C::Request(Req::Invalid(Inv::State)),
 
             // === Internal failures ===
-            GifError::QuantizationFailed { .. } => C::Internal,
+            // Quantization failure originates in an external quantizer backend
+            // (imagequant/quantizr/color_quant/zenquant) this codec doesn't
+            // control — an unclassified dependency failure, not a broken
+            // invariant in zengif's own logic.
+            GifError::QuantizationFailed { .. } => C::Internal(Int::Dependency),
 
             // === Delegate to the zencodec cause type ===
             GifError::UnsupportedOperation(op) => op.category(),
@@ -511,38 +570,59 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn error_category_mapping() {
-        use zencodec::{CategorizedError, ErrorCategory as C, LimitKind as L};
+        use zencodec::{
+            CategorizedError, ErrorCategory as C, ImageError as Img, InternalKind as Int,
+            InvalidKind as Inv, LimitKind as L, RequestError as Req, ResourceError as Res,
+        };
 
         assert_eq!(GifError::InvalidHeader.codec_name(), Some("zengif"));
 
         // Malformed bitstream content.
-        assert_eq!(GifError::InvalidHeader.category(), C::MalformedImage);
+        assert_eq!(GifError::InvalidHeader.category(), C::Image(Img::Malformed));
         assert_eq!(
             GifError::InvalidScreenDescriptor.category(),
-            C::MalformedImage
+            C::Image(Img::Malformed)
         );
         assert_eq!(
             GifError::MalformedLzw { message: "bad" }.category(),
-            C::MalformedImage
+            C::Image(Img::Malformed)
         );
         assert_eq!(
             GifError::GifCrate {
                 message: "x".into()
             }
             .category(),
-            C::MalformedImage
+            C::Image(Img::Malformed)
         );
 
         // Truncated input.
-        assert_eq!(GifError::UnexpectedEof.category(), C::UnexpectedEof);
+        assert_eq!(
+            GifError::UnexpectedEof.category(),
+            C::Image(Img::UnexpectedEof)
+        );
 
         // Unhandled format/version.
         assert_eq!(
             GifError::UnsupportedVersion { version: *b"GIF" }.category(),
-            C::UnsupportedImageType
+            C::Image(Img::Unsupported(zencodec::UnsupportedImageKind::Type))
         );
 
-        // Resource limits map to the closest LimitKind.
+        // Caller-invocation fault: wrong-geometry pixel buffer handed to the
+        // encoder — a Request-origin fault, not Image-origin.
+        assert_eq!(
+            GifError::FrameDimensionMismatch {
+                expected_width: 4,
+                expected_height: 4,
+                actual_width: 9,
+                actual_height: 9,
+            }
+            .category(),
+            C::Request(Req::Invalid(Inv::Buffer))
+        );
+
+        // Resource limits map to the closest LimitKind. Width-vs-height
+        // detection (audit finding #3): whichever axis actually violated its
+        // own configured max is attributed — not always Width.
         assert_eq!(
             GifError::DimensionsTooLarge {
                 width: 9,
@@ -551,7 +631,42 @@ mod tests {
                 max_height: 4,
             }
             .category(),
-            C::LimitsExceeded(L::Width)
+            C::Resource(Res::Limits(L::Width))
+        );
+        // Height-only violation: width is within its own max (4 <= 4); only
+        // height exceeds (9 > 4) — must categorize as Height, never Width.
+        assert_eq!(
+            GifError::DimensionsTooLarge {
+                width: 4,
+                height: 9,
+                max_width: 4,
+                max_height: 4,
+            }
+            .category(),
+            C::Resource(Res::Limits(L::Height))
+        );
+        // Tie at the same ceiling (mirrors the PixelSlice->u16 overflow-clamp
+        // construction in codec.rs): the pinned axis with the other
+        // comfortably under its own max is attributed.
+        assert_eq!(
+            GifError::DimensionsTooLarge {
+                width: u16::MAX,
+                height: 100,
+                max_width: u16::MAX,
+                max_height: u16::MAX,
+            }
+            .category(),
+            C::Resource(Res::Limits(L::Width))
+        );
+        assert_eq!(
+            GifError::DimensionsTooLarge {
+                width: 100,
+                height: u16::MAX,
+                max_width: u16::MAX,
+                max_height: u16::MAX,
+            }
+            .category(),
+            C::Resource(Res::Limits(L::Height))
         );
         assert_eq!(
             GifError::TotalPixelsTooLarge {
@@ -559,15 +674,15 @@ mod tests {
                 max_pixels: 4,
             }
             .category(),
-            C::LimitsExceeded(L::TotalPixels)
+            C::Resource(Res::Limits(L::TotalPixels))
         );
         assert_eq!(
             GifError::TooManyFrames { count: 9, max: 4 }.category(),
-            C::LimitsExceeded(L::Frames)
+            C::Resource(Res::Limits(L::Frames))
         );
         assert_eq!(
             GifError::FileTooLarge { size: 9, max: 4 }.category(),
-            C::LimitsExceeded(L::InputSize)
+            C::Resource(Res::Limits(L::InputSize))
         );
         assert_eq!(
             GifError::MemoryLimitExceeded {
@@ -575,8 +690,10 @@ mod tests {
                 limit: 4,
             }
             .category(),
-            C::LimitsExceeded(L::Memory)
+            C::Resource(Res::Limits(L::Memory))
         );
+        // Decompression-ratio bomb guard (audit finding #6): routed to the
+        // dedicated DecompressionRatio kind, not the closest-fit Memory kind.
         assert_eq!(
             GifError::DecompressionRatioExceeded {
                 compressed: 1,
@@ -584,7 +701,7 @@ mod tests {
                 max_ratio: 10.0,
             }
             .category(),
-            C::LimitsExceeded(L::Memory)
+            C::Resource(Res::Limits(L::DecompressionRatio))
         );
         assert_eq!(
             GifError::AnimationTooLong {
@@ -592,17 +709,17 @@ mod tests {
                 max_ms: 4,
             }
             .category(),
-            C::LimitsExceeded(L::Duration)
+            C::Resource(Res::Limits(L::Duration))
         );
         assert_eq!(
             GifError::OutputTooLarge { size: 9, max: 4 }.category(),
-            C::LimitsExceeded(L::OutputSize)
+            C::Resource(Res::Limits(L::OutputSize))
         );
 
         // Allocation, sink, state, internal.
         assert_eq!(
             GifError::AllocationFailed { requested: 9 }.category(),
-            C::OutOfMemory
+            C::Resource(Res::OutOfMemory)
         );
         assert_eq!(
             GifError::SinkWrite {
@@ -613,30 +730,64 @@ mod tests {
         );
         assert_eq!(
             GifError::InvalidEncoderState { message: "x" }.category(),
-            C::InvalidState
+            C::Request(Req::Invalid(Inv::State))
         );
         assert_eq!(
             GifError::QuantizationFailed { message: "x" }.category(),
-            C::Internal
+            C::Internal(Int::Dependency)
         );
         assert_eq!(
             GifError::Cancelled(enough::StopReason::Cancelled).category(),
-            C::Cancelled
+            C::Lifecycle(enough::StopReason::Cancelled)
         );
         assert_eq!(
             GifError::Cancelled(enough::StopReason::TimedOut).category(),
-            C::TimedOut
+            C::Lifecycle(enough::StopReason::TimedOut)
         );
 
         // Delegated zencodec cause type.
         assert_eq!(
             GifError::UnsupportedOperation(zencodec::UnsupportedOperation::AnimationEncode)
                 .category(),
-            C::UnsupportedOperation
+            C::Request(Req::Unsupported(
+                zencodec::UnsupportedOperation::AnimationEncode
+            ))
         );
 
         // The `At<E>` blanket impl forwards the category and codec name.
         let traced = whereat::at!(GifError::InvalidHeader);
-        assert_eq!(traced.category(), C::MalformedImage);
+        assert_eq!(traced.category(), C::Image(Img::Malformed));
+    }
+
+    /// `gif::DecodingError` variant-by-variant mapping (audit findings #1, #2):
+    /// `EndCodeNotFound` (an incomplete LZW stream) must categorize as
+    /// truncation, never opaque malformed; `OutOfMemory` (a real allocator
+    /// failure) and `MemoryLimit` (the `gif` crate's own configured cap) must
+    /// land on distinct `GifError` variants instead of collapsing together.
+    #[cfg(feature = "std")]
+    #[test]
+    fn gif_decoding_error_conversion_distinguishes_causes() {
+        use zencodec::{
+            CategorizedError, ErrorCategory as C, ImageError as Img, LimitKind as L,
+            ResourceError as Res,
+        };
+
+        let end_code: GifError = gif::DecodingError::EndCodeNotFound.into();
+        assert!(matches!(end_code, GifError::UnexpectedEof));
+        assert_eq!(end_code.category(), C::Image(Img::UnexpectedEof));
+
+        let real_oom: GifError = gif::DecodingError::OutOfMemory.into();
+        assert!(matches!(real_oom, GifError::AllocationFailed { .. }));
+        assert_eq!(real_oom.category(), C::Resource(Res::OutOfMemory));
+
+        let configured_cap: GifError = gif::DecodingError::MemoryLimit.into();
+        assert!(matches!(
+            configured_cap,
+            GifError::MemoryLimitExceeded { .. }
+        ));
+        assert_eq!(
+            configured_cap.category(),
+            C::Resource(Res::Limits(L::Memory))
+        );
     }
 }
