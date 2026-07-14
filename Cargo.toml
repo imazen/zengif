@@ -92,15 +92,11 @@ imgref = { version = "1.12.0", optional = true }
 
 [dev-dependencies]
 # Testing
-# zencodec-testkit: unpublished companion crate providing conformance checks
-# (e.g. `check_decode_truncation_series`). Still git-pinned because the
-# testkit crate itself has not published to crates.io yet (zencodec proper
-# published 0.1.26; testkit is a separate, still-unpublished workspace
-# member). Pinned to the v0.1.26 release tag — content-identical to the
-# published zencodec — and unified with the crates.io dep via the
-# [patch.crates-io] below. Drop for a crates.io version dep once testkit
-# publishes.
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", tag = "v0.1.26" }
+# zencodec-testkit: companion crate providing conformance checks
+# (e.g. `check_decode_truncation_series`). Its zencodec requirement
+# (^0.1.26) resolves from crates.io, same as our own dep — one unified
+# zencodec in the graph, no patch needed.
+zencodec-testkit = "0.1.0"
 almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
@@ -177,10 +173,3 @@ required-features = ["std"]
 name = "decode_bench"
 harness = false
 required-features = ["std"]
-
-[patch.crates-io]
-# zencodec-testkit is unpublished (git dev-dep whose manifest path-deps zencodec).
-# Unify the whole graph on the content-identical released tag until the testkit
-# ships on crates.io — without this, crates.io zencodec + the testkit's path
-# zencodec are two distinct crates and every conformance test fails E0277.
-zencodec = { git = "https://github.com/imazen/zencodec", tag = "v0.1.26" }

@@ -128,22 +128,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ResourceEstimate`: `new(peak, wall_ms: u64)` (was `f32`),
   `with_peak_max(max)` (the `min` arg is gone), and dropped the removed
   `with_output_bytes`. `cargo update -p zencodec` pulled published 0.1.24.
-- **deps: migrate to published `zencodec 0.1.26`; drop the temporary
-  taxonomy git-rev patch.** Removed `[patch.crates-io] zencodec = { git, rev
-  = "44ca79279b" }` (root `Cargo.toml` + `fuzz/Cargo.toml`) now that
-  `zencodec 0.1.26` — which ships the `CategorizedError`/`ErrorCategory`
-  taxonomy (PR #103/#116) and the `Lifecycle` → `Stopped` rename this repo
-  already adopted against the unreleased rev — is on crates.io. No source
-  changes needed: the released API is identical to the git-pinned rev zengif
-  was already built against. The still-unpublished `zencodec-testkit`
-  (dev-dependency only) is re-pinned from the stale rev to the `v0.1.26`
-  release tag (content-identical to the published crate), and the root
-  `[patch.crates-io]` entry is retained — now tag-pinned — solely to unify
-  the testkit's internal `path`-dep on zencodec with the crates.io release
-  (without it they resolve as two distinct crates and every conformance test
-  fails E0277 "multiple different versions of crate `zencodec`"). The fuzz
-  workspace resolves no testkit, so it stays patch-free on plain crates.io
-  0.1.26. Drop the patch + git pin once zencodec-testkit publishes.
+- **deps: migrate to published `zencodec 0.1.26` + `zencodec-testkit 0.1.0`;
+  retire the temporary taxonomy git patches entirely.** Removed
+  `[patch.crates-io] zencodec = { git, rev = "44ca79279b" }` (root
+  `Cargo.toml` + `fuzz/Cargo.toml`) now that `zencodec 0.1.26` — which ships
+  the `CategorizedError`/`ErrorCategory` taxonomy (PR #103/#116) and the
+  `Lifecycle` → `Stopped` rename this repo already adopted against the
+  unreleased rev — is on crates.io. No source changes needed: the released
+  API is identical to the git-pinned rev zengif was already built against.
+  The `zencodec-testkit` dev-dependency is now a plain crates.io dep
+  (`"0.1.0"`, its `^0.1.26` zencodec requirement unifies with ours from the
+  registry). Interim history, preserved for archeology: dropping the patch
+  while the testkit was still git-pinned split the graph into two distinct
+  `zencodec` crates (every conformance test failed E0277 "multiple different
+  versions of crate `zencodec`" on CI); a tag-pinned patch
+  (`tag = "v0.1.26"`, content-identical to the published crate) bridged the
+  gap until the testkit published, then both the git pin and the patch were
+  retired.
 
 ### Added
 
