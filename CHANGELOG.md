@@ -135,8 +135,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   taxonomy (PR #103/#116) and the `Lifecycle` → `Stopped` rename this repo
   already adopted against the unreleased rev — is on crates.io. No source
   changes needed: the released API is identical to the git-pinned rev zengif
-  was already built against. `zencodec-testkit` (dev-dependency only) stays
-  git-pinned — that companion crate remains unpublished.
+  was already built against. The still-unpublished `zencodec-testkit`
+  (dev-dependency only) is re-pinned from the stale rev to the `v0.1.26`
+  release tag (content-identical to the published crate), and the root
+  `[patch.crates-io]` entry is retained — now tag-pinned — solely to unify
+  the testkit's internal `path`-dep on zencodec with the crates.io release
+  (without it they resolve as two distinct crates and every conformance test
+  fails E0277 "multiple different versions of crate `zencodec`"). The fuzz
+  workspace resolves no testkit, so it stays patch-free on plain crates.io
+  0.1.26. Drop the patch + git pin once zencodec-testkit publishes.
 
 ### Added
 
