@@ -55,16 +55,6 @@ test = false
 doc = false
 bench = false
 
-# The fuzz crate is its own cargo workspace, so it does NOT inherit the root
-# Cargo.toml's [patch.crates-io]. Mirror it here so the fuzz targets resolve the
-# same unreleased zencodec (taxonomy: `CategorizedError`/`ErrorCategory`, now
-# the two-level origin-first reshape, PR #116 `caterr-reshape`, plus the
-# zencodec-testkit `check_decode_truncation_series` check, PR #112) that
-# zengif is built against. TEMP: until zencodec 0.1.26 ships (PR #103) — remove
-# this patch and bump the zencodec version once 0.1.26 is published.
-[patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }
-
 # Recommended profile settings for fuzzing
 [profile.release]
 debug = 1

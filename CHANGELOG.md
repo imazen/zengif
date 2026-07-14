@@ -128,6 +128,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ResourceEstimate`: `new(peak, wall_ms: u64)` (was `f32`),
   `with_peak_max(max)` (the `min` arg is gone), and dropped the removed
   `with_output_bytes`. `cargo update -p zencodec` pulled published 0.1.24.
+- **deps: migrate to published `zencodec 0.1.26`; drop the temporary
+  taxonomy git-rev patch.** Removed `[patch.crates-io] zencodec = { git, rev
+  = "44ca79279b" }` (root `Cargo.toml` + `fuzz/Cargo.toml`) now that
+  `zencodec 0.1.26` — which ships the `CategorizedError`/`ErrorCategory`
+  taxonomy (PR #103/#116) and the `Lifecycle` → `Stopped` rename this repo
+  already adopted against the unreleased rev — is on crates.io. No source
+  changes needed: the released API is identical to the git-pinned rev zengif
+  was already built against. `zencodec-testkit` (dev-dependency only) stays
+  git-pinned — that companion crate remains unpublished.
 
 ### Added
 

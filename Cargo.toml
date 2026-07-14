@@ -71,7 +71,7 @@ bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (required, always-on; std-only glue gated on `std`)
-zencodec = { version = "0.1.25" }
+zencodec = { version = "0.1.26" }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
@@ -93,9 +93,10 @@ imgref = { version = "1.12.0", optional = true }
 [dev-dependencies]
 # Testing
 # zencodec-testkit: unpublished companion crate providing conformance checks
-# (e.g. `check_decode_truncation_series`). Pinned to the SAME git rev as the
-# `[patch.crates-io]` zencodec above so both resolve to one unified zencodec.
-# Drop for a crates.io version dep once zencodec 0.1.26 + testkit publish.
+# (e.g. `check_decode_truncation_series`). Still git-pinned because the
+# testkit crate itself has not published to crates.io yet (zencodec proper
+# published 0.1.26; testkit is a separate, still-unpublished workspace
+# member). Drop for a crates.io version dep once testkit publishes.
 zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }
 almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
@@ -173,13 +174,3 @@ required-features = ["std"]
 name = "decode_bench"
 harness = false
 required-features = ["std"]
-
-[patch.crates-io]
-# TEMP: until zencodec 0.1.26 ships (PR #103) — provides the unreleased
-# `CategorizedError` taxonomy (trait + `ErrorCategory`), now reshaped to the
-# two-level origin-first taxonomy (PR #116, `caterr-reshape` branch). This rev
-# also carries the zencodec-testkit `check_decode_truncation_series`
-# conformance check (PR #112), and the `zencodec-testkit` dev-dep is pinned to
-# the SAME rev so both resolve to one unified zencodec. Remove this patch and
-# bump the `zencodec` version dependency once 0.1.26 + testkit publish.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "44ca79279b265ba7dfe01a2b31ef74788429509a" }
