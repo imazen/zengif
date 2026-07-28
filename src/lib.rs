@@ -175,6 +175,8 @@ mod limits;
 #[cfg(feature = "std")]
 mod quantize;
 mod screen;
+#[doc(hidden)]
+pub use screen::__bench_expand;
 mod stats;
 mod types;
 

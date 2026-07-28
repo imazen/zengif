@@ -12,12 +12,46 @@ use crate::limits::Limits;
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, Palette, RawFrame, Rgba};
 
+/// Dev-only access to the palette-expansion kernels, for
+/// `benches/expand_palette.rs`.
+///
+/// NOT public API. These are the hot loops of frame compositing (one call per
+/// row per frame) and were never measured; they are a 256-entry LUT gather,
+/// which AArch64 cannot vectorize (it has no gather instruction), so the
+/// "lets LLVM unroll or vectorize the inner loop" claim on `expand_palette_row`
+/// needed checking rather than trusting.
+#[doc(hidden)]
+pub mod __bench_expand {
+    use crate::types::Rgba;
+
+    pub fn opaque(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
+        super::expand_palette_row(canvas, indices, lut);
+    }
+
+    pub fn transparent(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256], t: u8) {
+        super::expand_palette_row_transparent(canvas, indices, lut, t);
+    }
+}
+
 /// Expand palette indices to RGBA pixels (no transparency).
 ///
 /// Uses fixed-size 16-pixel chunks so LLVM can prove all LUT indices
 /// are in-bounds (u8 → `[Rgba; 256]`) and all array accesses are safe.
-/// This eliminates per-pixel bounds checks and lets LLVM unroll or
-/// vectorize the inner loop.
+/// This eliminates per-pixel bounds checks and lets LLVM unroll the
+/// inner loop.
+///
+/// It does NOT vectorize, and cannot: the body is a 256-entry LUT gather,
+/// and AArch64 has no gather instruction (x86 has one, but it is slower than
+/// scalar loads for 8-bit indices). Measured on aarch64 at 8.6-11.5 GB/s of
+/// output — about one pixel per cycle, i.e. already at the scalar load/store
+/// limit. See `benchmarks/palette_expand_2026-07-28.md`; do not "optimize"
+/// this by restructuring the scalar loop, there is nothing left there.
+///
+/// A NEON `vqtbl1q_u8` path IS 4.41x faster (measured, bit-identical, and
+/// bandwidth-bound at 69.9 GB/s) for palettes of 16 or fewer colors, which is
+/// a large share of real GIFs. It is not implemented here because this crate
+/// is `#![forbid(unsafe_code)]` and magetypes has no table-lookup primitive to
+/// route it through. The benchmark note records the prototype and the blocker.
 #[inline(never)]
 fn expand_palette_row(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
     let len = canvas.len().min(indices.len());
@@ -42,7 +76,9 @@ fn expand_palette_row(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
 /// Expand palette indices to RGBA pixels, skipping transparent index.
 ///
 /// Same chunked approach as `expand_palette_row` but with a conditional
-/// store — only non-transparent indices update the canvas.
+/// store — only non-transparent indices update the canvas. That conditional
+/// costs a measured 4-11% over the opaque path (see the benchmark note); the
+/// same non-vectorizability caveat applies.
 #[inline(never)]
 fn expand_palette_row_transparent(
     canvas: &mut [Rgba],

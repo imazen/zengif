@@ -173,3 +173,7 @@ required-features = ["std"]
 name = "decode_bench"
 harness = false
 required-features = ["std"]
+
+[[bench]]
+name = "expand_palette"
+harness = false
