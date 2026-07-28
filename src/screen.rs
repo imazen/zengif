@@ -47,11 +47,16 @@ pub mod __bench_expand {
 /// limit. See `benchmarks/palette_expand_2026-07-28.md`; do not "optimize"
 /// this by restructuring the scalar loop, there is nothing left there.
 ///
-/// A NEON `vqtbl1q_u8` path IS 4.41x faster (measured, bit-identical, and
-/// bandwidth-bound at 69.9 GB/s) for palettes of 16 or fewer colors, which is
-/// a large share of real GIFs. It is not implemented here because this crate
-/// is `#![forbid(unsafe_code)]` and magetypes has no table-lookup primitive to
-/// route it through. The benchmark note records the prototype and the blocker.
+/// A NEON table-lookup path was prototyped and MEASURED AND REJECTED. It wins
+/// only on tiny palettes and is catastrophic on the common case:
+/// 16 colors 3.59x faster (`vqtbl1q_u8`), 64 colors only 1.32x
+/// (`vqtbl4q_u8`), and **256 colors 0.21x — five times SLOWER** than this
+/// scalar loop. Above 64 entries the lookup needs four `vqtbl4q_u8` plus ORs
+/// per channel, and 16 table registers per channel across 4 channels exceeds
+/// the 32-register NEON file, so the tables reload every iteration. Most
+/// real-world GIFs use more than 64 colors, so this loop is the right
+/// implementation. Do not re-attempt it; see
+/// `benchmarks/palette_expand_2026-07-28.md` for the numbers.
 #[inline(never)]
 fn expand_palette_row(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
     let len = canvas.len().min(indices.len());

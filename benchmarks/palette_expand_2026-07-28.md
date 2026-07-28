@@ -26,40 +26,51 @@ That is roughly **one pixel per cycle** — the scalar load/store limit for a de
 There is nothing left to win by restructuring the scalar loop; LLVM's unrolling is already
 doing the available work.
 
-## The real win, measured but BLOCKED
+## A NEON table-lookup path — MEASURED AND REJECTED
 
-For palettes of ≤16 colors — a large share of real GIFs — NEON's `vqtbl1q_u8` does the whole
-lookup in one instruction per channel. Deinterleave the first 16 palette entries into R/G/B/A
-byte tables once, then per 16 pixels: one `vld1q_u8` of the indices, four `vqtbl1q_u8`, one
-`vst4q_u8` to interleave the result back to RGBA.
+`vqtbl1q_u8` does a 16-entry byte table lookup in one instruction, so for small palettes you
+can deinterleave the palette into R/G/B/A byte tables once, then per 16 pixels do one
+`vld1q_u8` of the indices, four table lookups, and one `vst4q_u8` to interleave back to RGBA.
 
-Prototype measured against the shipping scalar kernel, 1920-px row, 16-color noise, 200k
-iterations, arms interleaved to share thermal conditions:
+Prototyped against the shipping scalar kernel, 1920-px row, 100k iterations, arms interleaved,
+output asserted bit-identical at every size:
 
-```
-bit-identical: true
-scalar : 485 ns/row  15.8 GB/s
-neon   : 110 ns/row  69.9 GB/s   speedup 4.41x
-```
+| palette | scalar | NEON TBL | result |
+|---|---|---|---|
+| 16 | 20.4 GB/s | 73.4 GB/s | **3.59×** |
+| 64 | 26.3 GB/s | 34.8 GB/s | 1.32× |
+| 256 | 26.3 GB/s | 5.6 GB/s | **0.21× — 5× SLOWER** |
 
-**4.41×, bit-identical.** At 69.9 GB/s it is at this host's single-core memory-bandwidth
-ceiling, i.e. it becomes optimal rather than merely faster.
+**Verdict: do not implement.** The win exists only at ≤16 colors and inverts badly at 256.
 
-### Why it is not implemented
+### Why it collapses above 64
 
-Two things block it, both deliberate:
+`vqtbl1q_u8` covers a 16-byte table and `vqtbl4q_u8` a 64-byte table, both in one instruction.
+There is nothing wider. A 256-entry lookup therefore needs **four** `vqtbl4q_u8` per channel
+(each covering one 64-entry block, out-of-range lanes returning zero) OR'd together. That is
+16 table registers live *per channel*; across four channels it needs 64, and NEON has 32. The
+tables reload from memory every iteration, which costs more than the scalar gather it was
+meant to replace.
 
-1. zengif is `#![forbid(unsafe_code)]` (`src/lib.rs:152`), so raw `core::arch` intrinsics are
-   not available here.
-2. **magetypes has no table-lookup primitive.** `u8x16` exposes splat/load/min/max/blend/
-   compare/shift/bitmask but nothing that maps to `vqtbl1q_u8`. Verified there is no `vqtbl*`
-   anywhere in magetypes; the only `_mm_shuffle_epi8` uses are internal to `x86_v3.rs` for an
-   unrelated pack.
+The 64-colour case fits in registers but only reaches 1.32×, because four `vqtbl4q_u8` still
+tie up 16 of the 32 registers and leave little for the rest of the loop.
 
-So the fix is not a zengif change — it is a **missing primitive in magetypes**, and adding one
-is a public-API addition to a foundational crate, which needs sign-off.
+### Why that settles it
 
-### What the primitive should be
+Real-world GIFs are predominantly >64 colours (photographic and video-derived content is
+almost always the full 256). The in-repo test corpus is *not* evidence either way — it is
+synthetic minimal fixtures, 10 of 20 files being 2-colour, with a single 256-colour file — so
+it cannot be used to argue the small-palette case is common.
+
+So the scalar loop is the correct implementation for the case that matters, and the
+`#![forbid(unsafe_code)]` + missing-magetypes-primitive blockers are moot: there is nothing
+worth unblocking. No new public API was added to magetypes or garb, and the kernel is not
+duplicated into zengif/zenpng.
+
+### For the record: what such a primitive would have looked like
+
+(Retained only so a future session does not re-derive it before finding the rejection above.)
+
 
 A 16-entry byte table lookup on `u8x16`. It maps 1:1 to all three target ISAs:
 
@@ -80,6 +91,3 @@ Beyond GIF this unblocks the whole LUT-indexed kernel class the workspace has be
 vectorize on ARM — palette expand, byte transforms, quantization LUTs — which the archmage
 examples list as target shapes.
 
-Palettes of 17–64 colors have a NEON-only answer (`vqtbl4q_u8`, 64-byte table, still one
-instruction) with no single-instruction x86 equivalent, so they would need a separate
-NEON-specific path and are out of scope for a portable primitive.
