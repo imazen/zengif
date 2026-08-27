@@ -797,14 +797,18 @@ fn pixels_to_gif_rgba(
     // instead of leaking into decoded alpha.
     if desc == PixelDescriptor::RGBX8_SRGB {
         let rgba: Vec<crate::Rgba> = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
             .collect();
         return Ok((rgba, w, h));
     }
     if desc == PixelDescriptor::BGRX8_SRGB {
         let rgba: Vec<crate::Rgba> = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| crate::Rgba::rgb(c[2], c[1], c[0]))
             .collect();
         return Ok((rgba, w, h));
@@ -812,7 +816,9 @@ fn pixels_to_gif_rgba(
 
     let rgba = match (desc.channel_type(), desc.layout()) {
         (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgb) => bytes
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
             .collect(),
         (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => {
@@ -823,13 +829,17 @@ fn pixels_to_gif_rgba(
             bytes.iter().map(|&v| crate::Rgba::rgb(v, v, v)).collect()
         }
         (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Bgra) => bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| crate::Rgba::new(c[2], c[1], c[0], c[3]))
             .collect(),
         (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgb) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
-                .chunks_exact(12)
+                .as_chunks::<12>()
+                .0
+                .iter()
                 .map(|c| {
                     let r = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
                     let g = f32::from_ne_bytes([c[4], c[5], c[6], c[7]]);
@@ -845,7 +855,9 @@ fn pixels_to_gif_rgba(
         (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgba) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
-                .chunks_exact(16)
+                .as_chunks::<16>()
+                .0
+                .iter()
                 .map(|c| {
                     let r = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
                     let g = f32::from_ne_bytes([c[4], c[5], c[6], c[7]]);
@@ -863,7 +875,9 @@ fn pixels_to_gif_rgba(
         (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Gray) => {
             use linear_srgb::default::linear_to_srgb_u8;
             bytes
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|c| {
                     let v = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
                     let s = linear_to_srgb_u8(v.clamp(0.0, 1.0));
@@ -1465,7 +1479,9 @@ fn negotiate_format(pixels: PixelBuffer, preferred: &[PixelDescriptor]) -> Pixel
     if preferred.contains(&PixelDescriptor::RGB8_SRGB) {
         let raw = pixels.into_vec();
         let rgb: Vec<u8> = raw
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|c| [c[0], c[1], c[2]])
             .collect();
         return PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB)

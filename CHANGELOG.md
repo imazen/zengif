@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Frame-diff transparency markers were silently encoded onto opaque palette
+  entries, repainting unchanged animation regions** (issue #14, 2026-08-26
+  ultracode sweep, three adversarially verified findings): (1) the shared
+  zenquant palette carried no transparent slot for fully-opaque multi-frame
+  sources, so diff markers (a==0) were remapped onto ordinary colors — the
+  backend now reserves a dedicated slot (255-color cap + appended entry) for
+  multi-frame or transparent streams; (2) caller-supplied pass-through
+  palettes with no transparent entry nearest-RGB'd markers onto the darkest
+  entry — differencing is now disabled for such palettes (whole frames,
+  still exact); (3) the quantette backend declared the opaque entry nearest
+  to black as the GIF transparent index, making legitimately dark pixels
+  see-through — it now reserves a dedicated transparent slot and never
+  aliases it onto a color entry. A backend-independent guard in
+  `prepare_frame_quantized` re-encodes the full frame (or errors) whenever
+  transparent pixels come back without a transparent index, so no future
+  backend can silently repaint. `Encoder::finish()` with zero frames now
+  returns `InvalidEncoderState` instead of panicking.
+- New decode-verifying regression suite (`tests/sweep_regressions.rs`) with
+  sparse-change content whose diff rectangle is full of markers; the
+  shared-palette invariant is mutation-verified (fails with both defense
+  layers disabled). Cleared the new clippy `-D warnings` wall.
+
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x)
      release. Add items here as you discover them. Do NOT ship these piecemeal —

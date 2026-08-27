@@ -101,7 +101,7 @@ fn decode_gif_rs(data: &[u8]) -> usize {
 /// Measures just the swizzle overhead, separate from decode, to
 /// quantify the garb improvement for BGRA-requesting callers.
 fn swizzle_scalar(data: &mut [u8]) {
-    for chunk in data.chunks_exact_mut(4) {
+    for chunk in data.as_chunks_mut::<4>().0 {
         chunk.swap(0, 2);
     }
 }

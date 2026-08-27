@@ -23,8 +23,11 @@ use quantette::{ImageBuf, Pipeline, QuantizeMethod};
 pub struct QuantetteQuantizer {
     /// Cached shared palette (GIF RGB bytes).
     shared_palette: Option<Vec<u8>>,
-    /// Cached palette as Srgb for remapping.
+    /// Cached palette as Srgb for remapping (real color entries only —
+    /// excludes the reserved transparent slot).
     shared_srgb: Option<Vec<Srgb<u8>>>,
+    /// Reserved transparent slot in the shared palette, if any.
+    shared_transparent: Option<u8>,
 }
 
 impl QuantetteQuantizer {
@@ -33,6 +36,7 @@ impl QuantetteQuantizer {
         Self {
             shared_palette: None,
             shared_srgb: None,
+            shared_transparent: None,
         }
     }
 
@@ -56,13 +60,18 @@ impl QuantetteQuantizer {
         pixels.iter().map(|p| Srgb::new(p.r, p.g, p.b)).collect()
     }
 
-    fn find_transparent_index(pixels: &[Rgba], indices: &[u8]) -> Option<u8> {
-        // Find the most common index assigned to transparent source pixels
-        pixels
-            .iter()
-            .zip(indices.iter())
-            .find(|(px, _)| px.a < 128)
-            .map(|(_, &idx)| idx)
+    /// quantette quantizes RGB only, so transparency needs a DEDICATED
+    /// palette slot. The old code returned "the first index assigned to a
+    /// transparent source pixel" — but that pixel was clustered by its RGB
+    /// (typically black), so an ordinary OPAQUE entry got declared as the
+    /// GIF transparent index and every dark pixel sharing it became
+    /// see-through (sweep issue #14). Instead: cap the quantized palette at
+    /// 255, append a reserved entry, and remap all a<128 pixels onto it.
+    fn append_transparent_slot(palette_bytes: &mut Vec<u8>) -> u8 {
+        debug_assert!(palette_bytes.len() <= 255 * 3, "palette must be capped");
+        let idx = (palette_bytes.len() / 3) as u8;
+        palette_bytes.extend_from_slice(&[0, 0, 0]);
+        idx
     }
 }
 
@@ -81,6 +90,8 @@ impl QuantizerTrait for QuantetteQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
+        let has_transparency = pixels.iter().any(|p| p.a < 128);
+
         let srgb_pixels = Self::pixels_to_srgb(pixels);
         let image = ImageBuf::new(width as u32, height as u32, srgb_pixels).map_err(|_e| {
             at!(GifError::QuantizationFailed {
@@ -88,18 +99,34 @@ impl QuantizerTrait for QuantetteQuantizer {
             })
         })?;
 
-        let pipeline = Self::build_pipeline(config.dithering);
+        let mut pipeline = Self::build_pipeline(config.dithering);
+        if has_transparency {
+            // Leave room for the reserved transparent entry.
+            pipeline = pipeline
+                .palette_size(quantette::PaletteSize::try_from(255u16).expect("255 <= 256"));
+        }
         let indexed = pipeline
             .input_image(image.as_ref())
             .output_srgb8_indexed_image();
 
-        let palette_bytes: Vec<u8> = indexed
+        let mut palette_bytes: Vec<u8> = indexed
             .palette()
             .iter()
             .flat_map(|c| [c.red, c.green, c.blue])
             .collect();
-        let indices = indexed.indices().to_vec();
-        let transparent_index = Self::find_transparent_index(pixels, &indices);
+        let mut indices = indexed.indices().to_vec();
+
+        let transparent_index = if has_transparency {
+            let slot = Self::append_transparent_slot(&mut palette_bytes);
+            for (px, idx) in pixels.iter().zip(indices.iter_mut()) {
+                if px.a < 128 {
+                    *idx = slot;
+                }
+            }
+            Some(slot)
+        } else {
+            None
+        };
 
         Ok(QuantizedFrame {
             palette: palette_bytes,
@@ -118,6 +145,12 @@ impl QuantizerTrait for QuantetteQuantizer {
     ) -> Result<Vec<u8>> {
         let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
 
+        // Multi-frame streams need a transparent slot for frame-diff markers
+        // (unchanged pixels are encoded as transparent); source transparency
+        // needs one regardless (sweep issue #14).
+        let needs_transparent = config.use_background
+            && (frames.len() > 1 || frames.iter().any(|f| f.iter().any(|p| p.a < 128)));
+
         let mut all_srgb: Vec<Srgb<u8>> = Vec::new();
         for &idx in &sample_indices {
             stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
@@ -133,7 +166,11 @@ impl QuantizerTrait for QuantetteQuantizer {
             })
         })?;
 
-        let pipeline = Self::build_pipeline(config.dithering);
+        let mut pipeline = Self::build_pipeline(config.dithering);
+        if needs_transparent {
+            pipeline = pipeline
+                .palette_size(quantette::PaletteSize::try_from(255u16).expect("255 <= 256"));
+        }
         let palette = pipeline
             .input_image(image.as_ref())
             .output_srgb8_palette()
@@ -143,11 +180,13 @@ impl QuantizerTrait for QuantetteQuantizer {
                 })
             })?;
 
-        let palette_bytes: Vec<u8> = palette
+        let mut palette_bytes: Vec<u8> = palette
             .iter()
             .flat_map(|c| [c.red, c.green, c.blue])
             .collect();
         let srgb_vec: Vec<Srgb<u8>> = palette.iter().copied().collect();
+        self.shared_transparent =
+            needs_transparent.then(|| Self::append_transparent_slot(&mut palette_bytes));
         self.shared_palette = Some(palette_bytes.clone());
         self.shared_srgb = Some(srgb_vec);
 
@@ -173,10 +212,20 @@ impl QuantizerTrait for QuantetteQuantizer {
             })
         })?;
 
-        // Nearest-neighbor remap: find closest palette entry for each pixel
+        // Nearest-neighbor remap over the REAL color entries; transparent
+        // pixels (source alpha or frame-diff markers) go to the reserved
+        // slot — never to an opaque entry (sweep issue #14).
+        let slot = self.shared_transparent;
+        let mut used_transparent = false;
         let indices: Vec<u8> = pixels
             .iter()
             .map(|px| {
+                if px.a < 128
+                    && let Some(t) = slot
+                {
+                    used_transparent = true;
+                    return t;
+                }
                 let mut best_idx = 0u8;
                 let mut best_dist = u32::MAX;
                 for (i, pal) in srgb_palette.iter().enumerate() {
@@ -193,17 +242,16 @@ impl QuantizerTrait for QuantetteQuantizer {
             })
             .collect();
 
-        let transparent_index = Self::find_transparent_index(pixels, &indices);
-
         Ok(QuantizedFrame {
             palette: palette_bytes.clone(),
             pixels: indices,
-            transparent_index,
+            transparent_index: used_transparent.then_some(slot).flatten(),
         })
     }
 
     fn reset(&mut self) {
         self.shared_palette = None;
         self.shared_srgb = None;
+        self.shared_transparent = None;
     }
 }

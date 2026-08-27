@@ -214,7 +214,7 @@ mod tests {
 
         // Every entry is a true gray, and round-tripping each pixel through its
         // index reproduces the original value exactly (lossless).
-        for tri in qf.palette.chunks_exact(3) {
+        for tri in qf.palette.as_chunks::<3>().0.iter() {
             assert_eq!(tri[0], tri[1]);
             assert_eq!(tri[1], tri[2]);
         }

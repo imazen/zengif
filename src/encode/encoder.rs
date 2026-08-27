@@ -820,9 +820,14 @@ impl<'a> Encoder<'a> {
             })
         })?;
 
-        // Check if we can optimize using frame differencing
+        // Check if we can optimize using frame differencing. Diff markers are
+        // encoded as the palette's transparent entry — a caller palette with
+        // NO transparent entry cannot represent them: map_pixels would
+        // nearest-RGB the (0,0,0,0) markers onto the darkest opaque entry and
+        // paint unchanged regions near-black (sweep issue #14). Whole frames
+        // only for such palettes.
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) =
-            if self.config.use_transparency {
+            if self.config.use_transparency && palette.find_transparent_index().is_some() {
                 if let Some(ref prev) = self.previous_frame {
                     if let Some(diff) = compute_frame_diff_pooled(
                         &input.pixels,
@@ -913,7 +918,14 @@ impl<'a> Encoder<'a> {
             && self
                 .gray_mode
                 .as_ref()
-                .is_none_or(|g| g.transparent_index().is_some());
+                .is_none_or(|g| g.transparent_index().is_some())
+            // A caller-supplied pass-through palette without a transparent
+            // entry cannot represent diff markers (sweep issue #14; same
+            // rule as the gray-mode guard above).
+            && input
+                .palette
+                .as_ref()
+                .is_none_or(|p| p.find_transparent_index().is_some());
 
         // Check if we can optimize using frame differencing
         let (frame_pixels, frame_left, frame_top, frame_width, frame_height) = if allow_diff {
@@ -1085,8 +1097,50 @@ impl<'a> Encoder<'a> {
                 )
             };
 
-        // Return buffer to scratch for reuse
-        self.scratch.frame_pixels = frame_pixels;
+        // Backend-independent guard (sweep issue #14): transparent pixels in
+        // the prepared frame — frame-diff markers (a == 0) or source
+        // transparency — MUST come back mapped to a transparent index. If the
+        // backend could not represent them (shared palette without a reserved
+        // slot), shipping this frame would paint unchanged/transparent regions
+        // with an opaque color. Re-encode the FULL frame independently instead.
+        let had_transparent = frame_pixels.iter().any(|p| p.a < 128);
+        let (palette_bytes, pixels, transparent_index, use_local_palette, geom) =
+            if had_transparent && transparent_index.is_none() {
+                self.scratch.frame_pixels = frame_pixels;
+                let background = self.previous_frame.as_deref();
+                let per_frame = self.quantizer.quantize_frame(
+                    &input.pixels,
+                    input.width,
+                    input.height,
+                    background,
+                    &quant_config,
+                )?;
+                // The redo may still lack a transparent index if the SOURCE
+                // itself had transparency the backend cannot express; that is
+                // a hard error rather than silent corruption.
+                if input.pixels.iter().any(|p| p.a < 128) && per_frame.transparent_index.is_none() {
+                    return Err(at!(GifError::QuantizationFailed {
+                        message: "quantizer produced no transparent index for transparent input"
+                    }));
+                }
+                (
+                    per_frame.palette,
+                    per_frame.pixels,
+                    per_frame.transparent_index,
+                    true,
+                    (0u16, 0u16, input.width, input.height),
+                )
+            } else {
+                self.scratch.frame_pixels = frame_pixels;
+                (
+                    palette_bytes,
+                    pixels,
+                    transparent_index,
+                    use_local_palette,
+                    (frame_left, frame_top, frame_width, frame_height),
+                )
+            };
+        let (frame_left, frame_top, frame_width, frame_height) = geom;
 
         // If we're using the global color table and the shared palette was
         // accurate enough, omit the local color table to save ~768 bytes.
@@ -1128,15 +1182,17 @@ impl<'a> Encoder<'a> {
         ))]
         self.flush_buffer()?;
 
-        // If encoder was never created (0 frames with deferred creation),
-        // return the pending writer directly.
-        let mut output = if !self.buffer.is_empty() {
+        // If the encoder was never created (0 frames with deferred shared-
+        // palette creation), both the pending buffer AND self.encoder are
+        // empty — the old `.expect()` panicked here (sweep issue #14).
+        let mut output = if let Some(encoder) = self.encoder {
+            encoder.into_inner().map_err(|e| at!(GifError::from(e)))?
+        } else if !self.buffer.is_empty() {
             self.buffer
         } else {
-            self.encoder
-                .expect("encoder should exist after flush")
-                .into_inner()
-                .map_err(|e| at!(GifError::from(e)))?
+            return Err(at!(GifError::InvalidEncoderState {
+                message: "cannot finish a GIF with no frames"
+            }));
         };
 
         // Ensure GIF trailer byte is present.

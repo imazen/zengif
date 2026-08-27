@@ -238,7 +238,9 @@ impl Palette {
     /// The slice must have a length divisible by 3.
     pub fn from_rgb_bytes(bytes: &[u8]) -> Self {
         let colors = bytes
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| Rgba::rgb(c[0], c[1], c[2]))
             .collect();
         Self { colors }
@@ -710,7 +712,9 @@ impl FrameInput {
     /// Create from raw RGBA bytes.
     pub fn from_bytes(width: u16, height: u16, delay: u16, bytes: &[u8]) -> Self {
         let pixels = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| Rgba::new(c[0], c[1], c[2], c[3]))
             .collect();
         Self {

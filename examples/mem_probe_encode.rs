@@ -115,7 +115,9 @@ fn main() {
         px * 3
     );
     let pixels: Vec<Rgba> = data
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| Rgba::rgb(c[0], c[1], c[2]))
         .collect();
 

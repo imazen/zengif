@@ -64,11 +64,11 @@ fn expand_palette_row(canvas: &mut [Rgba], indices: &[u8], lut: &[Rgba; 256]) {
     let (idx_main, idx_tail) = indices[..len].split_at(len / 16 * 16);
 
     for (out, inp) in canvas_main
-        .chunks_exact_mut(16)
-        .zip(idx_main.chunks_exact(16))
+        .as_chunks_mut::<16>()
+        .0
+        .iter_mut()
+        .zip(idx_main.as_chunks::<16>().0.iter())
     {
-        let inp: &[u8; 16] = inp.try_into().unwrap();
-        let out: &mut [Rgba; 16] = out.try_into().unwrap();
         for i in 0..16 {
             out[i] = lut[inp[i] as usize];
         }
@@ -96,11 +96,11 @@ fn expand_palette_row_transparent(
     let (idx_main, idx_tail) = indices[..len].split_at(len / 16 * 16);
 
     for (out, inp) in canvas_main
-        .chunks_exact_mut(16)
-        .zip(idx_main.chunks_exact(16))
+        .as_chunks_mut::<16>()
+        .0
+        .iter_mut()
+        .zip(idx_main.as_chunks::<16>().0.iter())
     {
-        let inp: &[u8; 16] = inp.try_into().unwrap();
-        let out: &mut [Rgba; 16] = out.try_into().unwrap();
         for i in 0..16 {
             if inp[i] != transparent_idx {
                 out[i] = lut[inp[i] as usize];

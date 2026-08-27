@@ -14,6 +14,13 @@ use whereat::at;
 pub struct ZenquantQuantizer {
     /// Cached QuantizeResult for shared palette mode.
     cached_result: Option<zenquant::QuantizeResult>,
+    /// Shared palette bytes as committed to the GIF global color table
+    /// (may carry an appended reserved transparent entry).
+    shared_palette_bytes: Option<Vec<u8>>,
+    /// Reserved transparent slot appended to the shared palette when the
+    /// stream needs transparency (frame-diff markers / transparent source)
+    /// but zenquant's palette carries no transparent entry of its own.
+    shared_transparent: Option<u8>,
 }
 
 impl ZenquantQuantizer {
@@ -21,6 +28,8 @@ impl ZenquantQuantizer {
     pub fn new() -> Self {
         Self {
             cached_result: None,
+            shared_palette_bytes: None,
+            shared_transparent: None,
         }
     }
 
@@ -119,7 +128,20 @@ impl QuantizerTrait for ZenquantQuantizer {
     ) -> Result<Vec<u8>> {
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
-        let zq_config = Self::make_config(config);
+        // Multi-frame streams need a transparent slot for frame-diff markers
+        // (unchanged pixels are encoded as transparent); a transparent source
+        // needs one regardless. zenquant only reserves an entry when the
+        // INPUT contains transparency, so for typical fully-opaque animations
+        // we cap the palette at 255 and append a reserved slot ourselves
+        // (sweep issue #14 — without it, diff markers were nearest-RGB-mapped
+        // onto an opaque entry and unchanged regions were repainted).
+        let needs_transparent = config.use_background
+            && (frames.len() > 1 || frames.iter().any(|f| f.iter().any(|p| p.a < 128)));
+
+        let mut zq_config = Self::make_config(config);
+        if needs_transparent {
+            zq_config = zq_config.with_max_colors(255);
+        }
         let sample_indices = compute_sample_indices(frames.len(), config.max_palette_frames);
 
         // Build ImgRef slices for sampled frames
@@ -141,8 +163,17 @@ impl QuantizerTrait for ZenquantQuantizer {
             })
         })?;
 
-        let palette_bytes = Self::palette_to_bytes(&result);
+        let mut palette_bytes = Self::palette_to_bytes(&result);
+        self.shared_transparent = if needs_transparent && result.transparent_index().is_none() {
+            debug_assert!(palette_bytes.len() <= 255 * 3);
+            let idx = (palette_bytes.len() / 3) as u8;
+            palette_bytes.extend_from_slice(&[0, 0, 0]);
+            Some(idx)
+        } else {
+            result.transparent_index()
+        };
         self.cached_result = Some(result);
+        self.shared_palette_bytes = Some(palette_bytes.clone());
 
         Ok(palette_bytes)
     }
@@ -172,29 +203,48 @@ impl QuantizerTrait for ZenquantQuantizer {
                 })
             })?;
 
-        let transparent_index = result.transparent_index();
-        let palette_bytes = Self::palette_to_bytes(&result);
+        // Prefer the remap's own transparent entry; fall back to the slot
+        // reserved at shared-palette build time (sweep issue #14).
+        let transparent_index = result.transparent_index().or(self.shared_transparent);
+        // The frame must reference the palette as COMMITTED to the global
+        // color table (which may carry the appended reserved entry).
+        let palette_bytes = self
+            .shared_palette_bytes
+            .clone()
+            .unwrap_or_else(|| Self::palette_to_bytes(&result));
 
-        // Post-process: ensure alpha==0 pixels map to transparent index.
-        // Only remap if we have a valid transparent palette entry.
+        // Post-process: ensure alpha==0 pixels map to the transparent index.
         let mut indices = result.indices().to_vec();
+        let mut used_transparent = false;
         if let Some(ti) = transparent_index {
             for (i, p) in pixels.iter().enumerate() {
                 if p.a == 0 {
                     indices[i] = ti;
+                    used_transparent = true;
                 }
             }
         }
 
+        // Declare the transparent index whenever zenquant's own remap used
+        // one (its indices may already reference it beyond our a==0 loop);
+        // the reserved fallback slot is declared only when actually used.
+        let declared = match (result.transparent_index(), used_transparent) {
+            (Some(ti), _) => Some(ti),
+            (None, true) => self.shared_transparent,
+            (None, false) => None,
+        };
+
         Ok(QuantizedFrame {
             palette: palette_bytes,
             pixels: indices,
-            transparent_index,
+            transparent_index: declared,
         })
     }
 
     fn reset(&mut self) {
         self.cached_result = None;
+        self.shared_palette_bytes = None;
+        self.shared_transparent = None;
     }
 }
 
