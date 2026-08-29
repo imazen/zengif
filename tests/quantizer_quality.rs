@@ -36,16 +36,25 @@ fn decode_png(path: &Path) -> Option<(Vec<Rgba>, u32, u32)> {
 
     // Convert to RGBA
     let pixels: Vec<Rgba> = match info.color_type {
+        // `as_chunks::<N>().0` is the exact equivalent of `chunks_exact(N)`:
+        // both yield only complete N-byte groups and drop any trailing partial
+        // group (`.1` here, `.remainder()` there), which nothing below consumes.
         png::ColorType::Rgba => buf[..info.buffer_size()]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| Rgba::new(c[0], c[1], c[2], c[3]))
             .collect(),
         png::ColorType::Rgb => buf[..info.buffer_size()]
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| Rgba::rgb(c[0], c[1], c[2]))
             .collect(),
         png::ColorType::GrayscaleAlpha => buf[..info.buffer_size()]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| Rgba::new(c[0], c[0], c[0], c[1]))
             .collect(),
         png::ColorType::Grayscale => buf[..info.buffer_size()]

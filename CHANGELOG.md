@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI was red on `Clippy` and `Feature permutations`** (run 33249204557) after
+  `8a2b785a` triggered the first full run in a while. Neither failure came from
+  that commit; it exposed two pieces of standing debt.
+  - `Clippy (all features)` failed on three `chunks_exact_to_as_chunks`
+    errors in `tests/quantizer_quality.rs` — new on stable Rust 1.98, and
+    denied by `-D warnings`. The PNG→RGBA helper now uses
+    `as_chunks::<N>().0.iter()` at all three sites (N = 4/3/2 for RGBA, RGB
+    and grayscale+alpha). MSRV is 1.93, well past the 1.88 that stabilised
+    `as_chunks`. Byte-identity was measured, not assumed: the pre-change and
+    post-change helpers were run side by side over 32 synthetic PNGs (every
+    colour type the helper handles × 8 sizes including 1×1, single-row,
+    single-column and prime dimensions) plus the 5 real corpus images up to
+    8.5 MP, and all 37 decoded outputs matched exactly with identical
+    FNV-1a-128 digests; the 8 Indexed inputs returned `None` from both. The
+    dropped-tail semantics `as_chunks` shares with `chunks_exact` were checked
+    exhaustively over all 195 (length ≤ 64, N ∈ {2,3,4}) combinations,
+    remainders included. Full suite, all nine feature permutations and both
+    clippy configurations green afterwards.
+
 - **The `Fuzz regression` CI job could not fail.** It ran
   `cargo test --test fuzz_regression 2>/dev/null || echo "No regression test
   found…"` inside an `if [ -d fuzz/regression ]` guard, so a genuinely failing
