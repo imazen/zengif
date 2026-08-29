@@ -40,15 +40,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --check` is clean, and `cargo hack check --rust-version` passes at the
   declared MSRV of 1.93.
 
-  **Held back, needing an owner decision:** `color_quant` `1.1.0` → `2.0.0` and
-  `quantette` `0.5.1` → `0.6.0`. Both are optional palette-quantizer backends,
-  and both are leading-digit bumps — for a `0.x` crate and for a `1.x` crate
-  alike that is the author signalling a break. Choosing output colors is the
-  entire job of these crates, and zengif has no byte-golden coverage of either
-  backend's palette, so the suite cannot prove the quantized output is stable
-  across the bump. Taking them would risk silently changing encoded GIFs for
-  anyone using `--features color_quant` / `--features quantette`. Each needs a
-  palette diff against the current version before it lands, not a routine bump.
+  Both optional palette-quantizer backends had a major version available, and
+  zengif has no byte-golden coverage of either one's palette, so neither could
+  be judged from the test suite. Both were measured directly instead, with a
+  harness linking the old and new versions *simultaneously* (they are
+  semver-incompatible, so Cargo links both) and replaying zengif's own call
+  sequence against each on identical input. The two answers came out opposite:
+
+  - **`quantette` `"0.5.1"` → `"0.6.0"` — taken.** 720 configurations (4 content
+    classes: photo / screenshot / line-art / uniform noise × 3 sizes × Wu and
+    k-means × palette sizes 2/16/64/**255**/256 — 255 is the value
+    `quantette_impl.rs` actually passes, reserving an index for transparency ×
+    dithering off and on × `sampling_factor` 1.0/0.5/0.25) produced **zero**
+    differences: every palette and every index buffer byte-identical. The
+    comparison also spans a SIMD and RNG backend change (0.5.1 pulls
+    `wide 0.8.3` + `rand 0.9`, 0.6.0 pulls `wide 1.7.0` + `rand 0.10`) and is
+    still bit-exact. The API zengif uses compiles unchanged.
+
+  - **`color_quant` stays at `"1.1.0"`; `2.0.0` changes pixels.** Measured over
+    75 configurations replaying `ColorQuant`'s NeuQuant path
+    (`NeuQuant::new(sampling_factor, 256, …)` → `color_map_rgba()` →
+    `index_of()`, with zengif's own quality → sampling-factor mapping):
+    **45 of 75 differ**. The palette is byte-identical in every case — it is
+    `index_of()` that now selects different entries, so pixels are remapped to
+    genuinely different colors. Every photo, alpha-bearing and noise
+    configuration diverges (only flat screenshot / line-art content, where
+    palette hits are exact, is unaffected); worst case **41% of pixels changed,
+    max per-channel delta 211/255, mean 76**. That is a visible image change,
+    not rounding noise, so it needs an owner decision and a quality
+    re-evaluation rather than a routine bump.
+
   (`fast-ssim2` 0.7.1 → 0.8.2 is also behind, but it is a zen-family crate and
   out of scope for a third-party pass.)
 
