@@ -71,11 +71,11 @@ bytemuck = { version = "1.21.0", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.18", default-features = false }
 
 # Shared codec traits (required, always-on; std-only glue gated on `std`)
-zencodec = { version = "0.1.26" }
+zencodec = { version = ">=0.1.26, <0.3.0" }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
-zenpixels = { version = "0.2.10", default-features = false }
+zenpixels = { version = ">=0.2.10, <0.4.0", default-features = false }
 linear-srgb = { version = "0.6.7"}
 garb = { version = "0.2.5", default-features = false }
 
@@ -96,7 +96,7 @@ imgref = { version = "1.12.0", optional = true }
 # (e.g. `check_decode_truncation_series`). Its zencodec requirement
 # (^0.1.26) resolves from crates.io, same as our own dep — one unified
 # zencodec in the graph, no patch needed.
-zencodec-testkit = "0.1.0"
+zencodec-testkit = ">=0.1.0, <0.3.0"
 almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"

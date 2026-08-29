@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`zencodec` / `zencodec-testkit` / `zenpixels` requirements now span the
+  published minor AND the next one**: `zencodec >=0.1.26, <0.3.0`,
+  `zencodec-testkit >=0.1.0, <0.3.0`, `zenpixels >=0.2.10, <0.4.0`. For a `0.x`
+  crate Cargo treats the minor as the major, so a plain `"0.1.26"` meant
+  `^0.1.26` = `>=0.1.26, <0.2.0` and a `zencodec 0.2.0` release would have been
+  invisible until this manifest was hand-edited — the coordinated wave the
+  `zencodec 0.1.26` rollout cost every consumer repo. Floors are unchanged and
+  nothing newer is published, so resolution is identical: `cargo metadata
+  --all-features` resolves exactly one copy of each, and the tracked
+  `Cargo.lock` is unchanged by this commit. Caveat worth knowing before
+  `zencodec 0.2.0` ships: the *published* `zencodec-testkit 0.1.0` still
+  declares `zencodec ^0.1.26` (read from `cargo metadata`, not assumed), so it
+  must republish with its own widened range first or this dev-dep graph would
+  carry two `zencodec` copies whose types do not unify. The standing
+  current-plus-next rule is documented in the zencodec repo's `CLAUDE.md`.
+
 ### Added
 
 - `GifError::InvalidDecoderState` — the typed refusal returned when the
