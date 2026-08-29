@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
+  concurrency group on `${{ github.head_ref || github.run_id }}`.
+  `github.head_ref` is populated only for `pull_request` events, so on a push it
+  was empty and the group fell through to `github.run_id` — unique per run, so no
+  two pushes ever shared a group and `cancel-in-progress` could never fire. Two
+  pushes 2 minutes apart on 2026-08-29 both ran their full matrices to
+  completion. Now keyed on `${{ github.ref }}`, which is set for both event
+  types, so PR cancellation is unchanged and consecutive pushes supersede each
+  other.
+
 - **CI was red on `Clippy` and `Feature permutations`** — and had been for two
   days across two commits. `510e7a88` (2026-08-27) first went red on both jobs
   (run 33036617013) with the identical three `chunks_exact` errors at
