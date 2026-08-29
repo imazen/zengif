@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compositing canvas has been moved out and another frame is requested. Additive
   on a `#[non_exhaustive]` enum, so no consumer match breaks; it mirrors the
   existing `InvalidEncoderState` and maps to the same
-  `Request(Invalid(State))` category.
+  `Request(Invalid(State))` category. (0f431ab)
 
 ### Fixed
 
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `next_frame_take_loop_does_not_panic`,
   `next_frame_after_take_is_typed_not_panic` and
   `with_next_frame_after_take_is_typed_not_panic` all fail as panics at
-  `screen.rs:323`, the blit's slice index.
+  `screen.rs:323`, the blit's slice index. (0f431ab)
 - **`max_file_size` was unenforced on the native decode paths.**
   `Limits::check_file_size` had exactly one caller — the zencodec adapter's
   own same-named method in `codec.rs` — so neither `decode_gif` nor the
@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-validation and after each frame's read, since a stream never reveals its
   length up front. Mutation-verified: removing the checks makes
   `decode_gif_enforces_max_file_size` decode a file past its cap and
-  `streaming_decoder_enforces_max_file_size` stream two frames past it.
+  `streaming_decoder_enforces_max_file_size` stream two frames past it. (0f431ab)
 - **Composed frames were charged against `Stats` and never released.**
   `Screen::process_frame` called `stats.try_alloc(composed_bytes, limits)` for
   every frame, and `ComposedFrame` — handed out by value, with no `Drop` hook to
@@ -86,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory at 13 MB by frame 2 of a 1000×1000 GIF while holding nothing, and
   `next_frame_and_with_next_frame_agree_under_a_memory_cap` fail with
   `MemoryLimitExceeded { current: 13000000, limit: 9000000 }` on a budget
-  `with_next_frame` completes under.
+  `with_next_frame` completes under. (0f431ab)
 - **A frame smaller than the logical screen was reported as opaque, and the
   transparency was then stripped.** `GifProbe::has_transparency` was set only
   from a frame's Graphic Control Extension transparent-colour flag, but the
@@ -102,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   costs an RGBA buffer; the opposite error costs the caller their pixels.
   Mutation-verified, and the checked-in `border_touching_layers.gif` is a real
   instance: reverting the fix makes
-  `corpus_probe_transparency_matches_decoded_pixels` fail on it.
+  `corpus_probe_transparency_matches_decoded_pixels` fail on it. (8dd5cf9)
 - **`MalformedLzw` was never constructed — corrupt LZW surfaced as
   `GifCrate`.** `From<gif::DecodingError>` routed `DecodingError::LzwError` to
   the opaque catch-all, so the variant a caller matches on for GIF corruption
@@ -112,7 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output verbatim ("invalid code in LZW stream"), which the mutation run
   confirms byte for byte. `ErrorCategory` is unchanged — both variants already
   mapped to `Image(Malformed)` — so consumers routing on category see no
-  difference.
+  difference. (8dd5cf9)
 
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
@@ -209,7 +209,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DecodingError::Format`, whose `DecodingFormatError` payload is a boxed
   `dyn Error` with no structural variants, so it cannot be re-routed without
   matching on message text. That is exactly the discriminator `MalformedLzw`
-  had and this one lacks.
+  had and this one lacks. (0ca5cce)
 
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x)
