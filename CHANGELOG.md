@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     exhaustively over all 195 (length ≤ 64, N ∈ {2,3,4}) combinations,
     remainders included. Full suite, all nine feature permutations and both
     clippy configurations green afterwards.
+  - `Feature permutations` failed to compile `tests/sweep_regressions.rs`
+    under `--no-default-features` (E0432: `EncoderConfig`, `decode_gif`,
+    `encode_gif` are `std`-gated). The file arrived in `510e7a88` without the
+    `#![cfg(feature = "std")]` that every other std-only suite in `tests/`
+    carries; it now has one. A second failure sat behind it in a step CI never
+    reached: `diff_static_region_survives_shared_palette` supplies no per-frame
+    palette, so it needs a quantizer backend and failed under
+    `--no-default-features --features std` with `QuantizationFailed`. It is now
+    gated on the exact inverse of the `prepare_frame_passthrough` condition in
+    `src/encode/encoder.rs`. `default` carries `zenquant`, so it still runs in
+    normal builds and in all five per-quantizer CI jobs; its sibling covers the
+    same issue-#14 regression with a caller-supplied palette in every
+    permutation. No test was weakened and no `#[allow]` was added.
 
 - **The `Fuzz regression` CI job could not fail.** It ran
   `cargo test --test fuzz_regression 2>/dev/null || echo "No regression test

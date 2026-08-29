@@ -5,6 +5,14 @@
 //! DECODES the encoder output — the pre-existing tests on these paths only
 //! checked magic bytes and sizes, which is exactly how the corruption
 //! stayed green.
+//!
+//! Every entry point exercised here (`encode_gif`, `decode_gif`, `EncoderConfig`)
+//! is gated behind the `std` feature, so this whole test compiles to nothing
+//! without it — same as `cancellation.rs`, `corpus.rs`, `malformed.rs` and the
+//! rest of the std-only suites. Without the gate `cargo test
+//! --no-default-features --lib --tests` fails to resolve the imports, which is
+//! what broke the `Feature permutations` job.
+#![cfg(feature = "std")]
 
 use enough::Unstoppable;
 use zengif::{EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, decode_gif, encode_gif};
@@ -73,6 +81,22 @@ fn assert_static_region_survives(gif: &[u8], w: u16, h: u16, ctx: &str) {
     }
 }
 
+/// Supplies no per-frame palette, so the encoder must quantize — which needs a
+/// quantizer backend. The condition below is the exact inverse of the
+/// `prepare_frame_passthrough` gate in `src/encode/encoder.rs`, whose
+/// no-quantizer arm returns `QuantizationFailed { "no quantizer feature enabled
+/// and frame has no palette" }`. `default` carries `zenquant`, so this runs in
+/// every normal build and in each per-quantizer CI job; only the deliberately
+/// quantizer-less `--no-default-features --features std` permutation skips it.
+/// The sibling test below covers the same regression with a caller-supplied
+/// palette and therefore runs in every permutation.
+#[cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
 #[test]
 fn diff_static_region_survives_shared_palette() {
     let (w, h) = (64u16, 64u16);
