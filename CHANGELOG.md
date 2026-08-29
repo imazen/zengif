@@ -7,8 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GifError::InvalidDecoderState` — the typed refusal returned when the
+  compositing canvas has been moved out and another frame is requested. Additive
+  on a `#[non_exhaustive]` enum, so no consumer match breaks; it mirrors the
+  existing `InvalidEncoderState` and maps to the same
+  `Request(Invalid(State))` category.
+
 ### Fixed
 
+- **The natural `next_frame_take` loop panicked on frame 2 of any multi-frame
+  GIF.** `Screen::process_frame_take` does `core::mem::take(&mut self.pixels)`,
+  so the canvas the decoder composites against is handed to the caller and left
+  empty. `while let Some(f) = decoder.next_frame_take()? { … }` — the obvious
+  usage — then re-entered `process_frame_in_place`, which slices
+  `&mut self.pixels[canvas_row_start..]` and panicked on the empty buffer.
+  **Corrected claim:** `finished` *is* set (`decode/mod.rs` sets it on
+  `Ok(None)` and on a tolerated missing trailer); it is simply only reached at
+  end-of-stream, which is past the panic. `Screen` now records `canvas_taken`
+  and every compositing entry point refuses with
+  `GifError::InvalidDecoderState`. The refusal is the honest fix rather than
+  making the loop "work": compositing frame 2 needs frame 1's canvas for
+  disposal and transparency, and that buffer now belongs to the caller — so the
+  alternatives are wrong pixels or the very copy `_take` exists to avoid.
+  Single-frame use is unaffected (the second call reaches `Ok(None)` without
+  touching the canvas). Mutation-verified: disabling the guard makes
+  `next_frame_take_loop_does_not_panic`,
+  `next_frame_after_take_is_typed_not_panic` and
+  `with_next_frame_after_take_is_typed_not_panic` all fail as panics at
+  `screen.rs:323`, the blit's slice index.
+- **`max_file_size` was unenforced on the native decode paths.**
+  `Limits::check_file_size` had exactly one caller — the zencodec adapter's
+  own same-named method in `codec.rs` — so neither `decode_gif` nor the
+  streaming `Decoder` ever consulted it, while four fuzz targets
+  (`fuzz_decode`, `fuzz_decode_streaming`, `fuzz_roundtrip`, `fuzz_limits`) and
+  two `tests/fuzz_regression.rs` cases set it believing it worked. `decode_gif`
+  now checks the exact input length before parsing; the streaming `Decoder`
+  checks bytes actually pulled from the reader, both after header
+  pre-validation and after each frame's read, since a stream never reveals its
+  length up front. Mutation-verified: removing the checks makes
+  `decode_gif_enforces_max_file_size` decode a file past its cap and
+  `streaming_decoder_enforces_max_file_size` stream two frames past it.
+- **Composed frames were charged against `Stats` and never released.**
+  `Screen::process_frame` called `stats.try_alloc(composed_bytes, limits)` for
+  every frame, and `ComposedFrame` — handed out by value, with no `Drop` hook to
+  release it — never gave the charge back. Tracked "current" memory therefore
+  climbed by one canvas per frame even when the caller dropped each one, so
+  `next_frame` tripped `max_memory` partway through a long animation while real
+  usage stayed at roughly 2× the canvas; `with_next_frame`, which charges
+  nothing, had no such ceiling, so one decoder enforced two different effective
+  caps depending on the method called. The charge is now released when the frame
+  is handed over: `try_alloc` still enforces the cap and `peak` still records the
+  canvas plus one composed frame, but `current` reflects decoder-held memory.
+  `process_frame_take` likewise releases the canvas charge it gives away, and
+  `Screen::dealloc` skips a taken canvas so the two cannot double-count.
+  `Stats` accounts for what the decoder holds — a caller retaining frames must
+  budget for them itself, which is now documented. Mutation-verified: restoring
+  the leak makes `dropped_composed_frames_are_untracked` fail with tracked
+  memory at 13 MB by frame 2 of a 1000×1000 GIF while holding nothing, and
+  `next_frame_and_with_next_frame_agree_under_a_memory_cap` fail with
+  `MemoryLimitExceeded { current: 13000000, limit: 9000000 }` on a budget
+  `with_next_frame` completes under.
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
   `github.head_ref` is populated only for `pull_request` events, so on a push it

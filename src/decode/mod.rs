@@ -188,6 +188,11 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (header, width, height, par_byte) = pre_validate_header(&mut stop_reader, &limits)?;
 
+        // A `max_file_size` smaller than the header itself must be refused here
+        // rather than on the first frame — otherwise a caller who set a tiny cap
+        // still pays for header parsing and canvas allocation.
+        limits.check_file_size(bytes_read.load(Ordering::Relaxed) as u64)?;
+
         // Chain header bytes back with the rest of the stream
         let chained = std::io::Cursor::new(header).chain(stop_reader);
 
@@ -398,6 +403,14 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Track decompressed bytes and check ratio (zip bomb protection)
         self.bytes_decompressed += frame_size as u64;
         let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        // Enforce `max_file_size` against bytes actually pulled from the
+        // reader. A streaming decoder never learns the total length up front,
+        // so the cap is applied to the running count: it is monotonic and an
+        // upper bound on what has been consumed, so an oversized stream is
+        // rejected as soon as the reader crosses the cap instead of decoding to
+        // completion. `decode_gif`, which has the whole slice, checks the exact
+        // length before this is ever reached.
+        self.limits.check_file_size(bytes_read as u64)?;
         self.limits
             .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
@@ -503,6 +516,14 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Track decompressed bytes and check ratio (zip bomb protection)
         self.bytes_decompressed += frame_size as u64;
         let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        // Enforce `max_file_size` against bytes actually pulled from the
+        // reader. A streaming decoder never learns the total length up front,
+        // so the cap is applied to the running count: it is monotonic and an
+        // upper bound on what has been consumed, so an oversized stream is
+        // rejected as soon as the reader crosses the cap instead of decoding to
+        // completion. `decode_gif`, which has the whole slice, checks the exact
+        // length before this is ever reached.
+        self.limits.check_file_size(bytes_read as u64)?;
         self.limits
             .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
@@ -620,6 +641,14 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Track decompressed bytes and check ratio (zip bomb protection)
         self.bytes_decompressed += frame_size as u64;
         let bytes_read = self.bytes_read.load(Ordering::Relaxed);
+        // Enforce `max_file_size` against bytes actually pulled from the
+        // reader. A streaming decoder never learns the total length up front,
+        // so the cap is applied to the running count: it is monotonic and an
+        // upper bound on what has been consumed, so an oversized stream is
+        // rejected as soon as the reader crosses the cap instead of decoding to
+        // completion. `decode_gif`, which has the whole slice, checks the exact
+        // length before this is ever reached.
+        self.limits.check_file_size(bytes_read as u64)?;
         self.limits
             .check_decompression_ratio(bytes_read as u64, self.bytes_decompressed)?;
 
@@ -725,6 +754,13 @@ pub fn decode_gif(
     limits: Limits,
     stop: &dyn Stop,
 ) -> Result<(Metadata, Vec<ComposedFrame>, Stats)> {
+    // The whole input is in hand, so the size cap is exact and can be applied
+    // before any parsing or allocation. `Limits::check_file_size` used to have
+    // exactly one caller — the zencodec adapter in `codec.rs` — so callers of
+    // this function (including four fuzz targets and two regression tests that
+    // set `max_file_size`) were configuring a limit that did nothing.
+    limits.check_file_size(data.len() as u64)?;
+
     let cursor = std::io::Cursor::new(data);
     let mut decoder = Decoder::new(cursor, limits, stop)?;
     let frames = decoder.decode_all()?;

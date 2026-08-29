@@ -6,8 +6,10 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use whereat::at;
+
 use crate::disposal::Disposal;
-use crate::error::Result;
+use crate::error::{GifError, Result};
 use crate::limits::Limits;
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, Palette, RawFrame, Rgba};
@@ -141,6 +143,15 @@ pub struct Screen {
     /// Reference to stats for memory tracking.
     /// We store sizes but track via Stats passed to methods.
     canvas_bytes: usize,
+
+    /// Whether [`Screen::process_frame_take`] has moved the canvas out.
+    ///
+    /// Once it has, `pixels` is empty and every compositing entry point must
+    /// refuse rather than index it — `process_frame_in_place` would slice an
+    /// empty buffer and panic, which is what the obvious
+    /// `while let Some(f) = decoder.next_frame_take()? {}` loop used to do on
+    /// frame 2 of any multi-frame GIF.
+    canvas_taken: bool,
 }
 
 impl Screen {
@@ -186,7 +197,18 @@ impl Screen {
             background,
             disposal: Disposal::default(),
             canvas_bytes,
+            canvas_taken: false,
         })
+    }
+
+    /// Whether the compositing canvas has been moved out by
+    /// [`Screen::process_frame_take`].
+    ///
+    /// A screen in this state can no longer composite: the buffer that held the
+    /// previous frame's pixels — which disposal and transparency both read — now
+    /// belongs to the caller.
+    pub fn is_canvas_taken(&self) -> bool {
+        self.canvas_taken
     }
 
     /// Get canvas width.
@@ -227,6 +249,22 @@ impl Screen {
         stats: &Stats,
         limits: &Limits,
     ) -> Result<(usize, u16)> {
+        // 0. Refuse if the canvas was handed to a caller by
+        //    `process_frame_take`. `self.pixels` is empty in that state, so the
+        //    blit below would slice an empty buffer and panic — and disposal
+        //    would read a canvas that no longer holds the previous frame even if
+        //    it did not. Every compositing entry point funnels through here, so
+        //    this one guard covers `next_frame`, `next_frame_take` and
+        //    `with_next_frame` alike.
+        if self.canvas_taken {
+            return Err(at!(GifError::InvalidDecoderState {
+                message: "the compositing canvas was moved out by \
+                          process_frame_take / next_frame_take, which are \
+                          single-frame zero-copy entry points; use next_frame \
+                          or with_next_frame to iterate a multi-frame GIF",
+            }));
+        }
+
         // 1. Apply disposal from previous frame
         self.disposal
             .apply(&mut self.pixels, self.width, self.background, stats);
@@ -363,6 +401,24 @@ impl Screen {
             palette: effective_palette,
         };
 
+        // Release the charge now that the frame belongs to the caller.
+        //
+        // `try_alloc` above is what enforces the cap: peak already records the
+        // canvas plus this frame, so an individual frame too large for
+        // `max_memory` is still refused. What must NOT happen is the charge
+        // outliving the decoder's ownership — `ComposedFrame` is handed out by
+        // value and has no `Drop` hook to release it, so leaving it charged made
+        // tracked "current" memory climb by one canvas per frame and tripped
+        // `max_memory` partway through a long animation (~frame 533 of an
+        // 800×600 GIF) while real usage stayed at roughly 2× the canvas. It also
+        // made `next_frame` and `with_next_frame` — which charges nothing —
+        // enforce different effective caps on the same decoder.
+        //
+        // The decoder cannot know whether the caller retains the frame, so
+        // `Stats` accounts for decoder-held memory; a caller that keeps frames
+        // must budget for them itself.
+        stats.track_dealloc(composed_bytes);
+
         Ok(composed)
     }
 
@@ -386,10 +442,18 @@ impl Screen {
         let (index, delay) = self.process_frame_in_place(frame, stats, limits)?;
 
         // Move the canvas pixels out instead of cloning (zero-copy).
-        // The screen's canvas is left empty — further compositing would
-        // produce incorrect results, so this should only be used when
-        // the screen is about to be dropped.
+        // The screen's canvas is left empty — further compositing would read a
+        // buffer that no longer holds the previous frame — so the screen is
+        // marked taken and every later compositing call returns
+        // `InvalidDecoderState` instead of indexing an empty slice.
         let composed_pixels = core::mem::take(&mut self.pixels);
+        self.canvas_taken = true;
+
+        // The canvas now belongs to the caller, so the decoder is no longer
+        // holding those bytes. `Screen::dealloc` releases the same charge when a
+        // screen that still owns its canvas is dropped; releasing here keeps the
+        // two paths from double-counting or leaking the charge.
+        stats.track_dealloc(self.canvas_bytes);
 
         // Get effective palette (local if present, else global)
         let effective_palette = frame
@@ -452,7 +516,14 @@ impl Screen {
     }
 
     /// Track deallocation when screen is dropped.
+    ///
+    /// A screen whose canvas was moved out by [`Screen::process_frame_take`]
+    /// released the charge at that point, so this is a no-op for it — calling
+    /// both must not double-count the release.
     pub fn dealloc(&self, stats: &Stats) {
+        if self.canvas_taken {
+            return;
+        }
         stats.track_dealloc(self.canvas_bytes);
     }
 }

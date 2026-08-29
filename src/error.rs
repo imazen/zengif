@@ -226,6 +226,21 @@ pub enum GifError {
         message: &'static str,
     },
 
+    /// Decoder is in an invalid state for the requested operation.
+    ///
+    /// Raised when the compositing canvas has been moved out by
+    /// [`Screen::process_frame_take`](crate::Screen::process_frame_take) (or
+    /// `Decoder::next_frame_take`, which calls it) and a further frame is then
+    /// requested. Those are single-frame zero-copy entry points: the canvas
+    /// they hand you *is* the decoder's compositing buffer, so no later frame
+    /// can be composited against it. Iterate multi-frame GIFs with
+    /// `Decoder::next_frame` or `Decoder::with_next_frame` instead.
+    #[error("decoder in invalid state: {message}")]
+    InvalidDecoderState {
+        /// Description of the state.
+        message: &'static str,
+    },
+
     // === I/O Errors ===
     /// Unexpected end of file.
     #[error("unexpected end of file")]
@@ -495,6 +510,10 @@ impl zencodec::CategorizedError for GifError {
 
             // === Caller API-protocol violations ===
             GifError::InvalidEncoderState { .. } => C::Request(Req::Invalid(Inv::State)),
+            // Asking a decoder whose canvas was moved out for another frame is
+            // the same class of mistake as misdriving the encoder: the caller
+            // used a single-frame zero-copy API as a multi-frame iterator.
+            GifError::InvalidDecoderState { .. } => C::Request(Req::Invalid(Inv::State)),
 
             // === Internal failures ===
             // Quantization failure originates in an external quantizer backend
