@@ -52,6 +52,12 @@ pub enum GifError {
 
     // === Frame Errors ===
     /// Frame bounds exceed canvas size.
+    /// **Never constructed by this crate today.** A frame that extends past the
+    /// canvas is technically invalid but common in the wild, and browsers render
+    /// it, so the decoder clips against the canvas in
+    /// `Screen::clip_frame_bounds` rather than rejecting. Erroring instead would
+    /// reject GIFs every browser accepts. Kept for a caller that wants strict
+    /// mode, and constructible by anyone building on `Screen` directly.
     #[error(
         "frame bounds ({frame_left}, {frame_top}, {frame_width}x{frame_height}) exceed canvas size ({canvas_width}x{canvas_height})"
     )]
@@ -82,6 +88,11 @@ pub enum GifError {
     },
 
     /// Frame is missing a required color palette.
+    ///
+    /// **Never constructed by this crate today.** A frame with neither a local
+    /// nor a global palette composites against an all-transparent lookup table
+    /// (`Screen::process_frame_in_place`) instead of failing, which is what
+    /// browsers do. Kept for a caller that wants strict mode.
     #[error("frame {frame_index} is missing color palette")]
     MissingPalette {
         /// Frame index.
@@ -89,6 +100,11 @@ pub enum GifError {
     },
 
     /// Invalid disposal method value.
+    ///
+    /// **Never constructed by this crate today.** The `gif` crate normalises the
+    /// 3-bit disposal field before zengif sees it, and
+    /// `DisposalMethod::from(frame_info.dispose)` maps every remaining value to
+    /// a defined behaviour, so there is no value left to reject.
     #[error("invalid disposal method value: {value}")]
     InvalidDisposalMethod {
         /// The invalid value.
@@ -104,6 +120,16 @@ pub enum GifError {
     },
 
     /// LZW minimum code size is invalid.
+    ///
+    /// **Never constructed by this crate today**, though the condition *is*
+    /// checked: the `gif` crate's `check_code_size` rejects sizes outside 1..=11
+    /// (this is CVE-2021-44648's `min_code_size = 12`) and reports it as
+    /// `DecodingError::Format`, which carries an opaque
+    /// `DecodingFormatError` — a boxed `dyn Error` with no structural variants —
+    /// so it arrives here as [`GifError::GifCrate`] and cannot be re-routed
+    /// without matching on its message text. Unlike [`GifError::MalformedLzw`],
+    /// whose payload type is a real enum, this one has no reliable
+    /// discriminator.
     #[error("invalid LZW minimum code size: {value}")]
     InvalidMinCodeSize {
         /// The invalid value.

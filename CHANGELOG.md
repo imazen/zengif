@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirms byte for byte. `ErrorCategory` is unchanged — both variants already
   mapped to `Image(Malformed)` — so consumers routing on category see no
   difference.
+
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
   `github.head_ref` is populated only for `pull_request` events, so on a push it
@@ -175,6 +176,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sparse-change content whose diff rectangle is full of markers; the
   shared-palette invariant is mutation-verified (fails with both defense
   layers disabled). Cleared the new clippy `-D warnings` wall.
+
+### Documentation
+
+- The four `GifError` variants that remain unconstructed after the
+  `MalformedLzw` reroute now say so, and why, so the next reader does not treat
+  them as live: `InvalidFrameBounds` and `MissingPalette` are deliberately
+  unused because the decoder takes the lenient, browser-compatible path (clip
+  the frame; composite against an all-transparent palette) rather than rejecting
+  files every browser renders; `InvalidDisposalMethod` has no value left to
+  reject once the `gif` crate normalises the field; and `InvalidMinCodeSize`'s
+  condition *is* checked upstream — `gif`'s `check_code_size` rejects sizes
+  outside `1..=11`, which is CVE-2021-44648 — but it arrives as
+  `DecodingError::Format`, whose `DecodingFormatError` payload is a boxed
+  `dyn Error` with no structural variants, so it cannot be re-routed without
+  matching on message text. That is exactly the discriminator `MalformedLzw`
+  had and this one lacks.
 
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x)
