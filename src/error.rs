@@ -343,8 +343,23 @@ impl From<gif::DecodingError> for GifError {
                 current: 0,
                 limit: 0,
             },
-            DecodingError::LzwError(e) => GifError::GifCrate {
-                message: e.to_string(),
+            // A corrupt LZW stream is the single most likely way a damaged GIF
+            // fails, and `MalformedLzw` is the variant a caller matches on for
+            // it — routing it to the opaque `GifCrate` catch-all meant that
+            // variant was never constructed and callers had to string-match.
+            //
+            // No detail is lost by the `&'static str`: `weezl::LzwError` has
+            // exactly one variant and these messages are its own `Display`
+            // output verbatim.
+            // The payload's own type (`weezl::LzwError`) is not nameable here —
+            // the `gif` crate does not re-export it and zengif does not depend
+            // on weezl directly — so the message is a constant rather than a
+            // match. weezl 0.2.1's `LzwError` has exactly one variant,
+            // `InvalidCode`, whose `Display` is this string verbatim, so nothing
+            // is lost today; were it to gain variants, the categorisation would
+            // stay correct and only the message would be less specific.
+            DecodingError::LzwError(_) => GifError::MalformedLzw {
+                message: "invalid code in LZW stream",
             },
             DecodingError::DecoderNotFound => GifError::GifCrate {
                 message: "decoder not found".to_string(),

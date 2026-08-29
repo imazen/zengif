@@ -65,7 +65,19 @@ pub struct GifProbe {
     pub frame_count: u32,
     /// Total duration in centiseconds (sum of all frame delays).
     pub total_duration_cs: u32,
-    /// Whether any frame uses transparency.
+    /// Whether the composited canvas can contain non-opaque pixels.
+    ///
+    /// True when any frame's Graphic Control Extension sets the
+    /// transparent-colour flag, when the first frame does not cover the whole
+    /// logical screen (the canvas starts fully transparent, so the uncovered
+    /// border composites transparent), or when any frame uses "restore to
+    /// background" disposal (which clears its rectangle to transparent).
+    ///
+    /// Deliberately conservative: it may report `true` for a canvas a full
+    /// decode would find opaque — a later frame can cover the border. The
+    /// asymmetry is intentional, because this drives `ImageInfo::has_alpha`,
+    /// and a caller who is told "opaque" may request `RGB8_SRGB` and lose real
+    /// transparency permanently.
     pub has_transparency: bool,
     /// Whether any frame uses local color tables (per-frame palettes).
     pub has_local_palettes: bool,
@@ -233,6 +245,7 @@ pub fn probe_with_limits(
     let mut repeat: Option<u16> = None;
     let mut pending_gce_transparent = false;
     let mut pending_gce_delay = 0u16;
+    let mut pending_gce_disposal = 0u8;
 
     let mut iters: usize = 0;
 
@@ -265,6 +278,7 @@ pub fn probe_with_limits(
                         let gce_packed = data[pos + 1];
                         pending_gce_delay = u16::from_le_bytes([data[pos + 2], data[pos + 3]]);
                         pending_gce_transparent = (gce_packed & 0x01) != 0;
+                        pending_gce_disposal = (gce_packed >> 2) & 0x07;
                     }
                 }
 
@@ -309,6 +323,48 @@ pub fn probe_with_limits(
                 frame_count += 1;
                 total_duration_cs = total_duration_cs.saturating_add(pending_gce_delay as u32);
                 if pending_gce_transparent {
+                    has_transparency = true;
+                }
+
+                // The Graphic Control Extension's transparent-colour flag is not
+                // the only way a composited canvas ends up with transparent
+                // pixels, and reporting "opaque" for one that has them is a
+                // pixel-loss bug: `ImageInfo::has_alpha` is derived from this,
+                // and a caller who trusts it asks for `RGB8_SRGB`, at which
+                // point `negotiate_format` drops the alpha channel for good.
+                // Two further sources, both cheap to spot from the headers:
+                //
+                //  1. The canvas is initialised fully transparent (see
+                //     `Screen::new` — matching browser behaviour), so if the
+                //     FIRST frame does not cover the whole logical screen, the
+                //     uncovered border composites transparent no matter what the
+                //     GCE says. `border_touching_layers.gif` in the corpus is a
+                //     real instance.
+                //  2. "Restore to background" disposal (method 2) clears its
+                //     rectangle to transparent in this decoder, so a later frame
+                //     that does not overdraw it shows through.
+                //
+                // Both are deliberately conservative: they can report
+                // transparency for a canvas a full decode would find opaque
+                // (a later frame may cover the border), which costs an
+                // unnecessary RGBA buffer. Reporting opaque for a canvas that is
+                // not would cost the caller their pixels.
+                // Image Descriptor layout, from the 0x2C separator at `pos`:
+                // separator(1) left(2) top(2) width(2) height(2) packed(1).
+                let frame_left = u16::from_le_bytes([data[pos + 1], data[pos + 2]]);
+                let frame_top = u16::from_le_bytes([data[pos + 3], data[pos + 4]]);
+                let frame_width = u16::from_le_bytes([data[pos + 5], data[pos + 6]]);
+                let frame_height = u16::from_le_bytes([data[pos + 7], data[pos + 8]]);
+                if frame_count == 1 {
+                    let covers_screen = frame_left == 0
+                        && frame_top == 0
+                        && (frame_left as u32 + frame_width as u32) >= width as u32
+                        && (frame_top as u32 + frame_height as u32) >= height as u32;
+                    if !covers_screen {
+                        has_transparency = true;
+                    }
+                }
+                if pending_gce_disposal == 2 {
                     has_transparency = true;
                 }
 

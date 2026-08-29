@@ -69,6 +69,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `next_frame_and_with_next_frame_agree_under_a_memory_cap` fail with
   `MemoryLimitExceeded { current: 13000000, limit: 9000000 }` on a budget
   `with_next_frame` completes under.
+- **A frame smaller than the logical screen was reported as opaque, and the
+  transparency was then stripped.** `GifProbe::has_transparency` was set only
+  from a frame's Graphic Control Extension transparent-colour flag, but the
+  canvas is initialised fully transparent (`Screen::new`, matching browsers), so
+  a sub-screen frame — or one with no GCE at all — composites a transparent
+  border while the probe says opaque. `ImageInfo::has_alpha` is derived from
+  that, so a caller who trusts it requests `RGB8_SRGB` and `negotiate_format`
+  drops the alpha channel: real transparency, gone. The probe now also reports
+  transparency when the first frame does not cover the whole logical screen, and
+  when any frame uses "restore to background" disposal (which clears its
+  rectangle to transparent). Deliberately conservative in the safe direction —
+  it may report transparency for a canvas a full decode would find opaque, which
+  costs an RGBA buffer; the opposite error costs the caller their pixels.
+  Mutation-verified, and the checked-in `border_touching_layers.gif` is a real
+  instance: reverting the fix makes
+  `corpus_probe_transparency_matches_decoded_pixels` fail on it.
+- **`MalformedLzw` was never constructed — corrupt LZW surfaced as
+  `GifCrate`.** `From<gif::DecodingError>` routed `DecodingError::LzwError` to
+  the opaque catch-all, so the variant a caller matches on for GIF corruption
+  (the most likely way a damaged GIF fails) was unreachable and callers had to
+  string-match. Now mapped to `GifError::MalformedLzw`. No information is lost:
+  `weezl::LzwError` has exactly one variant and the message is its `Display`
+  output verbatim ("invalid code in LZW stream"), which the mutation run
+  confirms byte for byte. `ErrorCategory` is unchanged — both variants already
+  mapped to `Image(Malformed)` — so consumers routing on category see no
+  difference.
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
   `github.head_ref` is populated only for `pull_request` events, so on a push it
