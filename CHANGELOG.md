@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **CI was red on `Clippy` and `Feature permutations`** (run 33249204557) after
-  `8a2b785a` triggered the first full run in a while. Neither failure came from
-  that commit; it exposed two pieces of standing debt.
+- **CI was red on `Clippy` and `Feature permutations`** — and had been for two
+  days across two commits. `510e7a88` (2026-08-27) first went red on both jobs
+  (run 33036617013) with the identical three `chunks_exact` errors at
+  `tests/quantizer_quality.rs:40/44/48` and the identical `E0432` in
+  `tests/sweep_regressions.rs`; `8a2b785a` (2026-08-29, run 33249204557)
+  inherited an already-red `main` and caused neither failure. Last green run
+  before that: 30394927799 on `1805e996` (2026-07-28).
   - `Clippy (all features)` failed on three `chunks_exact_to_as_chunks`
     errors in `tests/quantizer_quality.rs` — new on stable Rust 1.98, and
     denied by `-D warnings`. The PNG→RGBA helper now uses
