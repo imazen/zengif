@@ -25,6 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry two `zencodec` copies whose types do not unify. The standing
   current-plus-next rule is documented in the zencodec repo's `CLAUDE.md`.
 
+- **Third-party dependency pass — verified current, two quantizer majors held
+  back deliberately.** zengif gitignores its `Cargo.lock` (`.gitignore:1`), so a
+  fresh resolve is what CI actually builds and there is no lockfile to commit.
+  A constrained refresh (`cargo update -p …` naming each of the 140 third-party
+  packages, every zen-family crate excluded) moves 25 transitive packages —
+  `thiserror` 2.0.19 → 2.0.20, `imgref` 1.12.2 → 1.12.3, `flate2` 1.1.9 →
+  1.1.10, `crc32fast` 1.5.0 → 1.5.1, `palette` 0.7.6 → 0.7.7 (which swaps
+  `fast-srgb8` for `palette_math`), plus wasm-bindgen/clap/syn — and every
+  direct third-party requirement already admits its newest release (`gif`
+  resolves to 0.14.2, `bytemuck` 1.25.2, `rgb` 0.8.53, `png` 0.18.1,
+  `imagequant` 4.4.1, `quantizr` 1.4.3). Verified against that refreshed graph:
+  298 tests pass, both CI clippy invocations are clean, `cargo fmt --all
+  --check` is clean, and `cargo hack check --rust-version` passes at the
+  declared MSRV of 1.93.
+
+  **Held back, needing an owner decision:** `color_quant` `1.1.0` → `2.0.0` and
+  `quantette` `0.5.1` → `0.6.0`. Both are optional palette-quantizer backends,
+  and both are leading-digit bumps — for a `0.x` crate and for a `1.x` crate
+  alike that is the author signalling a break. Choosing output colors is the
+  entire job of these crates, and zengif has no byte-golden coverage of either
+  backend's palette, so the suite cannot prove the quantized output is stable
+  across the bump. Taking them would risk silently changing encoded GIFs for
+  anyone using `--features color_quant` / `--features quantette`. Each needs a
+  palette diff against the current version before it lands, not a routine bump.
+  (`fast-ssim2` 0.7.1 → 0.8.2 is also behind, but it is a zen-family crate and
+  out of scope for a third-party pass.)
+
 ### Added
 
 - `GifError::InvalidDecoderState` — the typed refusal returned when the
