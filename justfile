@@ -145,3 +145,8 @@ profile-heap:
 # View heaptrack results (latest)
 profile-view:
     heaptrack_gui $(ls -t heaptrack.alloc_profile.*.zst 2>/dev/null | head -1)
+
+# Native ARM audit; full output retained under ~/tmp.
+arm-bench-macos bench="decode_bench":
+    mkdir -p "$HOME/tmp"
+    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p zengif --bench '{{bench}}' -- --format=llm > "$HOME/tmp/zengif-{{bench}}.log" 2>&1

@@ -1,0 +1,18 @@
+    Updating crates.io index
+     Locking 15 packages to latest Rust 1.93 compatible versions
+    Updating crossbeam-deque v0.8.7 -> v0.8.8
+    Updating crossbeam-epoch v0.9.20 -> v0.9.21
+    Updating crossbeam-utils v0.8.22 -> v0.8.23
+    Updating libredox v0.1.21 -> v0.1.23
+    Updating quantette v0.5.1 -> v0.6.0
+    Updating rand v0.9.5 -> v0.10.2
+    Updating rand_core v0.9.5 -> v0.10.1
+    Updating rand_xoshiro v0.7.0 -> v0.8.1
+    Updating safe_arch v0.9.3 -> v1.2.0
+    Updating syn v3.0.4 -> v3.0.5
+    Updating wasm-bindgen v0.2.127 -> v0.2.128
+    Updating wasm-bindgen-macro v0.2.127 -> v0.2.128
+    Updating wasm-bindgen-macro-support v0.2.127 -> v0.2.128
+    Updating wasm-bindgen-shared v0.2.127 -> v0.2.128
+    Updating wide v0.8.3 -> v1.7.0
+note: pass `--verbose` to see 2 unchanged dependencies behind latest

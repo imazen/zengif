@@ -1,0 +1,183 @@
+   Compiling zengif v0.8.0 (/Users/lilith/work/zen/zengif)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2.04s
+     Running benches/expand_palette.rs (target/release/deps/expand_palette-83f0484f6ef51f87)
+[zenbench] calibration: int=0.38ns/iter mem_bw=86.2GiB/s mem_lat=7.8ns
+[zenbench] timer resolution: 41ns, loop overhead: 0.42ns/iter, TSC: 1.000 ticks/ns (invariant)
+[zenbench] results → /Users/lilith/tmp/zenbench/zenbench-1788675439-14d3f.txt
+
+═══════════════════════════════════════════════════════════════
+  zenbench  1788675439-14d3f
+  git: 64e2e832d6348b2eb03dffdce98a9a0dc1fc4b9b
+═══════════════════════════════════════════════════════════════
+
+  expand/row1920/pal16_noise  200 rounds × 3K calls
+                              mean ±mad ns  95% CI vs base     iB/s
+  ├─ scalar_opaque_reference   927 ±177ns  [908–947]ns       7.71G
+  ├─ opaque                    832 ±166ns  [-10.5%–-8.5%]    8.59G
+  ╰─ transparent               875 ±190ns  [-6.7%–-4.4%]     8.17G
+
+  opaque                   ██████████████████████████████████████████ 8.59 GiB/s
+  transparent              ████████████████████████████████████████ 8.17 GiB/s
+  scalar_opaque_reference  ██████████████████████████████████████ 7.71 GiB/s
+
+  expand/row1920/pal16_runs8  200 rounds × 2K calls
+                              mean ±mad ns  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   987 ±227ns  [962–1013]ns     7.24G
+  ├─ opaque                    902 ±207ns  [-9.4%–-7.4%]    7.93G [1]
+  ╰─ transparent               957 ±225ns  [-4.2%–-2.0%]    7.47G
+
+  opaque                   ██████████████████████████████████████████ 7.93 GiB/s
+  transparent              ████████████████████████████████████████ 7.47 GiB/s
+  scalar_opaque_reference  ██████████████████████████████████████ 7.24 GiB/s
+  [1] CV=21%
+
+  expand/row1920/pal64_noise  200 rounds × 2K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   1.1 ±0.2µs  [1.1–1.1]µs      6.44G [1]
+  ├─ opaque                    1.0 ±0.2µs  [-9.1%–-5.1%]    6.93G [2]
+  ╰─ transparent               1.1 ±0.2µs  [-3.7%–-0.2%]    6.59G [3] [4]
+
+  opaque                   ██████████████████████████████████████████ 6.93 GiB/s
+  transparent              ████████████████████████████████████████ 6.59 GiB/s
+  scalar_opaque_reference  ███████████████████████████████████████ 6.44 GiB/s
+  [1] CV=22%
+  [2] CV=24%
+  [3] CI crosses zero
+  [4] CV=23%
+
+  expand/row1920/pal256_noise  200 rounds × 2K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   1.1 ±0.2µs  [1.0–1.1]µs      6.62G [1]
+  ├─ opaque                    1.0 ±0.3µs  [-9.4%–-6.2%]    7.26G [2]
+  ╰─ transparent               1.1 ±0.3µs  [-1.7%–+1.2%]    6.60G [3] [4]
+
+  opaque                   ██████████████████████████████████████████ 7.26 GiB/s
+  scalar_opaque_reference  ██████████████████████████████████████ 6.62 GiB/s
+  transparent              ██████████████████████████████████████ 6.60 GiB/s
+  [1] CV=23%
+  [2] CV=27%
+  [3] CI crosses zero
+  [4] CV=24%
+
+  expand/row1920/pal256_runs8  200 rounds × 2K calls
+                              mean ±mad µs  95% CI vs base     iB/s
+  ├─ scalar_opaque_reference   1.1 ±0.2µs  [1.1–1.1]µs       6.51G
+  ├─ opaque                    1.0 ±0.2µs  [-10.1%–-6.3%]    7.11G [1]
+  ╰─ transparent               1.1 ±0.2µs  [-0.3%–+3.1%]     6.45G [2]
+
+  opaque                   ██████████████████████████████████████████ 7.11 GiB/s
+  scalar_opaque_reference  ██████████████████████████████████████ 6.51 GiB/s
+  transparent              ██████████████████████████████████████ 6.45 GiB/s
+  [1] CV=21%
+  [2] CI crosses zero
+
+  expand/px4096/pal16_noise  200 rounds × 1K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   2.4 ±0.4µs  [2.3–2.4]µs      6.44G
+  ├─ opaque                    2.2 ±0.4µs  [-9.3%–-5.0%]    6.98G
+  ╰─ transparent               2.3 ±0.3µs  [-5.2%–-1.3%]    6.70G
+
+  opaque                   ██████████████████████████████████████████ 6.98 GiB/s
+  transparent              ████████████████████████████████████████ 6.70 GiB/s
+  scalar_opaque_reference  ███████████████████████████████████████ 6.44 GiB/s
+
+  expand/px4096/pal16_runs8  200 rounds × 1K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   2.3 ±0.4µs  [2.2–2.3]µs      6.69G [1]
+  ├─ opaque                    2.1 ±0.5µs  [-9.8%–-6.5%]    7.35G [2]
+  ╰─ transparent               2.2 ±0.4µs  [-5.3%–-2.0%]    6.94G
+
+  opaque                   ██████████████████████████████████████████ 7.35 GiB/s
+  transparent              ████████████████████████████████████████ 6.94 GiB/s
+  scalar_opaque_reference  ██████████████████████████████████████ 6.69 GiB/s
+  [1] CV=20%
+  [2] CV=20%
+
+  expand/px4096/pal64_noise  200 rounds × 1K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   2.4 ±0.4µs  [2.3–2.5]µs      6.33G [1]
+  ├─ opaque                    2.2 ±0.5µs  [-9.9%–-5.7%]    6.89G [2]
+  ╰─ transparent               2.4 ±0.4µs  [-3.0%–+0.7%]    6.38G [3] [4]
+
+  opaque                   ██████████████████████████████████████████ 6.89 GiB/s
+  transparent              ███████████████████████████████████████ 6.38 GiB/s
+  scalar_opaque_reference  ███████████████████████████████████████ 6.33 GiB/s
+  [1] CV=23%
+  [2] CV=25%
+  [3] CI crosses zero
+  [4] CV=24%
+
+  expand/px4096/pal256_noise  200 rounds × 1K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   2.4 ±0.3µs  [2.3–2.4]µs      6.48G
+  ├─ opaque                    2.2 ±0.5µs  [-9.9%–-5.8%]    7.06G [1]
+  ╰─ transparent               2.3 ±0.4µs  [-1.9%–+1.8%]    6.50G [2]
+
+  opaque                   ██████████████████████████████████████████ 7.06 GiB/s
+  transparent              ███████████████████████████████████████ 6.50 GiB/s
+  scalar_opaque_reference  ███████████████████████████████████████ 6.48 GiB/s
+  [1] CV=22%
+  [2] CI crosses zero
+
+  expand/px4096/pal256_runs8  200 rounds × 1K calls
+                              mean ±mad µs  95% CI vs base    iB/s
+  ├─ scalar_opaque_reference   2.3 ±0.4µs  [2.3–2.4]µs      6.50G
+  ├─ opaque                    2.2 ±0.5µs  [-9.7%–-6.3%]    7.07G
+  ╰─ transparent               2.3 ±0.4µs  [-1.5%–+1.7%]    6.51G [1]
+
+  opaque                   ██████████████████████████████████████████ 7.07 GiB/s
+  transparent              ███████████████████████████████████████ 6.51 GiB/s
+  scalar_opaque_reference  ███████████████████████████████████████ 6.50 GiB/s
+  [1] CI crosses zero
+
+  total: 248.0s  (52 noisy rounds)
+═══════════════════════════════════════════════════════════════
+  filter: cargo bench -- --group=NAME  format: --format=llm|csv|md|json
+group=expand/row1920/pal16_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=405.2ns mean=927.2ns median=939.4ns mad=176.9ns  |  throughput=7.71 GiB/s  |  n=200 cv=15.6% rounds=200 calls=3012 mean_ci=[907.6ns 947.0ns] cold=375.0ns
+group=expand/row1920/pal16_noise benchmark=opaque  |  vs_base_pct=-9.49 ci=[-10.48% -8.47%] significant=true effect=-0.63 p=0.0000  |  min=362.5ns mean=832.2ns median=841.6ns mad=165.9ns  |  throughput=8.59 GiB/s  |  n=200 cv=17.9% rounds=200 calls=3012 mean_ci=[811.9ns 853.0ns] cold=417.0ns
+group=expand/row1920/pal16_noise benchmark=transparent  |  vs_base_pct=-5.55 ci=[-6.73% -4.40%] significant=true effect=-0.37 p=0.0000  |  min=377.0ns mean=875.2ns median=897.8ns mad=189.9ns  |  throughput=8.17 GiB/s  |  n=200 cv=16.6% rounds=200 calls=3012 mean_ci=[855.4ns 895.3ns] cold=333.0ns
+group=expand/row1920/pal16_runs8 benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=443.5ns mean=987.4ns median=967.4ns mad=227.4ns  |  throughput=7.24 GiB/s  |  n=200 cv=18.7% rounds=200 calls=2967 mean_ci=[961.9ns 1.01µs] cold=417.0ns
+group=expand/row1920/pal16_runs8 benchmark=opaque  |  vs_base_pct=-8.42 ci=[-9.39% -7.41%] significant=true effect=-0.47 p=0.0000  |  min=394.2ns mean=901.7ns median=863.4ns mad=206.7ns  |  throughput=7.93 GiB/s  |  n=200 cv=21.3% rounds=200 calls=2967 mean_ci=[875.8ns 928.3ns] cold=334.0ns
+group=expand/row1920/pal16_runs8 benchmark=transparent  |  vs_base_pct=-3.14 ci=[-4.25% -2.00%] significant=true effect=-0.18 p=0.0000  |  min=416.4ns mean=957.1ns median=930.2ns mad=225.2ns  |  throughput=7.47 GiB/s  |  n=200 cv=18.9% rounds=200 calls=2967 mean_ci=[932.7ns 982.4ns] cold=333.0ns
+group=expand/row1920/pal64_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=343.7ns mean=1.11µs median=1.16µs mad=161.9ns  |  throughput=6.44 GiB/s  |  n=200 cv=22.3% rounds=200 calls=2906 mean_ci=[1.08µs 1.15µs] cold=375.0ns
+group=expand/row1920/pal64_noise benchmark=opaque  |  vs_base_pct=-7.10 ci=[-9.07% -5.12%] significant=true effect=-0.32 p=0.0000  |  min=296.9ns mean=1.03µs median=1.07µs mad=199.8ns  |  throughput=6.93 GiB/s  |  n=200 cv=24.2% rounds=200 calls=2906 mean_ci=[997.1ns 1.07µs] cold=333.0ns
+group=expand/row1920/pal64_noise benchmark=transparent  |  vs_base_pct=-1.92 ci=[-3.70% -0.18%] significant=false effect=-0.09 p=0.0220  |  min=322.6ns mean=1.09µs median=1.13µs mad=152.7ns  |  throughput=6.59 GiB/s  |  n=200 cv=22.7% rounds=200 calls=2906 mean_ci=[1.05µs 1.12µs] cold=334.0ns
+group=expand/row1920/pal256_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=346.8ns mean=1.08µs median=1.13µs mad=224.5ns  |  throughput=6.62 GiB/s  |  n=200 cv=22.7% rounds=200 calls=2898 mean_ci=[1.05µs 1.11µs] cold=417.0ns
+group=expand/row1920/pal256_noise benchmark=opaque  |  vs_base_pct=-7.78 ci=[-9.42% -6.16%] significant=true effect=-0.35 p=0.0000  |  min=308.4ns mean=984.8ns median=1.04µs mad=262.1ns  |  throughput=7.26 GiB/s  |  n=200 cv=26.7% rounds=200 calls=2898 mean_ci=[949.0ns 1.02µs] cold=291.0ns
+group=expand/row1920/pal256_noise benchmark=transparent  |  vs_base_pct=-0.24 ci=[-1.66% +1.21%] significant=false effect=-0.01 p=0.4544  |  min=330.4ns mean=1.08µs median=1.14µs mad=260.9ns  |  throughput=6.60 GiB/s  |  n=200 cv=24.4% rounds=200 calls=2898 mean_ci=[1.05µs 1.12µs] cold=375.0ns
+group=expand/row1920/pal256_runs8 benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=376.3ns mean=1.10µs median=1.14µs mad=166.6ns  |  throughput=6.51 GiB/s  |  n=200 cv=19.1% rounds=200 calls=2906 mean_ci=[1.07µs 1.13µs] cold=417.0ns
+group=expand/row1920/pal256_runs8 benchmark=opaque  |  vs_base_pct=-8.18 ci=[-10.13% -6.27%] significant=true effect=-0.43 p=0.0000  |  min=349.1ns mean=1.01µs median=1.05µs mad=201.9ns  |  throughput=7.11 GiB/s  |  n=200 cv=20.7% rounds=200 calls=2906 mean_ci=[977.8ns 1.04µs] cold=584.0ns
+group=expand/row1920/pal256_runs8 benchmark=transparent  |  vs_base_pct=+1.38 ci=[-0.26% +3.06%] significant=false effect=0.07 p=0.2059  |  min=373.1ns mean=1.11µs median=1.14µs mad=190.0ns  |  throughput=6.45 GiB/s  |  n=200 cv=19.5% rounds=200 calls=2906 mean_ci=[1.08µs 1.14µs] cold=417.0ns
+group=expand/px4096/pal16_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=938.1ns mean=2.37µs median=2.41µs mad=377.3ns  |  throughput=6.44 GiB/s  |  n=200 cv=19.0% rounds=200 calls=1400 mean_ci=[2.31µs 2.43µs] cold=792.0ns
+group=expand/px4096/pal16_noise benchmark=opaque  |  vs_base_pct=-7.17 ci=[-9.28% -5.03%] significant=true effect=-0.39 p=0.0000  |  min=844.4ns mean=2.19µs median=2.29µs mad=432.9ns  |  throughput=6.98 GiB/s  |  n=200 cv=20.0% rounds=200 calls=1400 mean_ci=[2.13µs 2.25µs] cold=833.0ns
+group=expand/px4096/pal16_noise benchmark=transparent  |  vs_base_pct=-3.25 ci=[-5.19% -1.35%] significant=true effect=-0.18 p=0.0033  |  min=910.9ns mean=2.28µs median=2.35µs mad=332.9ns  |  throughput=6.70 GiB/s  |  n=200 cv=18.9% rounds=200 calls=1400 mean_ci=[2.22µs 2.34µs] cold=958.0ns
+group=expand/px4096/pal16_runs8 benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=765.7ns mean=2.28µs median=2.38µs mad=404.8ns  |  throughput=6.69 GiB/s  |  n=200 cv=20.1% rounds=200 calls=1412 mean_ci=[2.22µs 2.34µs] cold=1.12µs
+group=expand/px4096/pal16_runs8 benchmark=opaque  |  vs_base_pct=-8.17 ci=[-9.85% -6.48%] significant=true effect=-0.44 p=0.0000  |  min=696.0ns mean=2.08µs median=2.18µs mad=455.3ns  |  throughput=7.35 GiB/s  |  n=200 cv=20.1% rounds=200 calls=1412 mean_ci=[2.02µs 2.13µs] cold=625.0ns
+group=expand/px4096/pal16_runs8 benchmark=transparent  |  vs_base_pct=-3.63 ci=[-5.30% -1.96%] significant=true effect=-0.19 p=0.0000  |  min=742.4ns mean=2.20µs median=2.30µs mad=447.5ns  |  throughput=6.94 GiB/s  |  n=200 cv=19.9% rounds=200 calls=1412 mean_ci=[2.14µs 2.26µs] cold=750.0ns
+group=expand/px4096/pal64_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=788.7ns mean=2.41µs median=2.41µs mad=376.2ns  |  throughput=6.33 GiB/s  |  n=200 cv=23.2% rounds=200 calls=1390 mean_ci=[2.33µs 2.49µs] cold=708.0ns
+group=expand/px4096/pal64_noise benchmark=opaque  |  vs_base_pct=-7.81 ci=[-9.88% -5.74%] significant=true effect=-0.38 p=0.0000  |  min=755.4ns mean=2.21µs median=2.26µs mad=479.3ns  |  throughput=6.89 GiB/s  |  n=200 cv=25.1% rounds=200 calls=1390 mean_ci=[2.14µs 2.29µs] cold=625.0ns
+group=expand/px4096/pal64_noise benchmark=transparent  |  vs_base_pct=-1.14 ci=[-2.99% +0.68%] significant=false effect=-0.06 p=0.1810  |  min=786.2ns mean=2.39µs median=2.40µs mad=386.2ns  |  throughput=6.38 GiB/s  |  n=200 cv=23.8% rounds=200 calls=1390 mean_ci=[2.31µs 2.47µs] cold=750.0ns
+group=expand/px4096/pal256_noise benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=808.7ns mean=2.36µs median=2.43µs mad=345.2ns  |  throughput=6.48 GiB/s  |  n=200 cv=19.0% rounds=200 calls=1366 mean_ci=[2.29µs 2.42µs] cold=958.0ns
+group=expand/px4096/pal256_noise benchmark=opaque  |  vs_base_pct=-7.81 ci=[-9.85% -5.82%] significant=true effect=-0.42 p=0.0000  |  min=728.2ns mean=2.16µs median=2.24µs mad=476.9ns  |  throughput=7.06 GiB/s  |  n=200 cv=21.5% rounds=200 calls=1366 mean_ci=[2.10µs 2.22µs] cold=708.0ns
+group=expand/px4096/pal256_noise benchmark=transparent  |  vs_base_pct=-0.02 ci=[-1.89% +1.85%] significant=false effect=-0.00 p=0.9841  |  min=802.7ns mean=2.35µs median=2.44µs mad=394.4ns  |  throughput=6.50 GiB/s  |  n=200 cv=19.3% rounds=200 calls=1366 mean_ci=[2.28µs 2.41µs] cold=792.0ns
+group=expand/px4096/pal256_runs8 benchmark=scalar_opaque_reference  |  vs_base=baseline  |  min=948.0ns mean=2.35µs median=2.41µs mad=373.6ns  |  throughput=6.50 GiB/s  |  n=200 cv=16.2% rounds=200 calls=1375 mean_ci=[2.29µs 2.40µs] cold=708.0ns
+group=expand/px4096/pal256_runs8 benchmark=opaque  |  vs_base_pct=-7.98 ci=[-9.69% -6.25%] significant=true effect=-0.49 p=0.0000  |  min=846.5ns mean=2.16µs median=2.25µs mad=464.0ns  |  throughput=7.07 GiB/s  |  n=200 cv=17.9% rounds=200 calls=1375 mean_ci=[2.11µs 2.21µs] cold=625.0ns
+group=expand/px4096/pal256_runs8 benchmark=transparent  |  vs_base_pct=+0.07 ci=[-1.54% +1.72%] significant=false effect=0.00 p=0.8092  |  min=975.0ns mean=2.34µs median=2.39µs mad=430.3ns  |  throughput=6.51 GiB/s  |  n=200 cv=17.6% rounds=200 calls=1375 mean_ci=[2.29µs 2.40µs] cold=667.0ns
+      250.48 real        53.94 user        34.45 sys
+           445022208  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              380377  page reclaims
+                 108  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   3  messages sent
+                   2  messages received
+                   5  signals received
+                 114  voluntary context switches
+              314282  involuntary context switches
+           704521861  instructions retired
+           227719510  cycles elapsed
+            36373080  peak memory footprint

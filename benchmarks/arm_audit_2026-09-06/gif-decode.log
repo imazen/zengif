@@ -1,0 +1,191 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling autocfg v1.5.1
+   Compiling libc v0.2.189
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.5
+   Compiling syn v2.0.119
+   Compiling bitflags v2.13.1
+   Compiling archmage-macros v0.9.28
+   Compiling safe_unaligned_simd v0.2.5
+   Compiling rustversion v1.0.23
+   Compiling rustix v1.1.4
+   Compiling archmage v0.9.28
+   Compiling errno v0.3.14
+   Compiling serde_core v1.0.229
+   Compiling bytemuck_derive v1.12.0
+   Compiling num-integer v0.1.47
+   Compiling bytemuck v1.25.2
+   Compiling equator-macro v0.4.2
+   Compiling thiserror v2.0.20
+   Compiling utf8parse v0.2.2
+   Compiling simd-adler32 v0.3.10
+   Compiling cfg-if v1.0.4
+   Compiling zmij v1.0.23
+   Compiling equator v0.4.2
+   Compiling anstyle-parse v1.0.0
+   Compiling num-bigint v0.4.8
+   Compiling magetypes v0.9.28
+   Compiling thiserror-impl v2.0.20
+   Compiling crc32fast v1.5.1
+   Compiling serde v1.0.229
+   Compiling whereat v0.1.5
+   Compiling anstyle v1.0.14
+   Compiling memchr v2.8.3
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling adler2 v2.0.1
+   Compiling anstyle-query v1.1.5
+   Compiling enough v0.4.4
+   Compiling colorchoice v1.0.5
+   Compiling serde_json v1.0.151
+   Compiling anstream v1.0.0
+   Compiling almost-enough v0.4.4
+   Compiling num-rational v0.4.2
+   Compiling zenpixels v0.2.16
+   Compiling aligned-vec v0.6.4
+   Compiling serde_derive v1.0.229
+   Compiling objc2-core-foundation v0.3.2
+   Compiling num-derive v0.4.2
+   Compiling itoa v1.0.18
+   Compiling option-ext v0.2.0
+   Compiling bytes v1.12.1
+   Compiling yuvxyb-math v0.1.1
+   Compiling byte-slice-cast v1.2.3
+   Compiling heck v0.5.0
+   Compiling clap_lex v1.1.0
+   Compiling imgref v1.12.3
+   Compiling strsim v0.11.1
+   Compiling av-data v0.4.4
+   Compiling clap_derive v4.6.4
+   Compiling clap_builder v4.6.6
+   Compiling fast-ssim2 v0.7.1
+   Compiling dirs-sys v0.5.0
+   Compiling objc2-io-kit v0.3.2
+   Compiling v_frame v0.3.9
+   Compiling zencodec v0.1.26
+   Compiling miniz_oxide v0.9.1
+   Compiling linear-srgb v0.6.12
+   Compiling rgb v0.8.53
+   Compiling weezl v0.1.12
+   Compiling log v0.4.34
+   Compiling clap v4.6.6
+   Compiling yuvxyb v0.4.2
+   Compiling gif v0.14.2
+   Compiling zenquant v0.1.3
+   Compiling flate2 v1.1.10
+   Compiling sysinfo v0.36.1
+   Compiling dirs v6.0.0
+   Compiling miniz_oxide v0.8.9
+   Compiling fd-lock v4.0.4
+   Compiling fs4 v1.1.0
+   Compiling terminal_size v0.4.4
+   Compiling fdeflate v0.3.7
+   Compiling garb v0.2.8
+   Compiling zenbench v0.1.9
+   Compiling codec-corpus v1.1.0
+   Compiling png v0.18.1
+   Compiling zengif v0.8.0 (/Users/lilith/work/zen/zengif)
+   Compiling zencodec-testkit v0.1.0
+   Compiling zenutils-fuzz v0.1.0
+    Finished `bench` profile [optimized + debuginfo] target(s) in 10.97s
+     Running benches/decode_bench.rs (target/release/deps/decode_bench-74fa9662e9f69813)
+[fixture] 64x64: 2489 bytes compressed, 4096 pixels (0 MiB RGBA)
+[fixture] 256x256: 36609 bytes compressed, 65536 pixels (0 MiB RGBA)
+[fixture] 1024x1024: 557942 bytes compressed, 1048576 pixels (4 MiB RGBA)
+[fixture] 4096x4096: 7414642 bytes compressed, 16777216 pixels (64 MiB RGBA)
+[zenbench] calibration: int=0.28ns/iter mem_bw=118.4GiB/s mem_lat=7.4ns
+[zenbench] timer resolution: 41ns, loop overhead: 0.22ns/iter, TSC: 1.000 ticks/ns (invariant)
+[zenbench] results → /Users/lilith/tmp/zenbench/zenbench-1788675272-14bc0.txt
+
+═══════════════════════════════════════════════════════════════
+  zenbench  1788675272-14bc0
+  git: 6c456243decaa9ad06c5bd3b268161267e19c3c0
+═══════════════════════════════════════════════════════════════
+
+  gif_decode_64x64  200 rounds × 132 calls
+                      mean ±mad µs  95% CI vs base     iB/s
+  ├─ zengif           17.7 ±2.9µs  [17.2–18.1]µs      883M
+  ├─ zengif-inplace   17.0 ±2.4µs  [-5.3%–-2.8%]      922M
+  ╰─ gif-rs           20.7 ±3.5µs  [+16.1%–+18.4%]    755M
+
+  zengif-inplace  ████████████████████████████████████████████████████ 922 MiB/s
+  zengif          ██████████████████████████████████████████████████ 883 MiB/s
+  gif-rs          ███████████████████████████████████████████ 755 MiB/s
+
+  gif_decode_256x256  200 rounds × 38 calls
+                        mean ±mad µs  95% CI vs base       iB/s
+  ├─ zengif           162.2 ±14.9µs  [159.7–164.9]µs     1.51G
+  ├─ zengif-inplace   155.0 ±13.8µs  [-4.9%–-1.8%]       1.58G
+  ╰─ gif-rs           189.0 ±14.6µs  [+16.3%–+19.4%]     1.29G
+
+  zengif-inplace  ███████████████████████████████████████████████████ 1.58 GiB/s
+  zengif          █████████████████████████████████████████████████ 1.51 GiB/s
+  gif-rs          ██████████████████████████████████████████ 1.29 GiB/s
+
+  gif_decode_1024x1024  200 rounds × 2 calls
+                     mean ±mad ms  95% CI vs base      iB/s
+  ├─ zengif           2.8 ±0.3ms  [2.7–2.8]ms        1.42G
+  ├─ zengif-inplace   2.7 ±0.2ms  [-4.1%–-1.0%]      1.47G [1]
+  ╰─ gif-rs           3.3 ±0.3ms  [+19.9%–+23.2%]    1.18G
+
+  zengif-inplace  ███████████████████████████████████████████████████ 1.47 GiB/s
+  zengif          █████████████████████████████████████████████████ 1.42 GiB/s
+  gif-rs          █████████████████████████████████████████ 1.18 GiB/s
+  [1] CI crosses zero
+
+  gif_decode_4096x4096  110 rounds × 1 calls
+                     mean ±mad ms  95% CI vs base      iB/s
+  ├─ zengif           28.7 ±0.6ms  [28.3–29.3]ms      2.18G
+  ├─ zengif-inplace   27.4 ±0.6ms  [-4.5%–-2.4%]      2.28G
+  ╰─ gif-rs           35.1 ±0.6ms  [+22.8%–+24.7%]    1.78G
+
+  zengif-inplace  ███████████████████████████████████████████████████ 2.28 GiB/s
+  zengif          █████████████████████████████████████████████████ 2.18 GiB/s
+  gif-rs          ████████████████████████████████████████ 1.78 GiB/s
+
+  swizzle_4096x4096  30 rounds × 1 calls
+             mean ±mad ms  95% CI vs base      iB/s
+  ├─ scalar   8.4 ±0.9ms  [8.0–8.8]ms        7.45G
+  ╰─ garb     1.9 ±0.1ms  [-80.8%–-72.9%]    32.3G [1]
+
+  garb    ███████████████████████████████████████████████████████████ 32.3 GiB/s
+  scalar  ██████████████ 7.45 GiB/s
+  [1] drift r=-0.70 — later rounds faster
+
+  total: 97.7s  (19 noisy rounds)
+═══════════════════════════════════════════════════════════════
+  filter: cargo bench -- --group=NAME  format: --format=llm|csv|md|json
+group=gif_decode_64x64 benchmark=zengif  |  vs_base=baseline  |  min=7.00µs mean=17.70µs median=17.20µs mad=2.89µs  |  throughput=882.78 MiB/s  |  n=200 cv=18.4% rounds=200 calls=132 mean_ci=[17.24µs 18.15µs] cold=12.50µs
+group=gif_decode_64x64 benchmark=zengif-inplace  |  vs_base_pct=-4.04 ci=[-5.26% -2.82%] significant=true effect=-0.23 p=0.0000  |  min=6.99µs mean=16.95µs median=16.67µs mad=2.35µs  |  throughput=921.60 MiB/s  |  n=200 cv=17.4% rounds=200 calls=132 mean_ci=[16.54µs 17.35µs] cold=7.54µs
+group=gif_decode_64x64 benchmark=gif-rs  |  vs_base_pct=+17.27 ci=[+16.09% +18.40%] significant=true effect=0.88 p=0.0000  |  min=8.65µs mean=20.71µs median=20.33µs mad=3.46µs  |  throughput=754.55 MiB/s  |  n=200 cv=17.6% rounds=200 calls=132 mean_ci=[20.19µs 21.20µs] cold=8.96µs
+group=gif_decode_256x256 benchmark=zengif  |  vs_base=baseline  |  min=128.28µs mean=162.15µs median=159.91µs mad=14.91µs  |  throughput=1.51 GiB/s  |  n=200 cv=11.6% rounds=200 calls=38 mean_ci=[159.70µs 164.91µs] cold=134.25µs
+group=gif_decode_256x256 benchmark=zengif-inplace  |  vs_base_pct=-3.37 ci=[-4.90% -1.80%] significant=true effect=-0.42 p=0.0001  |  min=125.12µs mean=154.96µs median=152.01µs mad=13.80µs  |  throughput=1.58 GiB/s  |  n=200 cv=8.5% rounds=200 calls=38 mean_ci=[153.14µs 156.79µs] cold=124.96µs
+group=gif_decode_256x256 benchmark=gif-rs  |  vs_base_pct=+17.83 ci=[+16.30% +19.37%] significant=true effect=2.18 p=0.0000  |  min=153.54µs mean=189.01µs median=188.77µs mad=14.61µs  |  throughput=1.29 GiB/s  |  n=200 cv=7.2% rounds=200 calls=38 mean_ci=[187.10µs 190.90µs] cold=155.67µs
+group=gif_decode_1024x1024 benchmark=zengif  |  vs_base=baseline  |  min=1.94ms mean=2.76ms median=2.71ms mad=252.06µs  |  throughput=1.42 GiB/s  |  n=200 cv=12.6% rounds=200 calls=2 mean_ci=[2.71ms 2.81ms] cold=2.02ms
+group=gif_decode_1024x1024 benchmark=zengif-inplace  |  vs_base_pct=-2.54 ci=[-4.11% -0.96%] significant=false effect=-0.30 p=0.0029  |  min=1.89ms mean=2.66ms median=2.63ms mad=240.55µs  |  throughput=1.47 GiB/s  |  n=200 cv=8.9% rounds=200 calls=2 mean_ci=[2.62ms 2.69ms] cold=1.97ms
+group=gif_decode_1024x1024 benchmark=gif-rs  |  vs_base_pct=+21.53 ci=[+19.91% +23.15%] significant=true effect=2.38 p=0.0000  |  min=2.53ms mean=3.31ms median=3.32ms mad=257.54µs  |  throughput=1.18 GiB/s  |  n=200 cv=7.8% rounds=200 calls=2 mean_ci=[3.28ms 3.35ms] cold=2.44ms
+group=gif_decode_4096x4096 benchmark=zengif  |  vs_base=baseline  |  min=27.14ms mean=28.73ms median=27.91ms mad=583.95µs  |  throughput=2.18 GiB/s  |  n=110 cv=9.6% rounds=110 calls=1 mean_ci=[28.29ms 29.31ms] cold=27.37ms
+group=gif_decode_4096x4096 benchmark=zengif-inplace  |  vs_base_pct=-3.45 ci=[-4.49% -2.42%] significant=true effect=-1.06 p=0.0000  |  min=26.30ms mean=27.39ms median=26.91ms mad=558.92µs  |  throughput=2.28 GiB/s  |  n=110 cv=3.3% rounds=110 calls=1 mean_ci=[27.23ms 27.56ms] cold=26.36ms
+group=gif_decode_4096x4096 benchmark=gif-rs  |  vs_base_pct=+23.73 ci=[+22.78% +24.69%] significant=true effect=7.59 p=0.0000  |  min=34.04ms mean=35.11ms median=34.78ms mad=587.19µs  |  throughput=1.78 GiB/s  |  n=110 cv=2.3% rounds=110 calls=1 mean_ci=[34.95ms 35.27ms] cold=34.01ms
+group=swizzle_4096x4096 benchmark=scalar  |  vs_base=baseline  |  min=5.13ms mean=8.39ms median=8.62ms mad=931.46µs  |  throughput=7.45 GiB/s  |  n=30 cv=13.6% rounds=30 calls=1 mean_ci=[7.96ms 8.76ms] cold=4.34ms
+group=swizzle_4096x4096 benchmark=garb  |  vs_base_pct=-76.95 ci=[-80.76% -72.87%] significant=true effect=-7.83 p=0.0000  |  min=1.15ms mean=1.93ms median=2.03ms mad=50.10µs  |  throughput=32.33 GiB/s  |  n=30 cv=13.5% rounds=30 calls=1 mean_ci=[1.84ms 2.02ms] cold=1.06ms
+      111.24 real        50.97 user        10.28 sys
+           438386688  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              791490  page reclaims
+                2264  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 169  messages sent
+                 244  messages received
+                 183  signals received
+                 813  voluntary context switches
+              140674  involuntary context switches
+          2150868442  instructions retired
+           963248724  cycles elapsed
+            37634672  peak memory footprint
