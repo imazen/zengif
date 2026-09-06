@@ -59,10 +59,23 @@ fn bench_expand(suite: &mut Suite) {
         ] {
             let idx: &'static [u8] = Box::leak(indices(w, ncolors, run).into_boxed_slice());
             let l: &'static [Rgba; 256] = Box::leak(Box::new(lut()));
+            let expected: Vec<_> = idx.iter().map(|&i| l[i as usize]).collect();
+            let mut actual = vec![Rgba::default(); w];
+            k::opaque(&mut actual, idx, l);
+            assert_eq!(actual, expected, "opaque palette expansion");
 
             suite.compare(format!("expand/{wlabel}/{clabel}"), |g| {
                 // 4 bytes written per pixel.
                 g.throughput(Throughput::Bytes((w * 4) as u64));
+                g.bench("scalar_opaque_reference", move |b| {
+                    let mut canvas = vec![Rgba::default(); w];
+                    b.iter(|| {
+                        for (dst, &i) in canvas.iter_mut().zip(idx) {
+                            *dst = l[i as usize];
+                        }
+                        black_box(&canvas);
+                    })
+                });
                 g.bench("opaque", move |b| {
                     let mut canvas = vec![Rgba::default(); w];
                     b.iter(move || k::opaque(&mut canvas, idx, l))
