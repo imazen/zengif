@@ -101,7 +101,7 @@ almost-enough = "0.4.3"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
 codec-corpus = "1.0.3"
-archmage = { version = "0.9.15", features = ["std"] }
+archmage = { version = "0.9.15", features = ["std", "testable_dispatch"] }
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

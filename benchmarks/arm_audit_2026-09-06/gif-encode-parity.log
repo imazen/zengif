@@ -1,0 +1,57 @@
+   Compiling zengif v0.8.0 (/Users/lilith/work/zen/zengif)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2.32s
+     Running benches/decode_bench.rs (target/release/deps/decode_bench-a36012b7d8696ac9)
+[fixture] 64x64: 2489 bytes compressed, 4096 pixels (0 MiB RGBA)
+[fixture] 256x256: 36609 bytes compressed, 65536 pixels (0 MiB RGBA)
+[fixture] 1024x1024: 557942 bytes compressed, 1048576 pixels (4 MiB RGBA)
+[fixture] 4096x4096: 7414642 bytes compressed, 16777216 pixels (64 MiB RGBA)
+[zenbench] calibration: int=0.27ns/iter mem_bw=117.2GiB/s mem_lat=7.4ns
+[zenbench] timer resolution: 41ns, loop overhead: 0.22ns/iter, TSC: 1.000 ticks/ns (invariant)
+[zenbench] results → /Users/lilith/tmp/zenbench/zenbench-1788676786-15a0b.txt
+
+═══════════════════════════════════════════════════════════════
+  zenbench  1788676786-15a0b
+  git: 401ebe8187071535bb6145b74b2f4dc3412c3b74
+═══════════════════════════════════════════════════════════════
+
+  gif_encode_default_q80/64x64  110 rounds × 9 calls
+                        mean ±mad µs  95% CI vs base    
+  ├─ neon            738.2 ±148.4µs  [710.9–765.4]µs   
+  ╰─ forced_scalar   993.4 ±130.4µs  [+31.2%–+37.9%]   
+
+  neon           ███████████████████████████████████████ 738.21µs
+  forced_scalar  █████████████████████████████████████████████████████ 993.44µs
+
+  gif_encode_default_q80/512x512  200 rounds × 1 calls
+                    mean ±mad ms  95% CI vs base  
+  ├─ neon            20.8 ±0.7ms  [20.5–21.0]ms   
+  ╰─ forced_scalar   22.7 ±2.5ms  [+6.9%–+11.3%]  
+
+  neon           ██████████████████████████████████████████████████ 20.77ms
+  forced_scalar  ███████████████████████████████████████████████████████ 22.67ms
+
+  total: 42.0s  (15 noisy rounds)
+═══════════════════════════════════════════════════════════════
+  filter: cargo bench -- --group=NAME  format: --format=llm|csv|md|json
+group=gif_encode_default_q80/64x64 benchmark=neon  |  vs_base=baseline  |  min=375.14µs mean=738.21µs median=751.69µs mad=148.42µs  |  n=110 cv=19.7% rounds=110 calls=9 mean_ci=[710.91µs 765.45µs] cold=397.04µs
+group=gif_encode_default_q80/64x64 benchmark=forced_scalar  |  vs_base_pct=+34.58 ci=[+31.19% +37.93%] significant=true effect=1.52 p=0.0000  |  min=535.49µs mean=993.44µs median=1.04ms mad=130.39µs  |  n=110 cv=18.8% rounds=110 calls=9 mean_ci=[958.66µs 1.03ms] cold=527.88µs
+group=gif_encode_default_q80/512x512 benchmark=neon  |  vs_base=baseline  |  min=18.88ms mean=20.77ms median=19.44ms mad=720.12µs  |  n=200 cv=8.1% rounds=200 calls=1 mean_ci=[20.54ms 21.01ms] cold=19.30ms
+group=gif_encode_default_q80/512x512 benchmark=forced_scalar  |  vs_base_pct=+9.14 ci=[+6.94% +11.31%] significant=true effect=1.16 p=0.0000  |  min=20.73ms mean=22.67ms median=22.83ms mad=2.50ms  |  n=200 cv=7.1% rounds=200 calls=1 mean_ci=[22.44ms 22.90ms] cold=21.26ms
+       47.02 real        29.99 user         3.58 sys
+           456605696  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              174552  page reclaims
+                 108  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   9  messages sent
+                   8  messages received
+                  11  signals received
+                 116  voluntary context switches
+               54706  involuntary context switches
+           714783883  instructions retired
+           234250391  cycles elapsed
+            36536920  peak memory footprint

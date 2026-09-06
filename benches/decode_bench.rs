@@ -10,7 +10,7 @@ use zengif::{
 };
 
 /// Generate a single-frame GIF with XOR-coordinate palette indices.
-fn generate_xor_gif(width: u16, height: u16) -> Vec<u8> {
+fn generate_xor_gif(width: u16, height: u16, supplied_palette: bool) -> Vec<u8> {
     let palette = Palette::from_rgba(
         (0..256)
             .map(|i| {
@@ -21,7 +21,7 @@ fn generate_xor_gif(width: u16, height: u16) -> Vec<u8> {
             .collect(),
     );
 
-    let config = EncoderConfig::new().repeat(Repeat::Once);
+    let config = EncoderConfig::new().quality(80).repeat(Repeat::Once);
     let limits = Limits::none();
     let mut encoder = EncodeRequest::new(&config, width, height)
         .limits(&limits)
@@ -41,7 +41,11 @@ fn generate_xor_gif(width: u16, height: u16) -> Vec<u8> {
         })
         .collect();
 
-    let frame = FrameInput::with_palette(width, height, 0, pixels, palette);
+    let frame = if supplied_palette {
+        FrameInput::with_palette(width, height, 0, pixels, palette)
+    } else {
+        FrameInput::new(width, height, 0, pixels)
+    };
     encoder.add_frame(frame).unwrap();
     encoder.finish().unwrap()
 }
@@ -148,7 +152,7 @@ fn decode_benchmarks(suite: &mut Suite) {
     std::fs::create_dir_all(&artifact_dir).unwrap();
 
     for &(dim, label) in sizes {
-        let gif_data = generate_xor_gif(dim, dim);
+        let gif_data = generate_xor_gif(dim, dim, true);
         std::fs::write(artifact_dir.join(format!("xor-{label}.gif")), &gif_data).unwrap();
         let pixels = dim as u64 * dim as u64;
         let rgba_bytes = pixels * 4;
@@ -196,4 +200,46 @@ fn decode_benchmarks(suite: &mut Suite) {
     swizzle_benchmarks(suite);
 }
 
-zenbench::main!(decode_benchmarks);
+#[cfg(target_arch = "aarch64")]
+fn encode_benchmarks(suite: &mut Suite) {
+    for dim in [64u16, 512] {
+        suite.compare(format!("gif_encode_default_q80/{dim}x{dim}"), |g| {
+            let mut reference = None;
+            for (label, enabled) in [("neon", true), ("forced_scalar", false)] {
+                archmage::NeonToken::dangerously_disable_token_process_wide(!enabled).unwrap();
+                let fixture = generate_xor_gif(dim, dim, false);
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../codec-artifacts/zengif-arm-audit");
+                std::fs::create_dir_all(&path).unwrap();
+                std::fs::write(
+                    path.join(format!("encode-default-q80-{dim}-{label}.gif")),
+                    &fixture,
+                )
+                .unwrap();
+                assert_eq!(decode_zengif(&fixture), dim as usize * dim as usize);
+                let mut decoder =
+                    Decoder::new(std::io::Cursor::new(&fixture), Limits::none(), &Unstoppable)
+                        .unwrap();
+                let pixels = decoder.next_frame().unwrap().unwrap().pixels;
+                if let Some(expected) = &reference {
+                    assert_eq!(&pixels, expected, "encoded pixel tier parity at {dim}");
+                } else {
+                    reference = Some(pixels);
+                }
+                g.bench(label, move |b| {
+                    b.with_input(move || {
+                        archmage::NeonToken::dangerously_disable_token_process_wide(!enabled)
+                            .unwrap()
+                    })
+                    .run(|_| generate_xor_gif(dim, dim, false))
+                });
+            }
+        });
+    }
+    archmage::NeonToken::dangerously_disable_token_process_wide(false).unwrap();
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn encode_benchmarks(_: &mut Suite) {}
+
+zenbench::main!(decode_benchmarks, encode_benchmarks);
