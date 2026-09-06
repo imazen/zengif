@@ -9,12 +9,8 @@ use zengif::{
     Decoder, EncodeRequest, EncoderConfig, FrameInput, Limits, Palette, Repeat, Rgba, Unstoppable,
 };
 
-/// Generate a single-frame GIF with a 256-color gradient palette.
-///
-/// The content is a horizontal gradient that exercises most palette entries,
-/// giving the LZW encoder realistic code table growth (not degenerate
-/// solid-color input that compresses to almost nothing).
-fn generate_gradient_gif(width: u16, height: u16) -> Vec<u8> {
+/// Generate a single-frame GIF with XOR-coordinate palette indices.
+fn generate_xor_gif(width: u16, height: u16) -> Vec<u8> {
     let palette = Palette::from_rgba(
         (0..256)
             .map(|i| {
@@ -137,10 +133,23 @@ fn swizzle_benchmarks(suite: &mut Suite) {
 fn decode_benchmarks(suite: &mut Suite) {
     // Pre-generate fixtures. Cache them so each benchmark iteration just
     // decodes (doesn't re-encode).
-    let sizes: &[(u16, &str)] = &[(256, "256x256"), (1024, "1024x1024"), (4096, "4096x4096")];
+    let sizes: &[(u16, &str)] = &[
+        (64, "64x64"),
+        (256, "256x256"),
+        (1024, "1024x1024"),
+        (4096, "4096x4096"),
+    ];
+    let artifact_dir = std::env::var_os("CODEC_BENCH_ARTIFACT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../codec-artifacts/zengif-arm-audit")
+        });
+    std::fs::create_dir_all(&artifact_dir).unwrap();
 
     for &(dim, label) in sizes {
-        let gif_data = generate_gradient_gif(dim, dim);
+        let gif_data = generate_xor_gif(dim, dim);
+        std::fs::write(artifact_dir.join(format!("xor-{label}.gif")), &gif_data).unwrap();
         let pixels = dim as u64 * dim as u64;
         let rgba_bytes = pixels * 4;
         let data_len = gif_data.len();
