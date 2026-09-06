@@ -53,3 +53,5 @@ The encode benchmark passes RGBA to FrameInput::new with Q80, so it exercises th
 Both 64×64 and 512×512 fixtures decode to exactly equal pixels between NEON and forced scalar. The benchmark asserts this before timing. Final means were 738.21/993.44 µs and 20.77/22.67 ms, respectively; paired scalar overhead intervals are +31.19% to +37.93% and +6.94% to +11.31%. The tiny case has substantial absolute variance (about 19% CV); use the paired interval rather than comparing independent runs. See [final encode log](gif-encode-parity.log) and [first encode run](gif-encode.log).
 
 Token switching uses the dev-only archmage/testable_dispatch feature and runs outside timing. The original supplied-palette decode fixture path remains supplied-palette. `cargo clippy --locked -p zengif --lib --bench decode_bench --bench expand_palette -- -D warnings` passed.
+
+Library test results are in [gif-lib-tests.log](gif-lib-tests.log). Saved encoded bytes are also identical between tiers at both tested sizes.
