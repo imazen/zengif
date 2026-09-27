@@ -497,6 +497,27 @@ pub trait QuantizerTrait: Send {
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame>;
 
+    /// Quantize a single frame, honoring a cancellation token.
+    ///
+    /// Backends that can poll mid-quantization should override this; the
+    /// default implementation checks `stop` once at the boundary and then
+    /// delegates to [`quantize_frame`](QuantizerTrait::quantize_frame).
+    /// Quantizing a large frame can take seconds, so backends without an
+    /// override are effectively uncancellable for that span.
+    fn quantize_frame_with_stop(
+        &mut self,
+        pixels: &[Rgba],
+        width: u16,
+        height: u16,
+        background: Option<&[Rgba]>,
+        config: &QuantizeConfig,
+        stop: &dyn Stop,
+    ) -> Result<QuantizedFrame> {
+        stop.check()
+            .map_err(|r| at!(crate::error::GifError::Cancelled(r)))?;
+        self.quantize_frame(pixels, width, height, background, config)
+    }
+
     /// Build a shared palette from multiple frames.
     ///
     /// Call this before `quantize_frame_with_palette` to compute
@@ -547,6 +568,25 @@ pub trait QuantizerTrait: Send {
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
         self.quantize_frame(pixels, width, height, background, config)
+    }
+
+    /// Quantize a frame using a pre-computed shared palette, honoring a
+    /// cancellation token.
+    ///
+    /// The default implementation checks `stop` once and delegates to
+    /// [`quantize_frame_with_palette`](QuantizerTrait::quantize_frame_with_palette).
+    fn quantize_frame_with_palette_with_stop(
+        &mut self,
+        pixels: &[Rgba],
+        width: u16,
+        height: u16,
+        background: Option<&[Rgba]>,
+        config: &QuantizeConfig,
+        stop: &dyn Stop,
+    ) -> Result<QuantizedFrame> {
+        stop.check()
+            .map_err(|r| at!(crate::error::GifError::Cancelled(r)))?;
+        self.quantize_frame_with_palette(pixels, width, height, background, config)
     }
 
     /// Reset any accumulated state (e.g., shared palette).

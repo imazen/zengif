@@ -60,6 +60,89 @@ impl ZenquantQuantizer {
         bytemuck::cast_slice(pixels)
     }
 
+    /// Map a zenquant failure, preserving `Cancelled` as a real cancellation
+    /// rather than a generic quantization error.
+    fn map_zq_err(e: zenquant::QuantizeError, message: &'static str) -> whereat::At<GifError> {
+        match e {
+            zenquant::QuantizeError::Cancelled(r) => at!(GifError::Cancelled(r)),
+            _ => at!(GifError::QuantizationFailed { message }),
+        }
+    }
+
+    /// Shared post-processing for [`quantize_frame`](QuantizerTrait::quantize_frame)
+    /// and its `_with_stop` variant.
+    fn finish_quantize(
+        result: zenquant::QuantizeResult,
+        pixels: &[Rgba],
+    ) -> Result<QuantizedFrame> {
+        let transparent_index = result.transparent_index();
+
+        // Post-process: ensure alpha==0 pixels map to transparent index.
+        // Only remap if we have a valid transparent palette entry.
+        // If there is no transparent entry, skip remapping — pixels get their
+        // nearest quantized color, which is acceptable degradation.
+        let mut indices = result.indices().to_vec();
+        if let Some(ti) = transparent_index {
+            for (i, p) in pixels.iter().enumerate() {
+                if p.a == 0 {
+                    indices[i] = ti;
+                }
+            }
+        }
+
+        Ok(QuantizedFrame {
+            palette: Self::palette_to_bytes(&result),
+            pixels: indices,
+            transparent_index,
+        })
+    }
+
+    /// Shared post-processing for
+    /// [`quantize_frame_with_palette`](QuantizerTrait::quantize_frame_with_palette)
+    /// and its `_with_stop` variant.
+    fn finish_quantize_with_palette(
+        &self,
+        result: zenquant::QuantizeResult,
+        pixels: &[Rgba],
+    ) -> Result<QuantizedFrame> {
+        // Prefer the remap's own transparent entry; fall back to the slot
+        // reserved at shared-palette build time (sweep issue #14).
+        let transparent_index = result.transparent_index().or(self.shared_transparent);
+        // The frame must reference the palette as COMMITTED to the global
+        // color table (which may carry the appended reserved entry).
+        let palette_bytes = self
+            .shared_palette_bytes
+            .clone()
+            .unwrap_or_else(|| Self::palette_to_bytes(&result));
+
+        // Post-process: ensure alpha==0 pixels map to the transparent index.
+        let mut indices = result.indices().to_vec();
+        let mut used_transparent = false;
+        if let Some(ti) = transparent_index {
+            for (i, p) in pixels.iter().enumerate() {
+                if p.a == 0 {
+                    indices[i] = ti;
+                    used_transparent = true;
+                }
+            }
+        }
+
+        // Declare the transparent index whenever zenquant's own remap used
+        // one (its indices may already reference it beyond our a==0 loop);
+        // the reserved fallback slot is declared only when actually used.
+        let declared = match (result.transparent_index(), used_transparent) {
+            (Some(ti), _) => Some(ti),
+            (None, true) => self.shared_transparent,
+            (None, false) => None,
+        };
+
+        Ok(QuantizedFrame {
+            palette: palette_bytes,
+            pixels: indices,
+            transparent_index: declared,
+        })
+    }
+
     /// Extract palette bytes (RGB) from a zenquant result.
     fn palette_to_bytes(result: &zenquant::QuantizeResult) -> Vec<u8> {
         result
@@ -85,37 +168,38 @@ impl QuantizerTrait for ZenquantQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
+        self.quantize_frame_with_stop(
+            pixels,
+            width,
+            height,
+            _background,
+            config,
+            &enough::Unstoppable,
+        )
+    }
+
+    fn quantize_frame_with_stop(
+        &mut self,
+        pixels: &[Rgba],
+        width: u16,
+        height: u16,
+        _background: Option<&[Rgba]>,
+        config: &QuantizeConfig,
+        stop: &dyn Stop,
+    ) -> Result<QuantizedFrame> {
         let zq_config = Self::make_config(config);
         let zq_pixels = Self::convert_pixels(pixels);
 
-        let result =
-            zenquant::quantize_rgba(zq_pixels, width as usize, height as usize, &zq_config)
-                .map_err(|_| {
-                    at!(GifError::QuantizationFailed {
-                        message: "zenquant quantization failed"
-                    })
-                })?;
+        let result = zenquant::quantize_rgba_with_stop(
+            zq_pixels,
+            width as usize,
+            height as usize,
+            &zq_config,
+            stop,
+        )
+        .map_err(|e| Self::map_zq_err(e, "zenquant quantization failed"))?;
 
-        let transparent_index = result.transparent_index();
-
-        // Post-process: ensure alpha==0 pixels map to transparent index.
-        // Only remap if we have a valid transparent palette entry.
-        // If there is no transparent entry, skip remapping — pixels get their
-        // nearest quantized color, which is acceptable degradation.
-        let mut indices = result.indices().to_vec();
-        if let Some(ti) = transparent_index {
-            for (i, p) in pixels.iter().enumerate() {
-                if p.a == 0 {
-                    indices[i] = ti;
-                }
-            }
-        }
-
-        Ok(QuantizedFrame {
-            palette: Self::palette_to_bytes(&result),
-            pixels: indices,
-            transparent_index,
-        })
+        Self::finish_quantize(result, pixels)
     }
 
     fn build_shared_palette(
@@ -157,11 +241,8 @@ impl QuantizerTrait for ZenquantQuantizer {
 
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
-        let result = zenquant::build_palette_rgba(&img_refs, &zq_config).map_err(|_| {
-            at!(GifError::QuantizationFailed {
-                message: "zenquant palette building failed"
-            })
-        })?;
+        let result = zenquant::build_palette_rgba_with_stop(&img_refs, &zq_config, stop)
+            .map_err(|e| Self::map_zq_err(e, "zenquant palette building failed"))?;
 
         let mut palette_bytes = Self::palette_to_bytes(&result);
         self.shared_transparent = if needs_transparent && result.transparent_index().is_none() {
@@ -186,6 +267,25 @@ impl QuantizerTrait for ZenquantQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
+        self.quantize_frame_with_palette_with_stop(
+            pixels,
+            width,
+            height,
+            _background,
+            config,
+            &enough::Unstoppable,
+        )
+    }
+
+    fn quantize_frame_with_palette_with_stop(
+        &mut self,
+        pixels: &[Rgba],
+        width: u16,
+        height: u16,
+        _background: Option<&[Rgba]>,
+        config: &QuantizeConfig,
+        stop: &dyn Stop,
+    ) -> Result<QuantizedFrame> {
         let cached = self.cached_result.as_ref().ok_or_else(|| {
             at!(GifError::QuantizationFailed {
                 message: "no shared palette - call build_shared_palette first"
@@ -196,49 +296,10 @@ impl QuantizerTrait for ZenquantQuantizer {
         let zq_pixels = Self::convert_pixels(pixels);
 
         let result = cached
-            .remap_rgba(zq_pixels, width as usize, height as usize, &zq_config)
-            .map_err(|_| {
-                at!(GifError::QuantizationFailed {
-                    message: "zenquant remapping failed"
-                })
-            })?;
+            .remap_rgba_with_stop(zq_pixels, width as usize, height as usize, &zq_config, stop)
+            .map_err(|e| Self::map_zq_err(e, "zenquant remapping failed"))?;
 
-        // Prefer the remap's own transparent entry; fall back to the slot
-        // reserved at shared-palette build time (sweep issue #14).
-        let transparent_index = result.transparent_index().or(self.shared_transparent);
-        // The frame must reference the palette as COMMITTED to the global
-        // color table (which may carry the appended reserved entry).
-        let palette_bytes = self
-            .shared_palette_bytes
-            .clone()
-            .unwrap_or_else(|| Self::palette_to_bytes(&result));
-
-        // Post-process: ensure alpha==0 pixels map to the transparent index.
-        let mut indices = result.indices().to_vec();
-        let mut used_transparent = false;
-        if let Some(ti) = transparent_index {
-            for (i, p) in pixels.iter().enumerate() {
-                if p.a == 0 {
-                    indices[i] = ti;
-                    used_transparent = true;
-                }
-            }
-        }
-
-        // Declare the transparent index whenever zenquant's own remap used
-        // one (its indices may already reference it beyond our a==0 loop);
-        // the reserved fallback slot is declared only when actually used.
-        let declared = match (result.transparent_index(), used_transparent) {
-            (Some(ti), _) => Some(ti),
-            (None, true) => self.shared_transparent,
-            (None, false) => None,
-        };
-
-        Ok(QuantizedFrame {
-            palette: palette_bytes,
-            pixels: indices,
-            transparent_index: declared,
-        })
+        self.finish_quantize_with_palette(result, pixels)
     }
 
     fn reset(&mut self) {
@@ -351,5 +412,38 @@ mod tests {
 
         quantizer.reset();
         assert!(quantizer.cached_result.is_none());
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    struct Cancel;
+    impl Stop for Cancel {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
+            Err(enough::StopReason::Cancelled)
+        }
+    }
+
+    #[test]
+    fn cancelled_quantization_preserves_error_kind() {
+        let pixels = vec![
+            Rgba {
+                r: 20,
+                g: 30,
+                b: 40,
+                a: 255
+            };
+            64
+        ];
+        let mut q = ZenquantQuantizer::new();
+        let result =
+            q.quantize_frame_with_stop(&pixels, 8, 8, None, &QuantizeConfig::default(), &Cancel);
+        let error = result.unwrap_err();
+        assert!(matches!(
+            error.error(),
+            GifError::Cancelled(enough::StopReason::Cancelled)
+        ));
     }
 }

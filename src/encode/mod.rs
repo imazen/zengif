@@ -263,12 +263,13 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
 
         // Quantize frame with previous frame as background
         // imagequant's set_background() will make matching pixels transparent
-        let quantized = quantizer.quantize_frame_with_palette(
+        let quantized = quantizer.quantize_frame_with_palette_with_stop(
             &frame.pixels,
             frame.width,
             frame.height,
             previous_frame.as_deref(),
             &quant_config,
+            stop,
         )?;
 
         // Build gif frame (no local palette - uses global)
