@@ -82,7 +82,10 @@ garb = { version = "0.2.5", default-features = false }
 # Color quantization backends (optional)
 imagequant = { version = "4.4.1", optional = true }
 quantizr = { version = "1.4.3", optional = true }
-zenquant = { version = "0.1.1", optional = true, default-features = false, features = ["std"] }
+# >=0.1.4 for the *_with_stop entry points (quantize_rgba_with_stop etc.) that
+# let cancellation reach the palette-building phases; resolved locally via the
+# [patch.crates-io] sibling path until 0.1.4 is published.
+zenquant = { version = "0.1.4", optional = true, default-features = false, features = ["std"] }
 quantette = { version = "0.6.0", optional = true, default-features = false, features = ["kmeans", "std"] }
 color_quant = { version = "1.1.0", optional = true }
 
@@ -177,3 +180,9 @@ required-features = ["std"]
 [[bench]]
 name = "expand_palette"
 harness = false
+
+[patch.crates-io]
+# zenquant 0.1.4 isn't published yet — the *_with_stop APIs this crate needs
+# live on its main (see zenquant PR with the pre-refinement polling fix).
+# CI and local builds clone sibling checkouts, so resolve to ../zenquant.
+zenquant = { path = "../zenquant" }

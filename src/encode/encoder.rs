@@ -1029,12 +1029,13 @@ impl<'a> Encoder<'a> {
                     representable.then(|| gray.remap(&frame_pixels))
                 } else {
                     let background = self.previous_frame.as_deref();
-                    Some(self.quantizer.quantize_frame_with_palette(
+                    Some(self.quantizer.quantize_frame_with_palette_with_stop(
                         &frame_pixels,
                         frame_width,
                         frame_height,
                         background,
                         &quant_config,
+                        self.stop,
                     )?)
                 };
 
@@ -1051,12 +1052,13 @@ impl<'a> Encoder<'a> {
 
                 if needs_per_frame {
                     let background = self.previous_frame.as_deref();
-                    let per_frame = self.quantizer.quantize_frame(
+                    let per_frame = self.quantizer.quantize_frame_with_stop(
                         &frame_pixels,
                         frame_width,
                         frame_height,
                         background,
                         &quant_config,
+                        self.stop,
                     )?;
                     (
                         per_frame.palette,
@@ -1081,12 +1083,13 @@ impl<'a> Encoder<'a> {
                     gray
                 } else {
                     let background = self.previous_frame.as_deref();
-                    self.quantizer.quantize_frame(
+                    self.quantizer.quantize_frame_with_stop(
                         &frame_pixels,
                         frame_width,
                         frame_height,
                         background,
                         &quant_config,
+                        self.stop,
                     )?
                 };
                 (
@@ -1108,12 +1111,13 @@ impl<'a> Encoder<'a> {
             if had_transparent && transparent_index.is_none() {
                 self.scratch.frame_pixels = frame_pixels;
                 let background = self.previous_frame.as_deref();
-                let per_frame = self.quantizer.quantize_frame(
+                let per_frame = self.quantizer.quantize_frame_with_stop(
                     &input.pixels,
                     input.width,
                     input.height,
                     background,
                     &quant_config,
+                    self.stop,
                 )?;
                 // The redo may still lack a transparent index if the SOURCE
                 // itself had transparency the backend cannot express; that is
