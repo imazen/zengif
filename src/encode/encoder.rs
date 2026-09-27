@@ -18,6 +18,7 @@ use super::config::default_buffer_frames;
 use super::palette::compute_remap_rmse;
 use super::palette::{ScratchBuffer, compute_frame_diff_pooled};
 use super::{EncodeRequest, EncoderConfig};
+use crate::stop::AnimationStops;
 use crate::{
     GifError, Limits, Result, Stats,
     types::{FrameInput, Metadata, Repeat, Rgba},
@@ -164,6 +165,9 @@ pub struct Encoder<'a> {
 
     /// Cumulative animation duration in milliseconds (for max_animation_ms enforcement).
     cumulative_duration_ms: u64,
+
+    /// A failed encode may have emitted a partial frame; it cannot be resumed.
+    failed: bool,
 }
 
 impl<'a> Encoder<'a> {
@@ -361,6 +365,7 @@ impl<'a> Encoder<'a> {
             gray_mode: None,
             scratch: ScratchBuffer::default(),
             cumulative_duration_ms: 0,
+            failed: false,
         })
     }
 
@@ -539,8 +544,23 @@ impl<'a> Encoder<'a> {
     /// limits are reached, then the palette is computed and all frames are
     /// encoded. Subsequent frames are encoded immediately with the shared palette.
     pub fn add_frame(&mut self, input: FrameInput) -> Result<()> {
+        self.add_frame_with_stop(input, &enough::Unstoppable)
+    }
+
+    /// Add a frame while also polling a token scoped to this call. Both this
+    /// token and the request token reach palette construction and quantization.
+    /// Invalid dimensions or limits reject before acceptance. An encode failure
+    /// poisons this writer because it may have emitted partial output.
+    pub fn add_frame_with_stop(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
+        let stop = AnimationStops(self.stop, stop);
+        let stop: &dyn Stop = &stop;
+        if self.failed {
+            return Err(at!(GifError::InvalidEncoderState {
+                message: "GIF encoder failed during an earlier frame"
+            }));
+        }
         // Check cancellation
-        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Validate dimensions
         if input.width != self.width || input.height != self.height {
@@ -549,6 +569,13 @@ impl<'a> Encoder<'a> {
                 expected_height: self.height,
                 actual_width: input.width,
                 actual_height: input.height,
+            }));
+        }
+        let expected = usize::from(self.width) * usize::from(self.height);
+        if input.pixels.len() != expected {
+            return Err(at!(GifError::FrameBufferLength {
+                expected,
+                actual: input.pixels.len(),
             }));
         }
 
@@ -574,10 +601,26 @@ impl<'a> Encoder<'a> {
 
         // Check cumulative animation duration (delay is in centiseconds)
         let frame_ms = input.delay as u64 * 10;
-        self.cumulative_duration_ms += frame_ms;
-        self.limits
-            .check_animation_duration(self.cumulative_duration_ms)?;
+        let duration = self
+            .cumulative_duration_ms
+            .checked_add(frame_ms)
+            .ok_or_else(|| {
+                at!(GifError::InvalidEncoderState {
+                    message: "animation duration overflow"
+                })
+            })?;
+        self.limits.check_animation_duration(duration)?;
 
+        let result = self.accept_frame(input, stop);
+        if result.is_ok() {
+            self.cumulative_duration_ms = duration;
+        } else {
+            self.failed = true;
+        }
+        result
+    }
+
+    fn accept_frame(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
         // Handle shared palette buffering mode
         #[cfg(any(
             feature = "zenquant",
@@ -587,11 +630,11 @@ impl<'a> Encoder<'a> {
             feature = "color_quant"
         ))]
         if self.config.shared_palette && self.computed_palette.is_none() {
-            return self.buffer_frame(input);
+            return self.buffer_frame(input, stop);
         }
 
         // Direct encode mode
-        self.encode_frame_direct(input)
+        self.encode_frame_direct(input, stop)
     }
 
     /// Buffer a frame for later encoding with shared palette.
@@ -615,7 +658,7 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn buffer_frame(&mut self, input: FrameInput) -> Result<()> {
+    fn buffer_frame(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
         // Compute buffered bytes for this frame with checked arithmetic.
         // pixels.len() is bounded by what the decoder/caller passed in, but on
         // 32-bit targets a 4096x4096 frame (16 M pixels × 4) overflows i32 and
@@ -652,7 +695,7 @@ impl<'a> Encoder<'a> {
             || self.buffered_bytes >= self.config.max_buffer_bytes;
 
         if should_flush {
-            self.flush_buffer()?;
+            self.flush_buffer(stop)?;
         }
 
         Ok(())
@@ -666,14 +709,14 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn flush_buffer(&mut self) -> Result<()> {
+    fn flush_buffer(&mut self, stop: &dyn Stop) -> Result<()> {
         use crate::quantize::QuantizeConfig;
 
         if self.buffered_frames.is_empty() {
             return Ok(());
         }
 
-        self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Build quantize config
         let quant_config = QuantizeConfig {
@@ -725,7 +768,7 @@ impl<'a> Encoder<'a> {
                 self.width,
                 self.height,
                 &quant_config,
-                &self.stop,
+                stop,
             )?
         };
 
@@ -748,23 +791,27 @@ impl<'a> Encoder<'a> {
 
         // Encode all buffered frames with the shared palette
         for frame_input in frames {
-            self.encode_frame_direct(frame_input)?;
+            self.encode_frame_direct(frame_input, stop)?;
         }
 
         Ok(())
     }
 
     /// Encode a frame directly (not buffered).
-    fn encode_frame_direct(&mut self, input: FrameInput) -> Result<()> {
+    fn encode_frame_direct(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
         // Ensure repeat is written before first frame
         self.ensure_repeat_written()?;
 
         // Quantize and encode the frame
-        let frame = self.prepare_frame(&input)?;
+        let frame = self.prepare_frame(&input, stop)?;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         self.encoder_mut()?
             .write_frame(&frame)
             .map_err(|e| at!(GifError::from(e)))?;
+
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Save for next frame's transparency optimization
         if self.config.use_transparency {
@@ -783,8 +830,12 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
-        self.prepare_frame_quantized(input)
+    fn prepare_frame(
+        &mut self,
+        input: &FrameInput,
+        stop: &dyn Stop,
+    ) -> Result<gif::Frame<'static>> {
+        self.prepare_frame_quantized(input, stop)
     }
 
     /// Prepare a frame for encoding (no quantizer available).
@@ -797,7 +848,12 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     )))]
-    fn prepare_frame(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+    fn prepare_frame(
+        &mut self,
+        input: &FrameInput,
+        stop: &dyn Stop,
+    ) -> Result<gif::Frame<'static>> {
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
         self.prepare_frame_passthrough(input)
     }
 
@@ -906,7 +962,11 @@ impl<'a> Encoder<'a> {
         feature = "quantizr",
         feature = "color_quant"
     ))]
-    fn prepare_frame_quantized(&mut self, input: &FrameInput) -> Result<gif::Frame<'static>> {
+    fn prepare_frame_quantized(
+        &mut self,
+        input: &FrameInput,
+        stop: &dyn Stop,
+    ) -> Result<gif::Frame<'static>> {
         use crate::quantize::QuantizeConfig;
 
         // Frame differencing marks unchanged pixels `a == 0`. A slot-less gray
@@ -1035,7 +1095,7 @@ impl<'a> Encoder<'a> {
                         frame_height,
                         background,
                         &quant_config,
-                        self.stop,
+                        stop,
                     )?)
                 };
 
@@ -1058,7 +1118,7 @@ impl<'a> Encoder<'a> {
                         frame_height,
                         background,
                         &quant_config,
-                        self.stop,
+                        stop,
                     )?;
                     (
                         per_frame.palette,
@@ -1089,7 +1149,7 @@ impl<'a> Encoder<'a> {
                         frame_height,
                         background,
                         &quant_config,
-                        self.stop,
+                        stop,
                     )?
                 };
                 (
@@ -1117,7 +1177,7 @@ impl<'a> Encoder<'a> {
                     input.height,
                     background,
                     &quant_config,
-                    self.stop,
+                    stop,
                 )?;
                 // The redo may still lack a transparent index if the SOURCE
                 // itself had transparency the backend cannot express; that is
@@ -1174,8 +1234,22 @@ impl<'a> Encoder<'a> {
     ///
     /// If there are buffered frames (from shared palette mode), they are
     /// encoded before finishing.
+    pub fn finish(self) -> Result<Vec<u8>> {
+        self.finish_with_stop(&enough::Unstoppable)
+    }
+
+    /// Finish while polling both the request token and this call's token.
+    /// Pending shared-palette frames are quantized with these tokens too.
     #[allow(unused_mut)]
-    pub fn finish(mut self) -> Result<Vec<u8>> {
+    pub fn finish_with_stop(mut self, stop: &dyn Stop) -> Result<Vec<u8>> {
+        let stop = AnimationStops(self.stop, stop);
+        let stop: &dyn Stop = &stop;
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+        if self.failed {
+            return Err(at!(GifError::InvalidEncoderState {
+                message: "cannot finish a failed GIF encoder"
+            }));
+        }
         // Flush any remaining buffered frames
         #[cfg(any(
             feature = "zenquant",
@@ -1184,7 +1258,7 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
-        self.flush_buffer()?;
+        self.flush_buffer(stop)?;
 
         // If the encoder was never created (0 frames with deferred shared-
         // palette creation), both the pending buffer AND self.encoder are
@@ -1206,6 +1280,8 @@ impl<'a> Encoder<'a> {
 
         // Check output size against limits
         self.limits.check_output_bytes(output.len() as u64)?;
+
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         Ok(output)
     }
