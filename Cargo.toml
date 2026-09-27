@@ -84,7 +84,7 @@ imagequant = { version = "4.4.1", optional = true }
 quantizr = { version = "1.4.3", optional = true }
 # Pin the unreleased cancellation APIs so standalone and downstream builds
 # resolve the same implementation without a sibling checkout.
-zenquant = { git = "https://github.com/imazen/zenquant", rev = "1dc144cace307fc744ccc5c5ff0b1812d2845f07", version = "0.1.4", optional = true, default-features = false, features = ["std"] }
+zenquant = { git = "https://github.com/imazen/zenquant", rev = "116df9c77c6e8eea1d6421365df2a95706a8523f", version = "0.1.4", optional = true, default-features = false, features = ["std"] }
 quantette = { version = "0.6.0", optional = true, default-features = false, features = ["kmeans", "std"] }
 color_quant = { version = "1.1.0", optional = true }
 
@@ -179,3 +179,9 @@ required-features = ["std"]
 [[bench]]
 name = "expand_palette"
 harness = false
+
+[patch.crates-io]
+# Coordinated exact animation timing series; retain one source for shared types.
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "2031094449ad1177ff96461d7c4d586c7ed384e6" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "2031094449ad1177ff96461d7c4d586c7ed384e6" }
+zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "789d69dbc314e748676b7f2f19542c17473ba40b" }

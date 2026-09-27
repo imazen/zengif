@@ -178,6 +178,8 @@ mod screen;
 #[doc(hidden)]
 pub use screen::__bench_expand;
 mod stats;
+#[cfg(feature = "std")]
+mod stop;
 mod types;
 
 // Public API

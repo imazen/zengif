@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zengif.txt 470 lines (supported surface) | zengif.features.txt 79 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zencodec,zenquant) | zengif.internal.txt 31 lines (20 hidden + 19 excluded-feature)
+# files: zengif.txt 524 lines (supported surface) | zengif.features.txt 36 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zenquant) | zengif.internal.txt 34 lines (23 hidden + 19 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 4
-#   pub types (struct/enum/trait/alias)        41
+#   pub types (struct/enum/trait/alias)        49
 #   pub consts/statics                          7
 #   free functions                             19
-#   inherent methods                          137
-#   struct fields                             160
-#   enum variants                              60
+#   inherent methods                          160
+#   struct fields                             164
+#   enum variants                              64
 #   re-exports                                  2
-#   trait roster entries (type × trait)       116
-#   auto-trait-complete types                  32
-#   auto-trait exceptions                       5
+#   trait roster entries (type × trait)       135
+#   auto-trait-complete types                  34
+#   auto-trait exceptions                      11
 #
 # per-module pub lines:
-#   (root)                          332
+#   (root)                          371
 #   detect                           35
 #   heuristics                       30
 #   sweep                            33
 
-## items (430 lines)
+## items (469 lines)
 
 pub mod zengif
 pub use Stop
@@ -147,7 +147,7 @@ pub GifError::AllocationFailed::requested: u64
 pub GifError::AnimationTooLong
 pub GifError::AnimationTooLong::duration_ms: u64
 pub GifError::AnimationTooLong::max_ms: u64
-pub GifError::Cancelled
+pub GifError::Cancelled(enough::reason::StopReason)
 pub GifError::DecompressionRatioExceeded
 pub GifError::DecompressionRatioExceeded::compressed: u64
 pub GifError::DecompressionRatioExceeded::decompressed: u64
@@ -160,6 +160,9 @@ pub GifError::DimensionsTooLarge::width: u16
 pub GifError::FileTooLarge
 pub GifError::FileTooLarge::max: u64
 pub GifError::FileTooLarge::size: u64
+pub GifError::FrameBufferLength
+pub GifError::FrameBufferLength::actual: usize
+pub GifError::FrameBufferLength::expected: usize
 pub GifError::FrameDimensionMismatch
 pub GifError::FrameDimensionMismatch::actual_height: u16
 pub GifError::FrameDimensionMismatch::actual_width: u16
@@ -167,6 +170,8 @@ pub GifError::FrameDimensionMismatch::expected_height: u16
 pub GifError::FrameDimensionMismatch::expected_width: u16
 pub GifError::GifCrate
 pub GifError::GifCrate::message: alloc::string::String
+pub GifError::InvalidDecoderState
+pub GifError::InvalidDecoderState::message: &'static str
 pub GifError::InvalidDisposalMethod
 pub GifError::InvalidDisposalMethod::value: u8
 pub GifError::InvalidEncoderState
@@ -197,6 +202,8 @@ pub GifError::OutputTooLarge::max: u64
 pub GifError::OutputTooLarge::size: u64
 pub GifError::QuantizationFailed
 pub GifError::QuantizationFailed::message: &'static str
+pub GifError::SinkWrite
+pub GifError::SinkWrite::message: alloc::string::String
 pub GifError::TooManyFrames
 pub GifError::TooManyFrames::count: u64
 pub GifError::TooManyFrames::max: u64
@@ -204,6 +211,7 @@ pub GifError::TotalPixelsTooLarge
 pub GifError::TotalPixelsTooLarge::max_pixels: u64
 pub GifError::TotalPixelsTooLarge::pixels: u64
 pub GifError::UnexpectedEof
+pub GifError::UnsupportedOperation(zencodec::capabilities::UnsupportedOperation)
 pub GifError::UnsupportedVersion
 pub GifError::UnsupportedVersion::version: [u8; 3]
 pub GifError::ZeroDimensionFrame
@@ -270,8 +278,10 @@ pub fn EncodeRequest<'a>::new(&'a EncoderConfig, u16, u16) -> Self
 pub fn EncodeRequest<'a>::stop(self, &'a dyn enough::Stop) -> Self
 pub struct Encoder<'a>
 pub fn Encoder<'a>::add_frame(&mut self, FrameInput) -> Result<()>
+pub fn Encoder<'a>::add_frame_with_stop(&mut self, FrameInput, &dyn enough::Stop) -> Result<()>
 pub fn Encoder<'a>::config(&self) -> &EncoderConfig
 pub fn Encoder<'a>::finish(self) -> Result<alloc::vec::Vec<u8>>
+pub fn Encoder<'a>::finish_with_stop(self, &dyn enough::Stop) -> Result<alloc::vec::Vec<u8>>
 pub fn Encoder<'a>::frame_index(&self) -> usize
 pub fn Encoder<'a>::from_metadata(&Metadata, &'a Limits, &'a dyn enough::Stop) -> Result<Self>
 pub fn Encoder<'a>::stats(&self) -> &Stats
@@ -312,6 +322,32 @@ pub fn FrameInput::from_bytes(u16, u16, u16, &[u8]) -> Self
 pub fn FrameInput::new(u16, u16, u16, alloc::vec::Vec<Rgba>) -> Self
 pub fn FrameInput::with_palette(u16, u16, u16, alloc::vec::Vec<Rgba>, Palette) -> Self
 pub struct FrameIterator<'a, R: std::io::Read>
+pub struct GifAnimationFrameDecoder
+pub struct GifAnimationFrameEncoder
+pub struct GifDecodeJob
+pub struct GifDecoder<'a>
+pub struct GifDecoderConfig
+pub fn GifDecoderConfig::decode(&self, &[u8]) -> core::result::Result<zencodec::output::DecodeOutput, whereat::at::At<zencodec::error::CodecError>>
+pub fn GifDecoderConfig::new() -> Self
+pub fn GifDecoderConfig::probe_full(&self, &[u8]) -> core::result::Result<zencodec::info::ImageInfo, whereat::at::At<zencodec::error::CodecError>>
+pub fn GifDecoderConfig::probe_header(&self, &[u8]) -> core::result::Result<zencodec::info::ImageInfo, whereat::at::At<zencodec::error::CodecError>>
+pub struct GifEncodeJob
+pub struct GifEncoder
+pub struct GifEncoderConfig
+pub fn GifEncoderConfig::inner(&self) -> &EncoderConfig
+pub fn GifEncoderConfig::inner_mut(&mut self) -> &mut EncoderConfig
+pub fn GifEncoderConfig::new() -> Self
+pub fn GifEncoderConfig::with_dithering(self, f32) -> Self
+pub fn GifEncoderConfig::with_global_palette(self, alloc::vec::Vec<Rgba>) -> Self
+pub fn GifEncoderConfig::with_lossy_tolerance(self, u8) -> Self
+pub fn GifEncoderConfig::with_max_buffer_bytes(self, usize) -> Self
+pub fn GifEncoderConfig::with_max_buffer_frames(self, usize) -> Self
+pub fn GifEncoderConfig::with_palette_error_threshold(self, core::option::Option<f32>) -> Self
+pub fn GifEncoderConfig::with_quality(self, f32) -> Self
+pub fn GifEncoderConfig::with_quantizer(self, Quantizer) -> Self
+pub fn GifEncoderConfig::with_repeat(self, Repeat) -> Self
+pub fn GifEncoderConfig::with_shared_palette(self, bool) -> Self
+pub fn GifEncoderConfig::with_transparency(self, bool) -> Self
 #[non_exhaustive] pub struct Limits
 pub Limits::max_animation_ms: core::option::Option<u64>
 pub Limits::max_decompression_ratio: core::option::Option<f64>
@@ -406,6 +442,7 @@ pub fn Screen::background(&self) -> Rgba
 pub fn Screen::dealloc(&self, &Stats)
 pub fn Screen::global_palette(&self) -> core::option::Option<&Palette>
 pub fn Screen::height(&self) -> u16
+pub fn Screen::is_canvas_taken(&self) -> bool
 pub fn Screen::memory_usage(&self) -> usize
 pub fn Screen::new(u16, u16, core::option::Option<Palette>, core::option::Option<u8>, &Stats, &Limits) -> Result<Self>
 pub fn Screen::pixels(&self) -> &[Rgba]
@@ -450,6 +487,8 @@ pub trait QuantizerTrait: core::marker::Send
 pub fn QuantizerTrait::build_shared_palette(&mut self, &[&[Rgba]], u16, u16, &QuantizeConfig, &dyn enough::Stop) -> Result<alloc::vec::Vec<u8>>
 pub fn QuantizerTrait::quantize_frame(&mut self, &[Rgba], u16, u16, core::option::Option<&[Rgba]>, &QuantizeConfig) -> Result<QuantizedFrame>
 pub fn QuantizerTrait::quantize_frame_with_palette(&mut self, &[Rgba], u16, u16, core::option::Option<&[Rgba]>, &QuantizeConfig) -> Result<QuantizedFrame>
+pub fn QuantizerTrait::quantize_frame_with_palette_with_stop(&mut self, &[Rgba], u16, u16, core::option::Option<&[Rgba]>, &QuantizeConfig, &dyn enough::Stop) -> Result<QuantizedFrame>
+pub fn QuantizerTrait::quantize_frame_with_stop(&mut self, &[Rgba], u16, u16, core::option::Option<&[Rgba]>, &QuantizeConfig, &dyn enough::Stop) -> Result<QuantizedFrame>
 pub fn QuantizerTrait::reset(&mut self)
 pub fn decode_gif(&[u8], Limits, &dyn enough::Stop) -> Result<(Metadata, alloc::vec::Vec<ComposedFrame>, Stats)>
 pub fn encode_gif(alloc::vec::Vec<FrameInput>, u16, u16, EncoderConfig, Limits, &dyn enough::Stop) -> Result<alloc::vec::Vec<u8>>
@@ -461,14 +500,22 @@ pub type DecodeError = GifError
 pub type EncodeError = GifError
 pub type Result<T> = core::result::Result<T, whereat::at::At<GifError>>
 
-## trait impls (34 types)
+## trait impls (43 types)
 
 ComposedFrame: Clone, Debug
 DisposalMethod: Clone, Copy, Debug, Default, Eq, From<gif::common::DisposalMethod>, PartialEq
 EncoderConfig: Clone, Debug
 FrameInput: Clone, Debug
 FrameIterator<'_, R>: Iterator
-GifError: Debug, Display, Error, From<enough::reason::StopReason>, From<gif::encoder::EncodingError>, From<gif::reader::decoder::DecodingError>, From<std::io::error::Error>
+GifAnimationFrameDecoder: zencodec::traits::decoder::AnimationFrameDecoder
+GifAnimationFrameEncoder: zencodec::traits::encoder::AnimationFrameEncoder
+GifDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+GifDecoder<'_>: zencodec::traits::decoder::Decode
+GifDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+GifEncodeJob: zencodec::traits::encoding::EncodeJob
+GifEncoder: zencodec::traits::encoder::Encoder
+GifEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+GifError: Debug, Display, Error, From<enough::reason::StopReason>, From<gif::encoder::EncodingError>, From<gif::reader::decoder::DecodingError>, From<std::io::error::Error>, From<zencodec::capabilities::UnsupportedOperation>, zencodec::error::CategorizedError
 Limits: Clone, Debug, Default
 Metadata: Clone, Debug, Default
 Palette: Clone, Debug, Default
@@ -485,8 +532,8 @@ StatsSnapshot: Clone, Copy, Debug, Display, Eq, PartialEq
 TrackedAlloc<'_>: Drop
 ZenquantQuantizer: Default, QuantizerTrait
 detect::FormatSuggestion: Clone, Debug, Eq, PartialEq
-detect::GifProbe: Clone, Debug
-detect::ProbeError: Clone, Debug, Display, Eq, Error, PartialEq
+detect::GifProbe: Clone, Debug, zencodec::detect::SourceEncodingDetails
+detect::ProbeError: Clone, Debug, Display, Eq, Error, PartialEq, zencodec::error::CategorizedError
 heuristics::DecodeEstimate: Clone, Copy, Debug
 heuristics::EncodeEstimate: Clone, Copy, Debug
 heuristics::QuantizerType: Clone, Copy, Debug, Default, Eq, PartialEq
@@ -497,12 +544,19 @@ sweep::SweepAxes: Clone, Debug
 sweep::SweepCell: Clone, Debug
 sweep::SweepPlan: Clone, Debug
 sweep::SweepVariant: Clone, Debug
+whereat::at::At<zencodec::error::CodecError>: From<GifError>
 
 ## auto traits
 
-32 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+34 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 Decoder<'a, R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 EncodeRequest<'a>: !RefUnwindSafe !UnwindSafe
 Encoder<'a>: !Freeze !RefUnwindSafe !Sync !UnwindSafe
 FrameIterator<'a, R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+GifAnimationFrameDecoder: !Freeze !RefUnwindSafe !Sync !UnwindSafe
+GifAnimationFrameEncoder: !Freeze !RefUnwindSafe !Sync !UnwindSafe
+GifDecodeJob: !RefUnwindSafe !UnwindSafe
+GifDecoder<'a>: !RefUnwindSafe !UnwindSafe
+GifEncodeJob: !RefUnwindSafe !UnwindSafe
+GifEncoder: !RefUnwindSafe !UnwindSafe
 Stats: !Freeze

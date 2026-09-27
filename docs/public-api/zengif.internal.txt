@@ -9,18 +9,21 @@
 
 ## summary
 #
+#   pub modules                                 1
 #   pub types (struct/enum/trait/alias)         1
+#   free functions                              2
 #   inherent methods                           14
 #   struct fields                               5
 #   trait roster entries (type × trait)        12
 #   auto-trait-complete types                   1
 #
 # per-module pub lines:
-#   (root)                           17
+#   (root)                           18
+#   __bench_expand                    2
 #   detect                            2
 #   heuristics                        1
 
-## items (20 lines)
+## items (23 lines)
 
 #[non_exhaustive] pub struct InternalParams
 pub fn DisposalMethod::assert_fields_are_eq(&self)
@@ -34,9 +37,12 @@ pub fn QuantizerBackend::assert_fields_are_eq(&self)
 pub fn Repeat::assert_fields_are_eq(&self)
 pub fn Rgba::assert_fields_are_eq(&self)
 pub fn StatsSnapshot::assert_fields_are_eq(&self)
+pub fn __bench_expand::opaque(&mut [Rgba], &[u8], &[Rgba; 256])
+pub fn __bench_expand::transparent(&mut [Rgba], &[u8], &[Rgba; 256], u8)
 pub fn detect::FormatSuggestion::assert_fields_are_eq(&self)
 pub fn detect::ProbeError::assert_fields_are_eq(&self)
 pub fn heuristics::QuantizerType::assert_fields_are_eq(&self)
+pub mod __bench_expand
 pub EncoderConfig::quantizer_backend: QuantizerBackend
 pub InternalParams::dithering: core::option::Option<f32>
 pub InternalParams::quality: core::option::Option<u8>

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exact animation timing preserves zero delays and rejects values outside GIF's
+  centisecond clock before accepting a frame. The shared codec API now reports
+  total plays consistently; NETSCAPE's positive repeat count is one less.
+- Animation encoding combines job and per-call cancellation through palette
+  construction, remapping, and finish. An interrupted encoder cannot finalize a
+  partial animation as success. Invalid dimensions, pixel counts, or cumulative
+  duration limits leave previously accepted frames usable.
+- Update zenquant for transparent-only difference frames, partial-alpha palette
+  preservation, and transparent-entry palette budget accounting.
+
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`
   gained defaulted `quantize_frame_with_stop` /
   `quantize_frame_with_palette_with_stop` methods (additive — third-party impls keep compiling), `ZenquantQuantizer`
