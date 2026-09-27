@@ -168,14 +168,14 @@ impl QuantizerTrait for ZenquantQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
-        let zq_config = Self::make_config(config);
-        let zq_pixels = Self::convert_pixels(pixels);
-
-        let result =
-            zenquant::quantize_rgba(zq_pixels, width as usize, height as usize, &zq_config)
-                .map_err(|e| Self::map_zq_err(e, "zenquant quantization failed"))?;
-
-        Self::finish_quantize(result, pixels)
+        self.quantize_frame_with_stop(
+            pixels,
+            width,
+            height,
+            _background,
+            config,
+            &enough::Unstoppable,
+        )
     }
 
     fn quantize_frame_with_stop(
@@ -267,20 +267,14 @@ impl QuantizerTrait for ZenquantQuantizer {
         _background: Option<&[Rgba]>,
         config: &QuantizeConfig,
     ) -> Result<QuantizedFrame> {
-        let cached = self.cached_result.as_ref().ok_or_else(|| {
-            at!(GifError::QuantizationFailed {
-                message: "no shared palette - call build_shared_palette first"
-            })
-        })?;
-
-        let zq_config = Self::make_config(config);
-        let zq_pixels = Self::convert_pixels(pixels);
-
-        let result = cached
-            .remap_rgba(zq_pixels, width as usize, height as usize, &zq_config)
-            .map_err(|e| Self::map_zq_err(e, "zenquant remapping failed"))?;
-
-        self.finish_quantize_with_palette(result, pixels)
+        self.quantize_frame_with_palette_with_stop(
+            pixels,
+            width,
+            height,
+            _background,
+            config,
+            &enough::Unstoppable,
+        )
     }
 
     fn quantize_frame_with_palette_with_stop(
@@ -418,5 +412,38 @@ mod tests {
 
         quantizer.reset();
         assert!(quantizer.cached_result.is_none());
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    struct Cancel;
+    impl Stop for Cancel {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
+            Err(enough::StopReason::Cancelled)
+        }
+    }
+
+    #[test]
+    fn cancelled_quantization_preserves_error_kind() {
+        let pixels = vec![
+            Rgba {
+                r: 20,
+                g: 30,
+                b: 40,
+                a: 255
+            };
+            64
+        ];
+        let mut q = ZenquantQuantizer::new();
+        let result =
+            q.quantize_frame_with_stop(&pixels, 8, 8, None, &QuantizeConfig::default(), &Cancel);
+        let error = result.unwrap_err();
+        assert!(matches!(
+            error.error(),
+            GifError::Cancelled(enough::StopReason::Cancelled)
+        ));
     }
 }

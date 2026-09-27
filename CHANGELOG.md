@@ -11,8 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`
   gained defaulted `quantize_frame_with_stop` /
-  `quantize_frame_with_palette_with_stop` / `build_shared_palette_with_stop`
-  methods (additive — third-party impls keep compiling), `ZenquantQuantizer`
+  `quantize_frame_with_palette_with_stop` methods (additive — third-party impls keep compiling), `ZenquantQuantizer`
   overrides them onto zenquant's `*_with_stop` entry points, and the encoder
   threads `self.stop` through both shared-palette and per-frame paths instead
   of dropping it at the quantizer boundary. `QuantizeError::Cancelled` maps
@@ -20,9 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the almost-enough `PollMeter` harness on a 64-frame 512² animation: worst
   inter-poll gap **2.78s → 29ms** (combined with zenquant's intra-phase
   polling fix; wrapper plumbing alone got it to 1.02s).
-- **`zenquant` requirement is now `0.1.4`** — the `*_with_stop` APIs it calls
-  are unreleased; locally resolved via `[patch.crates-io] ../zenquant` until
-  0.1.4 is published (same convention as zenjxl's jxl-encoder pin).
+- Pin the unreleased `zenquant` cancellation APIs to a git revision; standalone
+  and downstream builds no longer require a `../zenquant` checkout.
 
 ### Changed
 
