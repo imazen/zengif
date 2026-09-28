@@ -333,10 +333,21 @@ pub enum GifError {
     UnsupportedOperation(zencodec::UnsupportedOperation),
 }
 
+#[cfg(feature = "std")]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct CancelledRead(pub enough::StopReason);
+
 // Conversion from std::io::Error
 #[cfg(feature = "std")]
 impl From<std::io::Error> for GifError {
     fn from(err: std::io::Error) -> Self {
+        if let Some(reason) = err
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<CancelledRead>())
+        {
+            return Self::Cancelled(reason.0);
+        }
         GifError::Io {
             kind: err.kind(),
             context: None,
@@ -354,9 +365,12 @@ impl From<gif::DecodingError> for GifError {
             DecodingError::Format(msg) => GifError::GifCrate {
                 message: msg.to_string(),
             },
-            DecodingError::Io(io_err) => GifError::Io {
-                kind: io_err.kind(),
-                context: Some("during GIF decoding"),
+            DecodingError::Io(io_err) => match Self::from(io_err) {
+                GifError::Io { kind, .. } => GifError::Io {
+                    kind,
+                    context: Some("during GIF decoding"),
+                },
+                other => other,
             },
             DecodingError::UnexpectedEof => GifError::UnexpectedEof,
             // An incomplete/truncated LZW stream missing its terminator — this is

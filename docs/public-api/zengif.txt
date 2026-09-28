@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zengif.txt 524 lines (supported surface) | zengif.features.txt 36 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zenquant) | zengif.internal.txt 34 lines (23 hidden + 19 excluded-feature)
+# files: zengif.txt 525 lines (supported surface) | zengif.features.txt 36 added (features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zenquant) | zengif.internal.txt 34 lines (23 hidden + 19 excluded-feature)
 
 ## summary
 #
@@ -14,7 +14,7 @@
 #   pub types (struct/enum/trait/alias)        49
 #   pub consts/statics                          7
 #   free functions                             19
-#   inherent methods                          160
+#   inherent methods                          161
 #   struct fields                             164
 #   enum variants                              64
 #   re-exports                                  2
@@ -23,12 +23,12 @@
 #   auto-trait exceptions                      11
 #
 # per-module pub lines:
-#   (root)                          371
+#   (root)                          372
 #   detect                           35
 #   heuristics                       30
 #   sweep                            33
 
-## items (469 lines)
+## items (470 lines)
 
 pub mod zengif
 pub use Stop
@@ -268,6 +268,7 @@ pub fn Decoder<'a, R>::repeat(&self) -> Repeat
 pub fn Decoder<'a, R>::stats(&self) -> &Stats
 pub fn Decoder<'a, R>::width(&self) -> u16
 pub fn Decoder<'a, R>::with_next_frame<F, T>(&mut self, F) -> Result<core::option::Option<T>> where F: core::ops::function::FnOnce(usize, u16, &[Rgba]) -> T
+pub fn Decoder<'static, R>::with_owned_stop(R, Limits, alloc::sync::Arc<dyn enough::Stop>) -> Result<Self>
 pub struct EncodeRequest<'a>
 pub fn EncodeRequest<'a>::build(self) -> Result<Encoder<'a>>
 pub fn EncodeRequest<'a>::encode(self, alloc::vec::Vec<FrameInput>) -> Result<alloc::vec::Vec<u8>>

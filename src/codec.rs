@@ -1449,18 +1449,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         }
         self.check_file_size(&data)?;
         let limits = self.build_limits();
-        // Bounded probe respecting job limits — no Stop wired through here
-        // because GifAnimationFrameDecoder uses a 'static stop token (see
-        // comment below); cancellation between frames is handled in
-        // render_next_frame().
-        let probe = crate::detect::probe_with_limits(&data, &limits, &enough::Unstoppable).ok();
+        let owned_stop: Arc<dyn enough::Stop> = match self.stop {
+            Some(stop) => Arc::new(stop),
+            None => Arc::new(enough::Unstoppable),
+        };
+        owned_stop.check().map_err(GifError::Cancelled)?;
+        let probe = crate::detect::probe_with_limits(&data, &limits, owned_stop.as_ref()).ok();
+        owned_stop.check().map_err(GifError::Cancelled)?;
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
         let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
         let cursor = std::io::Cursor::new(data.into_owned());
-        // The underlying Decoder requires a 'static stop token because
-        // GifAnimationFrameDecoder stores Decoder<'static, _>. Per-frame stop
-        // checks are added in render_next_frame() instead.
-        let decoder = Decoder::new(cursor, limits, &enough::Unstoppable).map_err(CodecError::of)?;
+        let decoder =
+            Decoder::with_owned_stop(cursor, limits, owned_stop).map_err(CodecError::of)?;
         let metadata = decoder.metadata().clone();
         let shared_info = Arc::new(
             ImageInfo::new(
@@ -1482,6 +1482,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         );
         Ok(GifAnimationFrameDecoder {
             decoder,
+            failed: false,
             shared_info,
             loop_count: probe.as_ref().map(|p| gif_total_plays(p.repeat)),
             current_frame: None,
@@ -1650,6 +1651,7 @@ fn gif_total_plays(repeat: Option<u16>) -> u32 {
 /// Animation GIF decoder — yields frames one at a time.
 pub struct GifAnimationFrameDecoder {
     decoder: Decoder<'static, std::io::Cursor<Vec<u8>>>,
+    failed: bool,
     shared_info: Arc<ImageInfo>,
     loop_count: Option<u32>,
     /// Stores the current frame's pixel data so `render_next_frame` can
@@ -1698,13 +1700,13 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         &mut self,
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<Option<AnimationFrame<'_>>, At<CodecError>> {
-        // Check stop before decoding the next frame.
-        // Note: the underlying Decoder<'static> uses Unstoppable internally
-        // (lifetime constraint prevents borrowing the job's stop token), so
-        // cancellation granularity is per-frame rather than mid-frame.
-        if let Some(stop) = stop {
-            stop.check().map_err(GifError::Cancelled)?;
+        if self.failed {
+            return Err(GifError::InvalidEncoderState {
+                message: "animation decoder failed",
+            }
+            .into());
         }
+        self.failed = true;
         // GIF AnimationFrameDecoder returns fully composited RGBA frames — the internal
         // compositor applies disposal before returning each frame. AnimationFrame
         // borrows the decoder's stored buffer, so callers get ready-to-display
@@ -1717,6 +1719,9 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         // Frames before `start_frame_index` are decoded (to advance compositing
         // and disposal state correctly) but not yielded to the caller.
         loop {
+            if let Some(stop) = stop {
+                stop.check().map_err(GifError::Cancelled)?;
+            }
             let w = self.decoder.width() as u32;
             let h = self.decoder.height() as u32;
             let preferred = &self.preferred;
@@ -1734,6 +1739,9 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                 .decoder
                 .with_next_frame(
                     |_index, delay, pixels| -> Result<(PixelBuffer, u32), At<GifError>> {
+                        if let Some(stop) = stop {
+                            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+                        }
                         let duration_ms = delay as u32 * 10;
                         let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
 
@@ -1779,9 +1787,11 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
             match result {
                 None => {
                     self.current_frame = None;
+                    self.failed = false;
                     return Ok(None);
                 }
                 Some(inner_result) => {
+                    let (buf, duration_ms) = inner_result.map_err(CodecError::of)?;
                     let index = self.frame_index;
                     self.frame_index += 1;
 
@@ -1794,7 +1804,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                         continue;
                     }
 
-                    let (buf, duration_ms) = inner_result.map_err(CodecError::of)?;
+                    self.failed = false;
                     self.current_frame = Some((buf, duration_ms, index));
                     let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
                     return Ok(Some(AnimationFrame::new(
@@ -1807,99 +1817,18 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         }
     }
 
-    /// Zero-copy override: use `with_next_frame` to avoid the 64 MB canvas
-    /// clone that `next_frame()` → `process_frame()` performs.
-    ///
-    /// `with_next_frame` composites in-place and gives a callback a `&[Rgba]`
-    /// reference to the canvas. We copy directly from that reference into the
-    /// output `PixelBuffer`, skipping the intermediate `ComposedFrame` clone.
-    ///
-    /// When the caller prefers BGRA8, the copy and R↔B swizzle are fused into
-    /// a single pass instead of copy-then-swizzle (saves one 64 MB touch at
-    /// 4096²).
+    /// Move the rendered canvas into the caller without another pixel copy.
     fn render_next_frame_owned(
         &mut self,
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<Option<OwnedAnimationFrame>, At<CodecError>> {
-        if let Some(stop) = stop {
-            stop.check().map_err(GifError::Cancelled)?;
+        if self.render_next_frame(stop)?.is_none() {
+            return Ok(None);
         }
-
-        loop {
-            let w = self.decoder.width() as u32;
-            let h = self.decoder.height() as u32;
-            let preferred = &self.preferred;
-
-            // Detect if caller wants BGRA so we can fuse copy+swizzle.
-            let wants_bgra = preferred.contains(&PixelDescriptor::BGRA8_SRGB);
-
-            // with_next_frame composites in-place (no canvas clone) and gives
-            // us a &[Rgba] reference to the screen pixels.
-            let result = self
-                .decoder
-                .with_next_frame(
-                    |_index, delay, pixels| -> Result<OwnedAnimationFrame, At<GifError>> {
-                        let duration_ms = delay as u32 * 10;
-
-                        let buf = if wants_bgra {
-                            // Copy + R↔B swizzle in one SIMD pass via garb
-                            // (AVX2/NEON/WASM128). Halves memory bandwidth vs
-                            // separate memcpy + scalar swap.
-                            let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
-                            let mut bgra_bytes = vec![0u8; src.len()];
-                            garb::bytes::rgba_to_bgra(src, &mut bgra_bytes)
-                                .expect("src/dst same length, multiple of 4");
-                            PixelBuffer::from_vec(bgra_bytes, w, h, PixelDescriptor::BGRA8_SRGB)
-                                .map_err(|_| {
-                                    at!(GifError::InvalidEncoderState {
-                                        message: "frame size mismatch",
-                                    })
-                                })?
-                        } else {
-                            let rgba_bytes =
-                                bytemuck::cast_slice::<crate::Rgba, u8>(pixels).to_vec();
-                            let buf = PixelBuffer::from_vec(
-                                rgba_bytes,
-                                w,
-                                h,
-                                PixelDescriptor::RGBA8_SRGB,
-                            )
-                            .map_err(|_| {
-                                at!(GifError::InvalidEncoderState {
-                                    message: "frame size mismatch",
-                                })
-                            })?;
-                            negotiate_format(buf, preferred)
-                        };
-
-                        Ok(OwnedAnimationFrame::new(buf, duration_ms, 0))
-                    },
-                )
-                .map_err(CodecError::of)?;
-
-            match result {
-                None => {
-                    self.current_frame = None;
-                    return Ok(None);
-                }
-                Some(frame_result) => {
-                    let index = self.frame_index;
-                    self.frame_index += 1;
-
-                    // Skip frames before start_frame_index
-                    if index < self.start_frame_index {
-                        continue;
-                    }
-
-                    let frame = frame_result.map_err(CodecError::of)?;
-                    // Fix up the frame index (couldn't set it inside the closure
-                    // because we don't know it until after with_next_frame returns)
-                    let duration_ms = frame.duration_ms();
-                    let rebuilt = OwnedAnimationFrame::new(frame.into_buffer(), duration_ms, index);
-                    return Ok(Some(rebuilt));
-                }
-            }
-        }
+        Ok(self
+            .current_frame
+            .take()
+            .map(|(pixels, ms, index)| OwnedAnimationFrame::new(pixels, ms, index)))
     }
 
     fn render_next_frame_to_sink(
