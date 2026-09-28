@@ -632,6 +632,10 @@ impl Metadata {
 
 /// Frame input for encoding.
 ///
+/// Pixels describe a complete displayed canvas. Transparent pixels clear prior
+/// content; composite overlays onto a full canvas before submission. The encoder
+/// retains one canvas of lookahead to choose disposal.
+///
 /// # Example
 ///
 /// ```rust

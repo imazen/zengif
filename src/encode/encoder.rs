@@ -87,6 +87,11 @@ pub struct Encoder<'a> {
     /// Previous frame for transparency optimization.
     previous_frame: Option<Vec<Rgba>>,
 
+    /// One full display canvas of lookahead: GIF erasure is specified on
+    /// the preceding frame, before the next frame's transparent pixels draw.
+    pending_frame: Option<FrameInput>,
+    first_frame_has_alpha: Option<bool>,
+
     /// Frame index.
     frame_index: usize,
 
@@ -318,6 +323,8 @@ impl<'a> Encoder<'a> {
             has_global_palette,
             config,
             previous_frame: None,
+            pending_frame: None,
+            first_frame_has_alpha: None,
             frame_index: 0,
             limits,
             stats,
@@ -483,7 +490,7 @@ impl<'a> Encoder<'a> {
 
     /// Get the current frame index.
     pub fn frame_index(&self) -> usize {
-        self.frame_index
+        self.frame_index + usize::from(self.pending_frame.is_some())
     }
 
     /// Ensure the gif encoder is created, using the given palette as global color table.
@@ -542,7 +549,8 @@ impl<'a> Encoder<'a> {
     ///
     /// When `shared_palette` is enabled, frames are buffered until buffer
     /// limits are reached, then the palette is computed and all frames are
-    /// encoded. Subsequent frames are encoded immediately with the shared palette.
+    /// encoded with one canvas of lookahead. Subsequent frames retain that
+    /// one-canvas delay so transparency can clear the preceding display.
     pub fn add_frame(&mut self, input: FrameInput) -> Result<()> {
         self.add_frame_with_stop(input, &enough::Unstoppable)
     }
@@ -588,7 +596,9 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         ))]
-        let total_frames = self.frame_index + self.buffered_frames.len();
+        let total_frames = self.frame_index
+            + usize::from(self.pending_frame.is_some())
+            + self.buffered_frames.len();
         #[cfg(not(any(
             feature = "zenquant",
             feature = "quantette",
@@ -596,7 +606,7 @@ impl<'a> Encoder<'a> {
             feature = "quantizr",
             feature = "color_quant"
         )))]
-        let total_frames = self.frame_index;
+        let total_frames = self.frame_index + usize::from(self.pending_frame.is_some());
         self.limits.check_frame_count(total_frames as u64)?;
 
         // Check cumulative animation duration (delay is in centiseconds)
@@ -621,6 +631,9 @@ impl<'a> Encoder<'a> {
     }
 
     fn accept_frame(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
+        if self.first_frame_has_alpha.is_none() {
+            self.first_frame_has_alpha = Some(input.pixels.iter().any(|p| p.a < 255));
+        }
         // Handle shared palette buffering mode
         #[cfg(any(
             feature = "zenquant",
@@ -634,7 +647,7 @@ impl<'a> Encoder<'a> {
         }
 
         // Direct encode mode
-        self.encode_frame_direct(input, stop)
+        self.queue_frame(input, false, stop)
     }
 
     /// Buffer a frame for later encoding with shared palette.
@@ -778,46 +791,92 @@ impl<'a> Encoder<'a> {
 
         self.computed_palette = Some(palette_bytes);
 
-        // Take ownership of buffered frames. Release their byte tracking
-        // back to the Stats so that downstream per-frame allocations see an
-        // accurate `current` and don't get falsely rejected by max_memory
-        // (the buffered pixels are about to be dropped after encoding).
-        let released = self.buffered_bytes;
+        // Keep every buffered canvas charged until ownership is transferred
+        // to the pending or previous frame, or the canvas is dropped.
         let frames = core::mem::take(&mut self.buffered_frames);
         self.buffered_bytes = 0;
-        if released > 0 {
-            self.stats.track_dealloc(released);
-        }
-
-        // Encode all buffered frames with the shared palette
         for frame_input in frames {
-            self.encode_frame_direct(frame_input, stop)?;
+            self.queue_frame(frame_input, true, stop)?;
         }
 
         Ok(())
     }
 
-    /// Encode a frame directly (not buffered).
-    fn encode_frame_direct(&mut self, input: FrameInput, stop: &dyn Stop) -> Result<()> {
+    /// Retain one canvas so disposal can account for the next display.
+    fn queue_frame(&mut self, input: FrameInput, tracked: bool, stop: &dyn Stop) -> Result<()> {
+        if !tracked {
+            self.stats.try_alloc(input.pixels.len() * 4, &self.limits)?;
+        }
+        if let Some(previous) = self.pending_frame.take() {
+            let clear = super::needs_canvas_clear(&previous.pixels, &input.pixels, stop)?;
+            self.write_pending_frame(previous, clear, stop)?;
+        }
+        self.pending_frame = Some(input);
+        Ok(())
+    }
+
+    fn clear_previous(&mut self) {
+        if let Some(previous) = self.previous_frame.take() {
+            self.stats.track_dealloc(previous.len() * 4);
+        }
+    }
+
+    fn write_pending_frame(
+        &mut self,
+        input: FrameInput,
+        clear_after: bool,
+        stop: &dyn Stop,
+    ) -> Result<()> {
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
-        // Ensure repeat is written before first frame
         self.ensure_repeat_written()?;
-
-        // Quantize and encode the frame
-        let frame = self.prepare_frame(&input, stop)?;
+        if clear_after {
+            // Background disposal only clears the encoded rectangle. Use a
+            // full canvas when any later transparency could reveal old pixels.
+            // Disabling differencing also disables quantizer background reuse.
+            self.clear_previous();
+        }
+        let mut frame = self.prepare_frame(&input, stop)?;
+        if clear_after {
+            debug_assert_eq!(
+                (frame.left, frame.top, frame.width, frame.height),
+                (0, 0, self.width, self.height)
+            );
+            let configured: Vec<u8> = self
+                .config
+                .global_palette
+                .as_ref()
+                .map(|p| p.iter().flat_map(|c| [c.r, c.g, c.b]).collect())
+                .unwrap_or_default();
+            #[cfg(any(
+                feature = "zenquant",
+                feature = "quantette",
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "color_quant"
+            ))]
+            let global = self.computed_palette.as_deref().unwrap_or(&configured);
+            #[cfg(not(any(
+                feature = "zenquant",
+                feature = "quantette",
+                feature = "imagequant",
+                feature = "quantizr",
+                feature = "color_quant"
+            )))]
+            let global = configured.as_slice();
+            super::clear_disposal(&mut frame, global, stop)?;
+        }
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
-
         self.encoder_mut()?
             .write_frame(&frame)
             .map_err(|e| at!(GifError::from(e)))?;
-
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
-
-        // Save for next frame's transparency optimization
-        if self.config.use_transparency {
+        self.clear_previous();
+        if self.config.use_transparency && !clear_after {
+            // The pending canvas's existing memory charge follows its owner.
             self.previous_frame = Some(input.pixels);
+        } else {
+            self.stats.track_dealloc(input.pixels.len() * 4);
         }
-
         self.frame_index += 1;
         Ok(())
     }
@@ -1084,8 +1143,13 @@ impl<'a> Encoder<'a> {
                 // opaque gray, so such a frame is quantized independently
                 // instead (`shared = None` → the per-frame fallback below).
                 let shared = if let Some(ref gray) = self.gray_mode {
-                    let representable =
-                        gray.transparent_index().is_some() || frame_pixels.iter().all(|p| p.a != 0);
+                    let representable = frame_pixels.iter().all(|p| {
+                        if p.a == 0 {
+                            gray.transparent_index().is_some()
+                        } else {
+                            p.r == p.g && p.g == p.b
+                        }
+                    });
                     representable.then(|| gray.remap(&frame_pixels))
                 } else {
                     let background = self.previous_frame.as_deref();
@@ -1128,7 +1192,11 @@ impl<'a> Encoder<'a> {
                     )
                 } else {
                     let q = shared.expect("shared is Some when needs_per_frame is false");
-                    (q.palette, q.pixels, q.transparent_index, false)
+                    // A backend can return an independent palette when the
+                    // shared one has no visible entries. Never interpret its
+                    // indices against the old global table.
+                    let local = self.computed_palette.as_deref() != Some(q.palette.as_slice());
+                    (q.palette, q.pixels, q.transparent_index, local)
                 }
             } else {
                 // Per-frame quantization (no shared palette). At lossless intent
@@ -1259,6 +1327,11 @@ impl<'a> Encoder<'a> {
             feature = "color_quant"
         ))]
         self.flush_buffer(stop)?;
+
+        if let Some(input) = self.pending_frame.take() {
+            // The last disposal also applies when playback loops to frame zero.
+            self.write_pending_frame(input, self.first_frame_has_alpha.unwrap_or(false), stop)?;
+        }
 
         // If the encoder was never created (0 frames with deferred shared-
         // palette creation), both the pending buffer AND self.encoder are
