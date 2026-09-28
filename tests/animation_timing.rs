@@ -187,10 +187,10 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    struct PollLimit(Arc<AtomicUsize>, usize);
+    struct PollLimit(Arc<AtomicUsize>, Arc<AtomicUsize>);
     impl enough::Stop for PollLimit {
         fn check(&self) -> Result<(), enough::StopReason> {
-            if self.0.fetch_add(1, Ordering::Relaxed) >= self.1 {
+            if self.0.fetch_add(1, Ordering::Relaxed) >= self.1.load(Ordering::Relaxed) {
                 Err(enough::StopReason::Cancelled)
             } else {
                 Ok(())
@@ -211,28 +211,30 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
     for shared in [false, true] {
         for job_stop in [false, true] {
             let calls = Arc::new(AtomicUsize::new(0));
+            let limit = Arc::new(AtomicUsize::new(usize::MAX));
             let mut job = GifEncoderConfig::new().with_shared_palette(shared).job();
             if job_stop {
-                job = job.with_stop(zencodec::StopToken::new(PollLimit(calls.clone(), 8)));
+                job = job.with_stop(zencodec::StopToken::new(PollLimit(
+                    calls.clone(),
+                    limit.clone(),
+                )));
             }
             let mut encoder = job.animation_frame_encoder().unwrap();
-            let call_token = PollLimit(calls.clone(), 8);
+            let call_token = PollLimit(calls.clone(), limit.clone());
             let token = (!job_stop).then_some(&call_token as &dyn enough::Stop);
+            // Admit the lookahead frame before arming cancellation.
+            encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
+            calls.store(0, Ordering::Relaxed);
+            let budget = if shared { 8 } else { 140 };
+            limit.store(budget, Ordering::Relaxed);
             if shared {
-                encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
-                // A call token is scoped to finish; the job token stays active.
-                if !job_stop {
-                    calls.store(0, Ordering::Relaxed);
-                }
                 assert!(
                     encoder.finish(token).is_err(),
                     "shared={shared} job={job_stop}"
                 );
             } else {
-                // One canvas of lookahead is required to choose disposal.
-                // The next push performs quantization of the first frame.
-                encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
-                calls.store(0, Ordering::Relaxed);
+                // The next push packs 128 rows before reaching native
+                // quantization of the first frame. Let packing complete.
                 assert!(
                     encoder.push_frame(pixels.as_slice(), 10, token).is_err(),
                     "shared={shared} job={job_stop}"
@@ -242,7 +244,10 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
                     "partial encode must not finalize successfully"
                 );
             }
-            assert!(calls.load(Ordering::Relaxed) > 8, "must reach kernel polls");
+            assert!(
+                calls.load(Ordering::Relaxed) > budget,
+                "must reach kernel polls"
+            );
         }
     }
 }

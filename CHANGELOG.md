@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reject unsupported or conflicting color/range/alpha interpretation before GIF frame admission. Supported F32 input is explicitly linear BT.709 in finite 0..1; unsupported ICC, HDR, premultiplied input and encoded F32 need prior conversion. Packing now checks cancellation per row, reserves fallibly, and checks its allocation against the configured memory bound.
+
 - Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.
 
 ### Fixed
