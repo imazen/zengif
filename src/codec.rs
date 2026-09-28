@@ -34,6 +34,21 @@ use whereat::at;
 
 use crate::{Decoder, GifError, Limits};
 
+// An optional metadata probe may fail on unsupported input, but a stop is
+// terminal. Re-polling cannot recover a reason from a token that fires once.
+fn optional_probe(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn enough::Stop,
+) -> Result<Option<crate::detect::GifProbe>, At<CodecError>> {
+    let mut stopped = None;
+    let probe = crate::detect::probe_with_stop_reason(data, limits, stop, &mut stopped);
+    if let Some(reason) = stopped {
+        return Err(GifError::Cancelled(reason).into());
+    }
+    Ok(probe.ok())
+}
+
 /// Bridge a decode-sink error into the [`CodecError`] envelope.
 ///
 /// [`copy_decode_to_sink`](zencodec::helpers::copy_decode_to_sink) wants a `fn`
@@ -1284,7 +1299,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         // Decoder::new takes ownership of `gif_limits`. The probe gets the
         // same limits + stop the decode would, so descriptor floods can't
         // walk past max_frame_count or be made uncancellable.
-        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+        let probe = optional_probe(data, &gif_limits, stop)?;
 
         let decoder = Decoder::new(cursor, gif_limits, stop).map_err(CodecError::of)?;
 
@@ -1328,7 +1343,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             None => &enough::Unstoppable,
         };
         // Bounded probe before Decoder takes ownership of the limits.
-        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+        let probe = optional_probe(data, &gif_limits, stop)?;
 
         let mut decoder = Decoder::new(cursor, gif_limits, stop).map_err(CodecError::of)?;
 
@@ -1454,7 +1469,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             None => Arc::new(enough::Unstoppable),
         };
         owned_stop.check().map_err(GifError::Cancelled)?;
-        let probe = crate::detect::probe_with_limits(&data, &limits, owned_stop.as_ref()).ok();
+        let probe = optional_probe(&data, &limits, owned_stop.as_ref())?;
         owned_stop.check().map_err(GifError::Cancelled)?;
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
         let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
@@ -1585,7 +1600,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         // follows. Without this, a 100 MB descriptor flood reaches probe()
         // before any limit check applies, since the surrounding Decoder's
         // limits don't gate the probe walk.
-        let source_probe = crate::detect::probe_with_limits(&self.data, &limits, stop).ok();
+        let source_probe = optional_probe(&self.data, &limits, stop)?;
         let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop).map_err(CodecError::of)?;
 
