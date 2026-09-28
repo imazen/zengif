@@ -70,14 +70,10 @@ fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_uti
 /// against [`GIF_ENCODE_CAPS`]. This puts GIF on the same color-emission
 /// contract as every other zen codec.
 ///
-/// GIF, however, embeds **no** color description — no ICC profile chunk, no
-/// CICP — so `GIF_ENCODE_CAPS` advertises no CICP carrier and the returned
-/// [`ColorEmitPlan`](zencodec::ColorEmitPlan) always has `cicp: None` with the
-/// ICC dropped (or kept-but-unwritable). The bitstream is emitted as sRGB,
-/// which is GIF's universally-assumed color space. The call therefore never
-/// changes the output; its value is (1) consulting the policy uniformly and
-/// (2) confirming color-managed input is handled gracefully (no error) instead
-/// of being silently ignored. Returned for inspection; the caller discards it.
+/// This adapter writes no ICC or CICP extension. Input is separately validated
+/// as sRGB U8 or linear BT.709 F32 and the latter is converted to sRGB. A color
+/// emission plan never substitutes for pixel conversion; unsupported ICC or
+/// conflicting color interpretation is rejected before frame admission.
 fn resolve_gif_color_emit(
     metadata: Option<&Metadata>,
     policy: Option<&zencodec::encode::EncodePolicy>,
@@ -608,25 +604,14 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
-        // Stored and consulted in the color decision: its `ColorEmitPolicy`
-        // drives `resolve_color_emit` against GIF's capabilities. GIF carries
-        // no ICC/CICP, so every policy resolves to "emit sRGB pixels, embed no
-        // color description" — but consulting it keeps GIF on the same
-        // color-emission contract as the other codecs (and proves color-managed
-        // input is dropped gracefully rather than erroring).
+        // The emission policy is separate from input color validation.
         self.policy = Some(policy);
         self
     }
 
     fn with_metadata(mut self, meta: Metadata) -> Self {
-        // Stored (no longer silently discarded). GIF can represent none of the
-        // carriers zencodec's `Metadata` holds — ICC, EXIF, XMP, CICP, the HDR
-        // light-level/mastering blocks, nor EXIF orientation — so nothing is
-        // emitted to the bitstream (a conservative, no-error skip; see
-        // `resolve_gif_color_emit`). The only GIF-representable metadata is the
-        // animation loop count, which travels via `with_loop_count`. We keep
-        // the value so the decision is explicit and so a future GIF-carriable
-        // signal (e.g. a comment extension) has it to hand.
+        // This adapter does not write metadata extensions. Preserve source
+        // color claims for validation instead of silently relabeling pixels.
         self.metadata = Some(meta);
         self
     }
@@ -670,10 +655,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
                 })?),
             };
         }
-        // Consult the color policy once up front. GIF embeds no ICC/CICP, so
-        // this never alters the output, but it keeps the animation path on the
-        // same color contract and proves color-managed input is handled
-        // gracefully. RGBA frames → 4 channels.
+        // Resolve emission policy; actual pixel interpretation is checked per frame.
         let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
         // Pre-compute limits so they're ready when the encoder is created
         let base = limits_from_resource(&self.config.limits);
@@ -688,6 +670,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             encoder: None,
             has_frames: false,
             stop: self.stop,
+            metadata: self.metadata,
         })
     }
 }
@@ -737,12 +720,7 @@ impl GifEncoder {
             .into());
         }
 
-        // Consult the color-emission policy. GIF embeds no ICC/CICP, so the
-        // plan never carries anything to write — but running the resolver puts
-        // GIF on the same color contract as the other codecs and confirms
-        // color-managed input is dropped gracefully (no error). The GIF
-        // bitstream is always sRGB-described-implicitly. Pixels are RGBA here →
-        // 4 channels.
+        // Input color was validated before quantization; no extension is written.
         let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
 
         let limits = self.build_limits();
@@ -771,134 +749,133 @@ impl zencodec::encode::Encoder for GifEncoder {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<CodecError>> {
-        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
+        validate_gif_metadata(&pixels, self.metadata.as_ref())?;
+        let stop: &dyn enough::Stop = self.stop.as_ref().map_or(&enough::Unstoppable, |s| s);
+        let (rgba, w, h) = pixels_to_gif_rgba(&pixels, stop, self.build_limits().max_memory)?;
         self.do_encode(rgba, w, h)
     }
 }
 
-/// Convert a type-erased PixelSlice to GIF RGBA pixels.
+/// Convert supported, explicitly interpreted packed pixels to sRGB GIF colors.
 fn pixels_to_gif_rgba(
     pixels: &PixelSlice<'_>,
+    stop: &dyn enough::Stop,
+    max_bytes: Option<u64>,
 ) -> Result<(Vec<crate::Rgba>, u16, u16), At<CodecError>> {
-    let w = u16::try_from(pixels.width()).map_err(|_| GifError::DimensionsTooLarge {
-        width: pixels.width().min(u16::MAX as u32) as u16,
-        height: pixels.rows().min(u16::MAX as u32) as u16,
-        max_width: u16::MAX,
-        max_height: u16::MAX,
-    })?;
-    let h = u16::try_from(pixels.rows()).map_err(|_| GifError::DimensionsTooLarge {
-        width: pixels.width().min(u16::MAX as u32) as u16,
-        height: pixels.rows().min(u16::MAX as u32) as u16,
-        max_width: u16::MAX,
-        max_height: u16::MAX,
-    })?;
-
+    use zenpixels::{ChannelLayout, ChannelType};
+    stop.check().map_err(GifError::Cancelled)?;
+    let invalid = |message| GifError::InvalidEncoderState { message };
     let desc = pixels.descriptor();
-    let bytes = pixels.contiguous_bytes();
-
-    // RGBX8/BGRX8: 4-byte layouts where byte 3 is undefined padding, not alpha.
-    // Match the exact descriptor BEFORE the generic layout branches (which
-    // share ChannelLayout::Rgba / Bgra) so the padding byte is discarded
-    // instead of leaking into decoded alpha.
-    if desc == PixelDescriptor::RGBX8_SRGB {
-        let rgba: Vec<crate::Rgba> = bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
-            .collect();
-        return Ok((rgba, w, h));
+    if !ENCODE_DESCRIPTORS.contains(&desc) {
+        return Err(invalid("GIF requires straight sRGB U8 or linear BT.709 F32 pixels; convert color, range and alpha explicitly").into());
     }
-    if desc == PixelDescriptor::BGRX8_SRGB {
-        let rgba: Vec<crate::Rgba> = bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| crate::Rgba::rgb(c[2], c[1], c[0]))
-            .collect();
-        return Ok((rgba, w, h));
+    if let Some(context) = pixels.color_context()
+        && (context.icc.is_some()
+            || context
+                .cicp
+                .is_some_and(|c| Some(c) != zenpixels::Cicp::from_descriptor(&desc)))
+    {
+        return Err(
+            invalid("resolve ICC or conflicting pixel color context before GIF encoding").into(),
+        );
     }
-
-    let rgba = match (desc.channel_type(), desc.layout()) {
-        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgb) => bytes
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|c| crate::Rgba::rgb(c[0], c[1], c[2]))
-            .collect(),
-        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Rgba) => {
-            // Zero-copy reinterpret: Rgba is repr(C) Pod {r,g,b,a} — same as raw RGBA8 bytes
-            bytemuck::cast_slice::<u8, crate::Rgba>(&bytes).to_vec()
+    let w = u16::try_from(pixels.width()).map_err(|_| invalid("GIF width exceeds 65535"))?;
+    let h = u16::try_from(pixels.rows()).map_err(|_| invalid("GIF height exceeds 65535"))?;
+    if w == 0 || h == 0 {
+        return Err(invalid("GIF canvas must be nonempty").into());
+    }
+    let count = usize::from(w)
+        .checked_mul(usize::from(h))
+        .ok_or_else(|| invalid("pixel count overflow"))?;
+    let bytes = (count as u64) * 4;
+    if let Some(limit) = max_bytes
+        && bytes > limit
+    {
+        return Err(GifError::MemoryLimitExceeded {
+            current: bytes,
+            limit,
         }
-        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Gray) => {
-            bytes.iter().map(|&v| crate::Rgba::rgb(v, v, v)).collect()
+        .into());
+    }
+    let mut rgba = Vec::new();
+    rgba.try_reserve_exact(count)
+        .map_err(|_| GifError::AllocationFailed { requested: bytes })?;
+    let bpp = desc.bytes_per_pixel();
+    for y in 0..pixels.rows() {
+        stop.check().map_err(GifError::Cancelled)?;
+        for pixel in pixels.row(y).chunks_exact(bpp) {
+            let value = match (desc.channel_type(), desc.layout()) {
+                (ChannelType::U8, ChannelLayout::Rgb) => {
+                    crate::Rgba::rgb(pixel[0], pixel[1], pixel[2])
+                }
+                (ChannelType::U8, ChannelLayout::Gray) => {
+                    crate::Rgba::rgb(pixel[0], pixel[0], pixel[0])
+                }
+                (ChannelType::U8, ChannelLayout::Rgba | ChannelLayout::Bgra) => {
+                    let (r, b) = if desc.layout() == ChannelLayout::Bgra {
+                        (pixel[2], pixel[0])
+                    } else {
+                        (pixel[0], pixel[2])
+                    };
+                    let a = if desc == PixelDescriptor::RGBX8_SRGB
+                        || desc == PixelDescriptor::BGRX8_SRGB
+                    {
+                        255
+                    } else {
+                        pixel[3]
+                    };
+                    crate::Rgba::new(r, pixel[1], b, a)
+                }
+                (ChannelType::F32, layout) => {
+                    let mut channels = [0.0; 4];
+                    for (i, bytes) in pixel.as_chunks::<4>().0.iter().enumerate() {
+                        let value = f32::from_ne_bytes(*bytes);
+                        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                            return Err(invalid("GIF linear float input must be finite SDR in 0..1; choose tone mapping or clipping explicitly").into());
+                        }
+                        channels[i] = value;
+                    }
+                    let to_srgb = linear_srgb::default::linear_to_srgb_u8;
+                    if layout == ChannelLayout::Gray {
+                        let value = to_srgb(channels[0]);
+                        crate::Rgba::rgb(value, value, value)
+                    } else {
+                        let a = if layout == ChannelLayout::Rgba {
+                            (channels[3] * 255.0 + 0.5) as u8
+                        } else {
+                            255
+                        };
+                        crate::Rgba::new(
+                            to_srgb(channels[0]),
+                            to_srgb(channels[1]),
+                            to_srgb(channels[2]),
+                            a,
+                        )
+                    }
+                }
+                _ => return Err(invalid("unsupported pixel format for GIF encoding").into()),
+            };
+            rgba.push(value);
         }
-        (zenpixels::ChannelType::U8, zenpixels::ChannelLayout::Bgra) => bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| crate::Rgba::new(c[2], c[1], c[0], c[3]))
-            .collect(),
-        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgb) => {
-            use linear_srgb::default::linear_to_srgb_u8;
-            bytes
-                .as_chunks::<12>()
-                .0
-                .iter()
-                .map(|c| {
-                    let r = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
-                    let g = f32::from_ne_bytes([c[4], c[5], c[6], c[7]]);
-                    let b = f32::from_ne_bytes([c[8], c[9], c[10], c[11]]);
-                    crate::Rgba::rgb(
-                        linear_to_srgb_u8(r.clamp(0.0, 1.0)),
-                        linear_to_srgb_u8(g.clamp(0.0, 1.0)),
-                        linear_to_srgb_u8(b.clamp(0.0, 1.0)),
-                    )
-                })
-                .collect()
-        }
-        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Rgba) => {
-            use linear_srgb::default::linear_to_srgb_u8;
-            bytes
-                .as_chunks::<16>()
-                .0
-                .iter()
-                .map(|c| {
-                    let r = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
-                    let g = f32::from_ne_bytes([c[4], c[5], c[6], c[7]]);
-                    let b = f32::from_ne_bytes([c[8], c[9], c[10], c[11]]);
-                    let a = f32::from_ne_bytes([c[12], c[13], c[14], c[15]]);
-                    crate::Rgba::new(
-                        linear_to_srgb_u8(r.clamp(0.0, 1.0)),
-                        linear_to_srgb_u8(g.clamp(0.0, 1.0)),
-                        linear_to_srgb_u8(b.clamp(0.0, 1.0)),
-                        (a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
-                    )
-                })
-                .collect()
-        }
-        (zenpixels::ChannelType::F32, zenpixels::ChannelLayout::Gray) => {
-            use linear_srgb::default::linear_to_srgb_u8;
-            bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|c| {
-                    let v = f32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
-                    let s = linear_to_srgb_u8(v.clamp(0.0, 1.0));
-                    crate::Rgba::rgb(s, s, s)
-                })
-                .collect()
-        }
-        _ => {
-            return Err(GifError::InvalidEncoderState {
-                message: "unsupported pixel format for GIF encoding",
-            }
-            .into());
-        }
-    };
-
+    }
     Ok((rgba, w, h))
+}
+
+fn validate_gif_metadata(
+    pixels: &PixelSlice<'_>,
+    metadata: Option<&Metadata>,
+) -> Result<(), At<CodecError>> {
+    if metadata.is_some_and(|m| {
+        m.icc_profile.is_some()
+            || m.cicp
+                .is_some_and(|c| Some(c) != zenpixels::Cicp::from_descriptor(&pixels.descriptor()))
+    }) {
+        return Err(GifError::InvalidEncoderState {
+            message: "resolve source ICC and conflicting color metadata before GIF encoding",
+        }
+        .into());
+    }
+    Ok(())
 }
 
 // ── GifAnimationFrameEncoder ──────────────────────────────────────────────
@@ -926,6 +903,7 @@ pub struct GifAnimationFrameEncoder {
     /// Whether at least one frame has been pushed.
     has_frames: bool,
     stop: Option<zencodec::StopToken>,
+    metadata: Option<Metadata>,
 }
 
 impl GifAnimationFrameEncoder {
@@ -1019,7 +997,8 @@ impl GifAnimationFrameEncoder {
             }
             .into());
         }
-        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
+        validate_gif_metadata(&pixels, self.metadata.as_ref())?;
+        let (rgba, w, h) = pixels_to_gif_rgba(&pixels, &stop, self.gif_limits.max_memory)?;
         let frame = FrameInput::new(w, h, delay_cs, rgba);
 
         let enc = self.ensure_encoder(w, h)?;

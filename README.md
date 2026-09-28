@@ -523,3 +523,12 @@ adapter retains its job token and polls it on compressed reads. GIF's buffered
 LZW work cannot be interrupted between reads. Per-call animation cancellation
 is checked around frame work and within the skip loop; a failed animation
 adapter cannot be reused.
+
+### GIF color input
+
+The zencodec adapter accepts straight sRGB U8 or linear BT.709 F32 in finite
+0..1, converting the latter to sRGB before quantization. Resolve ICC profiles,
+wide gamut, HDR, limited range, and premultiplied alpha before encoding. GIF
+can carry application extensions, but this adapter currently writes no ICC
+extension; dropping a profile cannot convert its pixels. Conflicting pixel
+ColorContext or source color metadata is rejected before admitting a frame.
