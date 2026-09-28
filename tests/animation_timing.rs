@@ -229,6 +229,10 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
                     "shared={shared} job={job_stop}"
                 );
             } else {
+                // One canvas of lookahead is required to choose disposal.
+                // The next push performs quantization of the first frame.
+                encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
+                calls.store(0, Ordering::Relaxed);
                 assert!(
                     encoder.push_frame(pixels.as_slice(), 10, token).is_err(),
                     "shared={shared} job={job_stop}"

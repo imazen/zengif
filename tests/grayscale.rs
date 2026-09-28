@@ -295,12 +295,12 @@ fn later_frame_source_transparency_is_not_dropped() {
     .unwrap();
 
     let (_, frames, _) = decode_gif(&encoded, Limits::default(), &Unstoppable).unwrap();
-    // Transparent pixel shows the previous frame through (gray200) — NOT a
-    // flattened opaque gray (which would be ~gray10, the nearest palette entry).
+    // FrameInput describes the displayed full canvas. The source-transparent
+    // pixel must clear prior opaque content; hidden RGB is canonicalized.
     assert_eq!(
         frames[1].pixels[p],
-        gray(200),
-        "source-transparent pixel must show the previous frame, not a flattened gray"
+        Rgba::TRANSPARENT,
+        "source-transparent pixel must clear the previous display"
     );
     // The opaque background is unchanged.
     assert_eq!(frames[1].pixels[0], gray(10));

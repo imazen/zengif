@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Transparent background disposal now signals a transparent index even when
+  the preceding canvas is opaque. If that canvas uses all 256 palette indices,
+  merge its least-used color into the nearest RGB neighbor to free one index;
+  this also applies to supplied palettes.
+
+- Full-canvas input can erase earlier opaque pixels. Retain one input canvas of
+  lookahead and select full-canvas background disposal when the next display
+  needs transparency; apply the same rule to batch shared-palette encoding.
+  Source transparency now means a clear pixel in the displayed canvas, matching
+  decoded `ComposedFrame` input. It no longer means an implicit overlay.
+- A transparent-only shared palette falls back to a local palette for later
+  visible frames. Local indices are never written against the old global table.
+  Retained input canvases remain charged to the memory budget until released.
+
 - Exact animation timing preserves zero delays and rejects values outside GIF's
   centisecond clock before accepting a frame. The shared codec API now reports
   total plays consistently; NETSCAPE's positive repeat count is one less.
