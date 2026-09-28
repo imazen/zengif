@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.
+
 ### Fixed
 
 - GIF read cancellation is terminal and preserves the original stop reason.
