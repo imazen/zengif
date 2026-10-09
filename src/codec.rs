@@ -233,6 +233,7 @@ static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
         .with_animation(true)
         .with_cheap_probe(false)
         .with_native_alpha(true)
+        .with_inventory(true)
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_enforces_max_input_bytes(true);
@@ -1319,6 +1320,36 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         }
 
         Ok(info)
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, At<CodecError>> {
+        use crate::inventory::WalkError;
+        self.check_file_size(data)?;
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
+        match crate::inventory::walk(data, stop) {
+            Ok(inv) => Ok(Some(inv)),
+            Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
+            // The part cap bounds the inventory's memory: report it as the
+            // memory limit it is (`Part` bytes, not file bytes).
+            Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max })) => {
+                let part = core::mem::size_of::<zencodec::inventory::Part>() as u64;
+                Err(GifError::MemoryLimitExceeded {
+                    current: (u64::from(max) + 1) * part,
+                    limit: u64::from(max) * part,
+                }
+                .into())
+            }
+            Err(WalkError::Parts(_)) => Err(GifError::InvalidDecoderState {
+                message: "inventory walker produced an invalid part",
+            }
+            .into()),
+        }
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<CodecError>> {
