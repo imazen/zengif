@@ -107,6 +107,10 @@ fuzz-roundtrip:
 fuzz-limits:
     cargo +nightly fuzz run fuzz_limits
 
+# Run the structural inventory fuzzer (seeded from the committed corpus files)
+fuzz-inventory:
+    cargo +nightly fuzz run inventory fuzz/corpus/seed/ -- -dict=fuzz/gif.dict
+
 # List available fuzz targets
 fuzz-list:
     cargo +nightly fuzz list

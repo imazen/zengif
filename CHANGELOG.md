@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Structural inventory** (`DecodeJob::inventory`, `DecodeCapabilities::with_inventory`): every byte of a
+  GIF as a part with the decode path's true disposition (header, colour tables, each extension
+  labelled by application identifier, XMP packet and ramp, image descriptors, LZW data, trailer,
+  bytes after it). Walker, fixtures, exiftool oracle (`just inventory-oracle`) and an `inventory`
+  fuzz target. Depends on imazen/zencodec#133; `[patch.crates-io]` must be swapped for the
+  released zencodec before merge. bf4ac1d, 38be7609
+
 ### Fixed
 
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`
