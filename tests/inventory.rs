@@ -428,8 +428,7 @@ fn part_cap_is_a_resource_error() {
     let err = GifDecoderConfig::new()
         .job()
         .inventory(&g)
-        .err()
-        .expect("cap error");
+        .expect_err("cap error");
     assert!(err.to_string().to_lowercase().contains("memory"), "{err}");
 }
 
