@@ -150,3 +150,7 @@ profile-view:
 arm-bench-macos bench="decode_bench":
     mkdir -p "$HOME/tmp"
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p zengif --bench '{{bench}}' -- --format=llm > "$HOME/tmp/zengif-{{bench}}.log" 2>&1
+
+# Cross-check the structural inventory against exiftool -v3 (needs exiftool installed)
+inventory-oracle:
+    INVENTORY_ORACLE_EXIFTOOL=$(command -v exiftool) cargo test --test inventory_oracle -- --nocapture
