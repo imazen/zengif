@@ -56,14 +56,14 @@ fn native(g: &[u8]) -> Result<(zengif::Metadata, Vec<zengif::ComposedFrame>), St
 fn part_at(i: &Inventory, start: u64) -> &Part {
     i.parts()
         .iter()
-        .find(|p| p.parent.is_none() && p.range.start == start)
+        .find(|p| p.parent().is_none() && p.range().start == start)
         .unwrap_or_else(|| panic!("no top-level part at {start}\n{i}"))
 }
 
 fn leaf_at(i: &Inventory, at: u64) -> &Part {
     i.parts()
         .iter()
-        .rfind(|p| p.range.start <= at && at < p.range.end)
+        .rfind(|p| p.range().start <= at && at < p.range().end)
         .unwrap()
 }
 
@@ -277,19 +277,19 @@ fn q1_lzw_walk_matches_weezl_differentially() {
                 }
                 let i = inv(&g);
                 let head = part_at(&i, at as u64);
-                let ok_head = head.label.as_deref() == Some("image data")
-                    && head.disposition == D::ImageData
-                    && head.range.end == cut as u64;
+                let ok_head = head.label() == Some("image data")
+                    && head.disposition() == D::ImageData
+                    && head.range().end == cut as u64;
                 let tail_ok = i.parts().iter().any(|p| {
-                    p.label.as_deref() == Some("image data tail")
-                        && p.disposition == D::Dropped
-                        && p.range == (cut as u64..data_end as u64)
+                    p.label() == Some("image data tail")
+                        && p.disposition() == D::Dropped
+                        && p.range() == (cut as u64..data_end as u64)
                 });
                 checked += 1;
                 if !(ok_head && tail_ok) {
                     report.push(format!(
                         "min {min} {w}x{h} mode {mode}: expected head {at}..{cut}, tail {cut}..{data_end}; got {:?} {:?} {:?}",
-                        head.label, head.disposition, head.range
+                        head.label(), head.disposition(), head.range()
                     ));
                 }
             }
@@ -373,14 +373,15 @@ fn q1b_lzw_cut_matches_weezl_decoder_consumption() {
                 let i = inv(&g);
                 let head = part_at(&i, at as u64);
                 assert_eq!(
-                    head.range.end, cut_abs,
+                    head.range().end,
+                    cut_abs,
                     "min {min} px {npx} mode {mode}\n{i}"
                 );
-                assert_eq!(head.disposition, D::ImageData);
+                assert_eq!(head.disposition(), D::ImageData);
                 let tail = part_at(&i, cut_abs);
-                assert_eq!(tail.label.as_deref(), Some("image data tail"), "{i}");
-                assert_eq!(tail.range.end, data_end);
-                assert_eq!(tail.disposition, D::Dropped);
+                assert_eq!(tail.label(), Some("image data tail"), "{i}");
+                assert_eq!(tail.range().end, data_end);
+                assert_eq!(tail.disposition(), D::Dropped);
                 cases += 1;
             }
         }
@@ -411,9 +412,9 @@ fn q2_eoi_before_pixel_count_is_fatal_but_consumed() {
     assert!(z.is_err());
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(part_at(&i, f1 as u64).disposition, D::Malformed, "{i}");
+    assert_eq!(part_at(&i, f1 as u64).disposition(), D::Malformed, "{i}");
     assert_eq!(
-        part_at(&i, f2 as u64).disposition,
+        part_at(&i, f2 as u64).disposition(),
         D::Skipped,
         "frame 2 never decoded\n{i}"
     );
@@ -451,11 +452,11 @@ fn q3_netscape_after_unknown_block_before_first_image() {
     let i = inv(&g);
     println!("{i}");
     assert_eq!(
-        part_at(&i, ns3 as u64).disposition,
+        part_at(&i, ns3 as u64).disposition(),
         D::Dropped,
         "loop 3 reaches nobody\n{i}"
     );
-    assert_eq!(part_at(&i, ns3 as u64 + 19 + 15).disposition, ANIM, "{i}");
+    assert_eq!(part_at(&i, ns3 as u64 + 19 + 15).disposition(), ANIM, "{i}");
 }
 
 /// A GCE whose first 4-byte sub-block says "transparent" and whose last says
@@ -480,8 +481,8 @@ fn q4_probe_reads_the_first_gce_subblock() {
     let i = inv(&g);
     println!("{i}");
     let first = leaf_at(&i, (at + 3) as u64);
-    assert_eq!(first.disposition, D::Dropped, "{i}");
-    assert!(first.detail.as_deref().unwrap().contains("probe()"), "{i}");
+    assert_eq!(first.disposition(), D::Dropped, "{i}");
+    assert!(first.detail().unwrap().contains("probe()"), "{i}");
 }
 
 /// Frames after a rejected frame: probe() still counts them and reads their
@@ -512,8 +513,8 @@ fn q5_probe_reads_frames_after_a_rejected_frame() {
     println!("{i}");
     for (at, d) in [(g3, D::Dropped), (d3, D::Skipped)] {
         let p = part_at(&i, at as u64);
-        assert_eq!(p.disposition, d, "{i}");
-        assert!(p.detail.as_deref().unwrap().contains("probe()"), "{i}");
+        assert_eq!(p.disposition(), d, "{i}");
+        assert!(p.detail().unwrap().contains("probe()"), "{i}");
     }
 }
 
@@ -545,8 +546,8 @@ fn q6_bad_gce_is_fatal_but_later_frames_stay_consumed() {
     assert!(err.is_some());
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(part_at(&i, d2 as u64).disposition, D::Skipped, "{i}");
-    let note = part_at(&i, d2 as u64).detail.clone().unwrap();
+    assert_eq!(part_at(&i, d2 as u64).disposition(), D::Skipped, "{i}");
+    let note = part_at(&i, d2 as u64).detail().clone().unwrap();
     assert!(
         note.contains("after the Graphic Control at offset"),
         "{note}"
@@ -574,7 +575,7 @@ fn q7_gct_counted_used_by_an_unreachable_frame() {
     );
     let i = inv(&b);
     println!("{i}");
-    assert_eq!(part_at(&i, 13).disposition, D::Dropped, "{i}");
+    assert_eq!(part_at(&i, 13).disposition(), D::Dropped, "{i}");
 }
 
 /// Memory with a small max_memory (run alone under /usr/bin/time -v).
@@ -627,8 +628,8 @@ fn q2b_exhausted_lzw_is_fatal_but_consumed() {
     println!("native: {e}");
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(part_at(&i, f1 as u64).disposition, D::Malformed, "{i}");
-    assert_eq!(part_at(&i, f2 as u64).disposition, D::Skipped, "{i}");
+    assert_eq!(part_at(&i, f1 as u64).disposition(), D::Malformed, "{i}");
+    assert_eq!(part_at(&i, f2 as u64).disposition(), D::Skipped, "{i}");
 }
 
 /// Cost of the two-pass walk on one large frame (run alone, release-ish).
@@ -691,9 +692,9 @@ fn q10_invalid_code_after_last_pixel_is_fatal() {
     let i = inv(&g);
     println!("{i}");
     let _ = f1;
-    assert_eq!(part_at(&i, d1 as u64).disposition, D::Malformed, "{i}");
+    assert_eq!(part_at(&i, d1 as u64).disposition(), D::Malformed, "{i}");
     assert_eq!(
-        part_at(&i, f2 as u64).disposition,
+        part_at(&i, f2 as u64).disposition(),
         D::Skipped,
         "frame 2 never decoded\n{i}"
     );
@@ -723,7 +724,7 @@ fn q11_fatal_in_header_phase_nothing_reports_netscape() {
     );
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(part_at(&i, ns as u64).disposition, D::Dropped, "{i}");
+    assert_eq!(part_at(&i, ns as u64).disposition(), D::Dropped, "{i}");
 }
 
 /// Round 3: a NETSCAPE2.0 after the header phase in a file detect.rs counts
@@ -748,7 +749,7 @@ fn q12_late_netscape_in_single_frame_file() {
     assert_ne!(d.loop_count(), Some(5));
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(part_at(&i, ns as u64).disposition, D::Dropped, "{i}");
+    assert_eq!(part_at(&i, ns as u64).disposition(), D::Dropped, "{i}");
 }
 
 /// Round 3: the local colour table of a frame whose LZW data is fatal is not
@@ -775,7 +776,7 @@ fn q13_lct_of_a_fatal_frame_is_not_read() {
     assert!(ea.is_some() && ea == eb);
     let i = inv(&b);
     println!("{i}");
-    assert_eq!(part_at(&i, lct as u64).disposition, D::Skipped, "{i}");
+    assert_eq!(part_at(&i, lct as u64).disposition(), D::Skipped, "{i}");
 }
 
 /// Round 3 differential: random LZW streams (valid weezl-encoded for min 2..=8,
@@ -866,7 +867,7 @@ fn q14_walker_agrees_with_the_decoder_on_random_streams() {
         let decoded = native(&g).is_ok();
         let i = inv(&g);
         let data = part_at(&i, at as u64);
-        let walker_ok = data.disposition != D::Malformed;
+        let walker_ok = data.disposition() != D::Malformed;
         if decoded {
             complete += 1;
         } else {
@@ -877,7 +878,7 @@ fn q14_walker_agrees_with_the_decoder_on_random_streams() {
             (false, true) => safe_dir += 1,
             (true, false) => bad.push(format!(
                 "it {it} min {min} total {total} kind {kind}: walker {:?}, decoder fails; raw {} B",
-                data.disposition,
+                data.disposition(),
                 raw.len()
             )),
         }

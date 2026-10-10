@@ -35,13 +35,13 @@ fn rows(inv: &Inventory) -> Vec<Row> {
         .iter()
         .map(|p| {
             (
-                p.parent.map(|id| id.index()),
-                p.kind,
-                p.tag.clone(),
-                p.range.start,
-                p.range.end,
-                p.disposition,
-                p.label.as_ref().map(|l| l.to_string()),
+                p.parent().map(|id| id.index()),
+                p.kind(),
+                p.tag().clone(),
+                p.range().start,
+                p.range().end,
+                p.disposition(),
+                p.label().as_ref().map(|l| l.to_string()),
             )
         })
         .collect()
@@ -230,7 +230,7 @@ fn fixture_parts_are_pinned() {
     ];
     assert_eq!(rows(&inv), expected, "{inv}");
     // The XMP extension declares its body, so the children tile it.
-    assert_eq!(inv.parts()[8].body, Some(123..433));
+    assert_eq!(inv.parts()[8].body(), Some(123..433));
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn fixture_matches_the_decoder() {
     let image_data = inv
         .parts()
         .iter()
-        .filter(|p| p.label.as_deref() == Some("image data") && p.disposition == D::ImageData)
+        .filter(|p| p.label() == Some("image data") && p.disposition() == D::ImageData)
         .count();
     assert_eq!(image_data, frames.len());
 }
@@ -303,9 +303,9 @@ fn stray_zero_byte_swallows_the_rest_like_the_decoder() {
     let inv = inventory_of(&g);
     inv.validate().unwrap();
     let last = inv.parts().last().unwrap();
-    assert_eq!(last.tag, PartTag::Code(0));
-    assert_eq!(last.disposition, D::Malformed, "{inv}");
-    assert_eq!(last.range, 34..g.len() as u64);
+    assert_eq!(*last.tag(), PartTag::Code(0));
+    assert_eq!(last.disposition(), D::Malformed, "{inv}");
+    assert_eq!(last.range(), 34..g.len() as u64);
 }
 
 // ── suspected bugs (see the inventory lane report) ───────────────────
@@ -373,10 +373,10 @@ fn xmp_without_magic_trailer_stays_one_part() {
     let x = inv
         .parts()
         .iter()
-        .find(|p| p.label.as_deref() == Some("XMP DataXMP"))
+        .find(|p| p.label() == Some("XMP DataXMP"))
         .unwrap();
-    assert_eq!(x.disposition, D::Skipped);
-    assert!(x.body.is_none());
+    assert_eq!(x.disposition(), D::Skipped);
+    assert!(x.body().is_none());
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn bad_inputs_are_malformed_not_errors() {
             .unwrap_or_else(|e| panic!("{name}: {e}\n{inv}"));
         if !bytes.is_empty() {
             assert!(
-                inv.parts().iter().any(|p| p.disposition == D::Malformed),
+                inv.parts().iter().any(|p| p.disposition() == D::Malformed),
                 "{name}: expected a Malformed part\n{inv}"
             );
         }
@@ -512,7 +512,7 @@ fn check_inventory_on_encoder_output() {
             !inventory_of(&bytes)
                 .parts()
                 .iter()
-                .any(|p| p.label.as_deref() == Some("image data tail"))
+                .any(|p| p.label() == Some("image data tail"))
         );
     }
 }
@@ -575,7 +575,7 @@ fn well_formed_files_have_no_image_data_tail() {
         if inv
             .parts()
             .iter()
-            .any(|p| p.label.as_deref() == Some("image data tail"))
+            .any(|p| p.label() == Some("image data tail"))
         {
             with_tail.push(f.display().to_string());
         }

@@ -73,13 +73,13 @@ fn exiftool_events(bin: &str, path: &Path) -> Vec<Ev> {
 /// The same events, read from the bytes at the inventory's top-level offsets.
 fn inventory_events(data: &[u8], inv: &Inventory) -> Vec<Ev> {
     let mut evs = Vec::new();
-    for p in inv.parts().iter().filter(|p| p.parent.is_none()) {
-        if p.kind != PartKind::Block {
+    for p in inv.parts().iter().filter(|p| p.parent().is_none()) {
+        if p.kind() != PartKind::Block {
             continue;
         }
-        let r = p.range.start as usize..p.range.end as usize;
+        let r = p.range().start as usize..p.range().end as usize;
         let b = &data[r];
-        match p.tag {
+        match p.tag() {
             // exiftool reports application extensions whose first block is 11 bytes.
             PartTag::Code(0xFF) if b.len() >= 14 && b[2] == 0x0B => {
                 assert_walk_ends_at_range(b, "application extension");

@@ -53,7 +53,7 @@ fn native(g: &[u8]) -> (zengif::Metadata, Vec<zengif::ComposedFrame>) {
 fn part_at(i: &Inventory, start: u64) -> &Part {
     i.parts()
         .iter()
-        .find(|p| p.parent.is_none() && p.range.start == start)
+        .find(|p| p.parent().is_none() && p.range().start == start)
         .unwrap_or_else(|| panic!("no top-level part at {start}\n{i}"))
 }
 
@@ -61,7 +61,7 @@ fn part_at(i: &Inventory, start: u64) -> &Part {
 fn leaf_at(i: &Inventory, at: u64) -> &Part {
     i.parts()
         .iter()
-        .rfind(|p| p.range.start <= at && at < p.range.end)
+        .rfind(|p| p.range().start <= at && at < p.range().end)
         .unwrap_or_else(|| panic!("nothing covers {at}\n{i}"))
 }
 
@@ -94,17 +94,17 @@ fn lzw_tail_is_not_image_data() {
 
     let i = inv(&dirty);
     let holder = leaf_at(&i, find(&dirty, secret));
-    assert!(!holder.disposition.is_consumed(), "{i}");
-    assert_eq!(holder.disposition, D::Dropped);
+    assert!(!holder.disposition().is_consumed(), "{i}");
+    assert_eq!(holder.disposition(), D::Dropped);
     // The real data (min code size, the sub-block with the end code) stays ImageData.
-    assert_eq!(leaf_at(&i, 29).disposition, D::ImageData, "{i}");
+    assert_eq!(leaf_at(&i, 29).disposition(), D::ImageData, "{i}");
 
     // A clean file has no tail part at all.
     assert!(
         !inv(&clean)
             .parts()
             .iter()
-            .any(|p| p.label.as_deref() == Some("image data tail"))
+            .any(|p| p.label() == Some("image data tail"))
     );
 }
 
@@ -138,10 +138,13 @@ fn data_after_the_pixel_count_is_not_image_data() {
     assert_eq!(native(&g).1.len(), 1);
     let i = inv(&g);
     assert!(
-        !leaf_at(&i, find(&g, secret)).disposition.is_consumed(),
+        !leaf_at(&i, find(&g, secret)).disposition().is_consumed(),
         "{i}"
     );
-    assert!(i.parts().iter().any(|p| p.disposition == D::Dropped), "{i}");
+    assert!(
+        i.parts().iter().any(|p| p.disposition() == D::Dropped),
+        "{i}"
+    );
 }
 
 #[test]
@@ -152,7 +155,7 @@ fn invalid_lzw_code_is_malformed() {
     ]);
     assert!(GifDecoderConfig::new().decode(&g).is_err());
     let i = inv(&g);
-    assert_eq!(leaf_at(&i, 29).disposition, D::Malformed, "{i}");
+    assert_eq!(leaf_at(&i, 29).disposition(), D::Malformed, "{i}");
 }
 
 // ── findings 1 and 4: extra sub-blocks, overwritten and orphaned ─────
@@ -199,20 +202,20 @@ fn extra_subblocks_in_consumed_extensions_are_dropped() {
         .nth(1)
         .unwrap();
     for at in [first, second] {
-        assert_eq!(leaf_at(&i, at).disposition, D::Dropped, "{i}");
+        assert_eq!(leaf_at(&i, at).disposition(), D::Dropped, "{i}");
     }
     // The sub-blocks the decoder does read are still metadata.
     let ns_loop = 19 + 2 + 12; // introducer, label, ident sub-block
-    assert_eq!(leaf_at(&i, ns_loop as u64 + 1).disposition, ANIM, "{i}");
+    assert_eq!(leaf_at(&i, ns_loop as u64 + 1).disposition(), ANIM, "{i}");
     let used_gce = i
         .parts()
         .iter()
-        .filter(|p| p.disposition == ANIM && p.label.as_deref() == Some("Graphic Control"))
+        .filter(|p| p.disposition() == ANIM && p.label() == Some("Graphic Control"))
         .count();
     assert_eq!(used_gce, 2, "{i}");
     // A clean file keeps both extensions as single parts.
     let c = inv(&clean);
-    assert_eq!(part_at(&c, 19).disposition, ANIM);
+    assert_eq!(part_at(&c, 19).disposition(), ANIM);
 }
 
 #[test]
@@ -229,8 +232,8 @@ fn overwritten_gce_is_dropped() {
     assert_eq!((f[0].delay, f[1].delay), (7, 9));
     let first = (13 + 6 + 19) as u64;
     let i = inv(&g);
-    assert_eq!(part_at(&i, first).disposition, D::Dropped, "{i}");
-    assert_eq!(leaf_at(&i, first + 8 + 4).disposition, ANIM, "{i}");
+    assert_eq!(part_at(&i, first).disposition(), D::Dropped, "{i}");
+    assert_eq!(leaf_at(&i, first + 8 + 4).disposition(), ANIM, "{i}");
 }
 
 #[test]
@@ -243,7 +246,7 @@ fn gce_after_the_last_frame_is_dropped() {
     b.extend(gce(55, true));
     b.push(0x3B);
     let i = inv(&b);
-    assert_eq!(part_at(&i, at).disposition, D::Dropped, "{i}");
+    assert_eq!(part_at(&i, at).disposition(), D::Dropped, "{i}");
 }
 
 #[test]
@@ -257,8 +260,8 @@ fn overwritten_netscape_is_dropped() {
     let (m, _) = native(&g);
     assert_eq!(m.repeat, zengif::Repeat::Count(7));
     let i = inv(&g);
-    assert_eq!(part_at(&i, 19).disposition, D::Dropped, "{i}");
-    assert_eq!(part_at(&i, 19 + 19).disposition, ANIM, "{i}");
+    assert_eq!(part_at(&i, 19).disposition(), D::Dropped, "{i}");
+    assert_eq!(part_at(&i, 19 + 19).disposition(), ANIM, "{i}");
 }
 
 /// NETSCAPE2.0 after the first image: `probe()` reads it, the gif crate does
@@ -273,8 +276,8 @@ fn netscape_after_the_first_frame_names_its_reader() {
     g.push(0x3B);
     let i = inv(&g);
     let p = part_at(&i, at);
-    assert_eq!(p.disposition, ANIM);
-    assert!(p.detail.as_deref().unwrap().contains("probe()"));
+    assert_eq!(p.disposition(), ANIM);
+    assert!(p.detail().unwrap().contains("probe()"));
 }
 
 #[test]
@@ -286,8 +289,8 @@ fn gce_alpha_in_a_later_subblock_is_the_used_one() {
     frame(&mut g, 0);
     g.push(0x3B);
     let i = inv(&g);
-    assert_eq!(leaf_at(&i, 21).disposition, D::Dropped, "{i}");
-    assert_eq!(leaf_at(&i, 19 + 6).disposition, ANIM, "{i}");
+    assert_eq!(leaf_at(&i, 21).disposition(), D::Dropped, "{i}");
+    assert_eq!(leaf_at(&i, 19 + 6).disposition(), ANIM, "{i}");
 }
 
 // ── finding 3: probe() and the decoder disagree inside unknown blocks ──
@@ -307,10 +310,10 @@ fn bytes_probe_reads_differently_are_malformed_not_unknown() {
     assert_eq!(native(&g).1.len(), 2);
     let i = inv(&g);
     let p = part_at(&i, stray as u64);
-    assert_eq!(p.tag, PartTag::Code(0));
-    assert_eq!(p.disposition, D::Malformed, "{i}");
-    assert!(p.range.end >= (stray + 20) as u64);
-    assert!(p.detail.as_deref().unwrap().contains("probe()"));
+    assert_eq!(*p.tag(), PartTag::Code(0));
+    assert_eq!(p.disposition(), D::Malformed, "{i}");
+    assert!(p.range().end >= (stray + 20) as u64);
+    assert!(p.detail().unwrap().contains("probe()"));
 
     // Transparency hidden behind a stray byte.
     let mut g = header(1);
@@ -322,7 +325,7 @@ fn bytes_probe_reads_differently_are_malformed_not_unknown() {
     frame(&mut g, 0);
     g.push(0x3B);
     assert!(GifDecoderConfig::new().job().probe(&g).unwrap().has_alpha);
-    assert_eq!(part_at(&inv(&g), 19).disposition, D::Malformed);
+    assert_eq!(part_at(&inv(&g), 19).disposition(), D::Malformed);
 }
 
 // ── findings 5 and 6: unused table, rejected frames ──────────────────
@@ -336,12 +339,12 @@ fn unused_global_table_is_dropped() {
     let mut b = a.clone();
     b[13..19].copy_from_slice(b"SECRET");
     assert_eq!(native(&a).1[0].pixels, native(&b).1[0].pixels);
-    assert_eq!(part_at(&inv(&b), 13).disposition, D::Dropped);
+    assert_eq!(part_at(&inv(&b), 13).disposition(), D::Dropped);
     // A frame without a local table reads it.
     let mut c = header(1);
     frame(&mut c, 0);
     c.push(0x3B);
-    assert_eq!(part_at(&inv(&c), 13).disposition, D::ImageData);
+    assert_eq!(part_at(&inv(&c), 13).disposition(), D::ImageData);
 }
 
 #[test]
@@ -352,8 +355,8 @@ fn frame_without_any_colour_table_is_malformed() {
     g.push(0x3B);
     assert!(GifDecoderConfig::new().decode(&g).is_err());
     let i = inv(&g);
-    assert_eq!(part_at(&i, 13).disposition, D::Malformed, "{i}");
-    assert!(!part_at(&i, 23).disposition.is_consumed(), "{i}");
+    assert_eq!(part_at(&i, 13).disposition(), D::Malformed, "{i}");
+    assert!(!part_at(&i, 23).disposition().is_consumed(), "{i}");
 }
 
 #[test]
@@ -365,9 +368,9 @@ fn frames_after_a_rejected_frame_are_not_consumed() {
     frame(&mut g, 1);
     g.push(0x3B);
     let i = inv(&g);
-    assert_eq!(part_at(&i, 29 + 5).disposition, D::Malformed, "{i}");
-    assert_eq!(part_at(&i, third).disposition, D::Skipped, "{i}");
-    assert_eq!(part_at(&i, third + 10).disposition, D::Skipped, "{i}");
+    assert_eq!(part_at(&i, 29 + 5).disposition(), D::Malformed, "{i}");
+    assert_eq!(part_at(&i, third).disposition(), D::Skipped, "{i}");
+    assert_eq!(part_at(&i, third + 10).disposition(), D::Skipped, "{i}");
 }
 
 // ── from the review, unchanged in outcome ────────────────────────────
@@ -380,15 +383,15 @@ fn leading_junk_and_lengths_past_eof() {
     g.push(0x3B);
     let i = inv(&g);
     assert_eq!(i.parts().len(), 1);
-    assert_eq!(i.parts()[0].disposition, D::Malformed);
+    assert_eq!(i.parts()[0].disposition(), D::Malformed);
 
     let mut g = header(1);
     frame(&mut g, 0);
     g.extend_from_slice(&[0x21, 0xFE, 0xFF, b'a', b'b']);
     let i = inv(&g);
     let last = i.parts().last().unwrap();
-    assert_eq!(last.disposition, D::Malformed);
-    assert_eq!(last.range.end, g.len() as u64);
+    assert_eq!(last.disposition(), D::Malformed);
+    assert_eq!(last.range().end, g.len() as u64);
 }
 
 #[test]
@@ -404,7 +407,7 @@ fn xmp_early_terminator_leaves_the_rest_unconsumed() {
     frame(&mut g, 0);
     g.push(0x3B);
     let i = inv(&g);
-    assert!(!leaf_at(&i, find(&g, b"HIDDEN")).disposition.is_consumed());
+    assert!(!leaf_at(&i, find(&g, b"HIDDEN")).disposition().is_consumed());
 }
 
 // ── finding 7: the memory limit bounds the inventory ─────────────────
