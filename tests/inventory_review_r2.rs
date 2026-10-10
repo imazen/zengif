@@ -178,6 +178,15 @@ fn sub_block(raw: &[u8], raw_end: usize) -> (Vec<u8>, usize) {
     (v, cut)
 }
 
+/// Width and height of a frame with exactly `n` pixels and rows of at most 200.
+fn dims(n: usize) -> (u16, u16) {
+    let w = (1..=200usize.min(n))
+        .rev()
+        .find(|w| n.is_multiple_of(*w))
+        .unwrap_or(1);
+    (w as u16, (n / w) as u16)
+}
+
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -338,10 +347,9 @@ fn q1b_lzw_cut_matches_weezl_decoder_consumption() {
                     continue;
                 }
                 // Square-ish frame of exactly npx pixels on a (w x h) screen.
-                let (w, h) = (npx as u16, 1u16);
-                if npx > usize::from(u16::MAX) {
-                    continue;
-                }
+                // Rows of at most 200 pixels: the decoder's default limits refuse a screen
+                // wider than 16,384.
+                let (w, h) = dims(npx);
                 let mut g = b"GIF89a".to_vec();
                 g.extend_from_slice(&w.to_le_bytes());
                 g.extend_from_slice(&h.to_le_bytes());
@@ -833,15 +841,19 @@ fn q14_walker_agrees_with_the_decoder_on_random_streams() {
             }
         }
         // One total x 1 frame, full 256-entry global table.
-        let w = total as u16;
+        // Rows of at most 200 pixels (the default limits refuse wider screens); the
+        // frame holds the largest whole number of rows not above `total`.
+        let w = total.min(200) as u16;
+        let h = (total / usize::from(w)) as u16;
+        let total = usize::from(w) * usize::from(h);
         let mut g = b"GIF89a".to_vec();
         g.extend_from_slice(&w.to_le_bytes());
-        g.extend_from_slice(&1u16.to_le_bytes());
+        g.extend_from_slice(&h.to_le_bytes());
         g.extend_from_slice(&[0x87, 0, 0]);
         g.extend((0..768).map(|i| i as u8));
         g.extend_from_slice(&[0x2C, 0, 0, 0, 0]);
         g.extend_from_slice(&w.to_le_bytes());
-        g.extend_from_slice(&1u16.to_le_bytes());
+        g.extend_from_slice(&h.to_le_bytes());
         g.push(0);
         let at = g.len();
         g.push(min);

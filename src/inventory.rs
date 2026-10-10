@@ -25,6 +25,8 @@ use alloc::vec::Vec;
 use core::ops::Range;
 
 use enough::Stop;
+
+use crate::limits::Limits;
 use zencodec::ImageFormat;
 use zencodec::inventory::{
     Disposition, Inventory, InventoryError, MetadataKind, Part, PartId, PartKind, PartTag,
@@ -160,8 +162,9 @@ struct Facts {
     header_fatal: bool,
     /// Frames whose LZW data decodes.
     good_frames: usize,
-    /// Image descriptors in the file (detect.rs counts frames from them).
-    images: usize,
+    /// Largest LZW minimum code size among the frames that read the global
+    /// table: no index above `2^m - 1` can reach it.
+    gct_max_m: u8,
 }
 
 struct Walker<'a> {
@@ -182,6 +185,14 @@ struct Walker<'a> {
     fatal_gce: Option<usize>,
     /// Image descriptors seen so far.
     images: usize,
+    /// The decoder's own limits (`Limits::check_*` decide, nothing is copied).
+    limits: &'a Limits,
+    /// The logical screen is refused by the dimension limits.
+    fatal_screen: bool,
+    /// Delay of the Graphic Control waiting for its image, in centiseconds.
+    pending_delay: u16,
+    /// Running animation duration, in milliseconds.
+    elapsed_ms: u64,
     /// The gif crate reads application extensions only until the first block
     /// that is not an extension (image, trailer or unknown introducer).
     header_over: bool,
@@ -225,7 +236,13 @@ impl Walker<'_> {
     }
 }
 
-fn new_walker<'a>(data: &'a [u8], stop: &'a dyn Stop, max_parts: u32, facts: Facts) -> Walker<'a> {
+fn new_walker<'a>(
+    data: &'a [u8],
+    stop: &'a dyn Stop,
+    max_parts: u32,
+    limits: &'a Limits,
+    facts: Facts,
+) -> Walker<'a> {
     Walker {
         data,
         inv: Inventory::new(ImageFormat::Gif, data.len() as u64).with_max_parts(max_parts),
@@ -237,32 +254,44 @@ fn new_walker<'a>(data: &'a [u8], stop: &'a dyn Stop, max_parts: u32, facts: Fac
         netscapes: Vec::new(),
         fatal: None,
         fatal_gce: None,
+        limits,
+        fatal_screen: false,
+        pending_delay: 0,
+        elapsed_ms: 0,
         images: 0,
         header_over: false,
     }
 }
 
-/// Inventory `data` as a GIF file, with at most `max_parts` parts.
+/// Inventory `data` as a GIF file, with at most `max_parts` parts, under the
+/// decoder's `limits`.
 ///
 /// Two passes: the first learns which Graphic Control and NETSCAPE2.0
-/// extensions are overwritten or orphaned and whether the global colour table
-/// is read; the second emits the parts with those facts.
-pub(crate) fn walk(data: &[u8], stop: &dyn Stop, max_parts: u32) -> Result<Inventory, WalkError> {
+/// extensions are overwritten or orphaned, whether the global colour table is
+/// read and how far its indices reach; the second emits the parts with those
+/// facts.
+pub(crate) fn walk(
+    data: &[u8],
+    stop: &dyn Stop,
+    max_parts: u32,
+    limits: &Limits,
+) -> Result<Inventory, WalkError> {
     if data.is_empty() {
-        return Ok(new_walker(data, stop, max_parts, Facts::default()).inv);
+        return Ok(new_walker(data, stop, max_parts, limits, Facts::default()).inv);
     }
     // Pass 1 lives in its own scope so its parts are freed before pass 2.
     let (mut facts, netscapes) = {
-        let mut first = new_walker(data, stop, max_parts, Facts::default());
+        let mut first = new_walker(data, stop, max_parts, limits, Facts::default());
         walk_inner(&mut first)?;
-        first.found.images = first.images;
         (first.found, first.netscapes)
     };
-    // Which loop count reaches the caller:
+    // Which loop count reaches the caller, and only if `Decoder::new`
+    // succeeds (otherwise `probe()`, `decode()` and the animation decoder all
+    // fail):
     // - the animation decoder reports the last one before the header phase
-    //   ends, but only if `Decoder::new` succeeds and a frame decodes;
-    // - `probe()` reports the last one anywhere, but only if `Decoder::new`
-    //   succeeds and detect.rs counts more than one frame.
+    //   ends, once a frame decodes;
+    // - `probe()` reports what detect.rs kept, the same call `probe()` makes,
+    //   and only for an animation.
     if !facts.header_fatal {
         if facts.good_frames > 0 {
             facts.netscape_used.extend(
@@ -273,14 +302,14 @@ pub(crate) fn walk(data: &[u8], stop: &dyn Stop, max_parts: u32) -> Result<Inven
                     .next_back(),
             );
         }
-        if facts.images > 1 {
-            facts
-                .netscape_used
-                .extend(netscapes.last().map(|(at, _)| *at));
+        if let Ok((p, Some(at))) = crate::detect::probe_located(data, limits, stop)
+            && p.is_animated
+        {
+            facts.netscape_used.insert(at);
         }
     }
 
-    let mut w = new_walker(data, stop, max_parts, facts);
+    let mut w = new_walker(data, stop, max_parts, limits, facts);
     walk_inner(&mut w)?;
     w.inv.fill_gaps(None, Disposition::Trailing)?;
     Ok(w.inv)
@@ -327,6 +356,33 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
     }
     let (sw, sh) = (le16(data, 6), le16(data, 8));
     let packed = data[10];
+    // `Decoder::new` runs the dimension limits (zero sizes always fail) before
+    // anything else is read: every zencodec path fails, nothing after the
+    // header is consumed.
+    let screen_err = w.limits.check_dimensions(sw, sh).is_err();
+    if screen_err {
+        w.fatal_screen = true;
+        w.fatal = Some(0);
+        w.found.header_fatal = true;
+    }
+    let mut header_detail = alloc::format!(
+        "screen {sw}x{sh}, background index {}, pixel aspect byte {}; the gif crate \
+         parses the last two, zencodec output does not carry them",
+        data[11],
+        data[12]
+    );
+    if screen_err {
+        header_detail.push_str(
+            "; the decoder's dimension limits reject this screen, so every zencodec path fails \
+             and nothing after the header is read",
+        );
+    }
+    if w.limits.max_decompression_ratio.is_some() {
+        header_detail.push_str(
+            "; a frame may also be refused by the decompression-ratio limit (it depends on how \
+             much the reader has pulled ahead)",
+        );
+    }
     w.push(
         Part::new(
             PartKind::Header,
@@ -335,12 +391,7 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
             Disposition::Structure,
         )
         .with_label(version)
-        .with_detail(alloc::format!(
-            "screen {sw}x{sh}, background index {}, pixel aspect byte {}; the gif crate \
-                 parses the last two, zencodec output does not carry them",
-            data[11],
-            data[12]
-        )),
+        .with_detail(header_detail),
     )?;
     let mut pos = 13usize;
 
@@ -357,26 +408,25 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
             )?;
             return Ok(());
         }
-        // Read only by frames without a local table (pass 1 finds out).
+        // Read only by frames without a local table (pass 1 finds out), and
+        // only up to the largest index their LZW code size can produce.
         let used = w.facts.gct_used;
-        w.block(
+        let reach = 1usize << w.facts.gct_max_m.min(11);
+        colour_table(
+            w,
             pos..end,
-            PartTag::None,
+            "global colour table",
+            used,
+            reach,
             if used {
-                Disposition::ImageData
+                alloc::format!("{} entries", size / 3)
             } else {
-                Disposition::Dropped
+                alloc::format!(
+                    "{} entries; every frame has a local colour table (or no frame decodes), \
+                     nothing reads it",
+                    size / 3
+                )
             },
-            Some("global colour table".into()),
-            Some(alloc::format!(
-                "{} entries{}",
-                size / 3,
-                if used {
-                    ""
-                } else {
-                    "; every frame has a local colour table (or there is no frame), nothing reads it"
-                }
-            )),
         )?;
         pos = end;
     }
@@ -424,6 +474,78 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
             other => pos = unknown_block(w, pos, other)?,
         }
     }
+    Ok(())
+}
+
+/// A colour table: a read table is split into the entries an index can reach
+/// (`reach` = `2^m` for LZW minimum code size `m`) and the rest, which no index
+/// can select. The native palette APIs (`Metadata::global_palette`,
+/// `ComposedFrame::palette`) carry the whole table; zencodec output does not.
+fn colour_table(
+    w: &mut Walker<'_>,
+    range: Range<usize>,
+    label: &str,
+    read: bool,
+    reach: usize,
+    detail: String,
+) -> Result<(), WalkError> {
+    let entries = range.len() / 3;
+    let disposition = if read {
+        Disposition::ImageData
+    } else if label == "global colour table" {
+        Disposition::Dropped
+    } else {
+        Disposition::Skipped
+    };
+    if !read || reach >= entries {
+        w.block(
+            range,
+            PartTag::None,
+            disposition,
+            Some(label.into()),
+            Some(detail),
+        )?;
+        return Ok(());
+    }
+    let cut = range.start + reach * 3;
+    let parent = w.push(
+        Part::new(
+            PartKind::Block,
+            PartTag::None,
+            range.start as u64..range.end as u64,
+            disposition,
+        )
+        .with_label(label.to_owned())
+        .with_body(range.start as u64..range.end as u64)
+        .with_detail(detail),
+    )?;
+    w.push_child(
+        parent,
+        Part::new(
+            PartKind::Block,
+            PartTag::None,
+            range.start as u64..cut as u64,
+            Disposition::ImageData,
+        )
+        .with_label(label.to_owned())
+        .with_detail(alloc::format!(
+            "entries 0..{reach}, reachable by the frames' LZW codes"
+        )),
+    )?;
+    w.push_child(
+        parent,
+        Part::new(
+            PartKind::Block,
+            PartTag::None,
+            cut as u64..range.end as u64,
+            Disposition::Dropped,
+        )
+        .with_label("unreachable palette entries")
+        .with_detail(alloc::format!(
+            "entries {reach}..{entries}: no index can reach them (LZW minimum code size limits \
+             indices below {reach}); native palette APIs still carry the whole table"
+        )),
+    )?;
     Ok(())
 }
 
@@ -571,6 +693,8 @@ fn image(
     // fails a frame with no colour table at all (reader/mod.rs).
     let problem = if after_fatal.is_some() {
         None
+    } else if w.limits.check_frame_count(frame as u64 - 1).is_err() {
+        Some("frame count limit reached; the decoder stops before this frame")
     } else if fw == 0 || fh == 0 {
         Some("zero-sized frame; the decoder rejects it")
     } else if u32::from(left) + u32::from(fw) > u32::from(screen.0)
@@ -590,11 +714,30 @@ fn image(
     // decode; a fatal LZW error below withdraws it again.
     let mut reads_gct = reachable && !has_lct;
     let pending = w.pending_gce.take();
+    let delay_cs = if pending.is_some() {
+        w.pending_delay
+    } else {
+        0
+    };
+    w.pending_delay = 0;
     if reachable && let Some(g) = pending {
         w.found.gce_used.insert(g);
     }
+    // The animation duration limit is checked after each decoded frame: the
+    // frame that crosses it is read but reported as an error.
+    let mut dur_fail = false;
+    if reachable {
+        w.elapsed_ms = w.elapsed_ms.saturating_add(u64::from(delay_cs) * 10);
+        dur_fail = w.limits.check_animation_duration(w.elapsed_ms).is_err();
+    }
     let fatal_gce = w.fatal_gce;
+    let fatal_screen = w.fatal_screen;
     let skipped_note = after_fatal.map(|n| {
+        if fatal_screen {
+            return String::from(
+                "; the decoder rejects the logical screen (dimension limits), so this is never read",
+            );
+        }
         if let Some(g) = fatal_gce {
             return alloc::format!(
                 "; after the Graphic Control at offset {g}, which the decoder rejects, so this is \
@@ -651,29 +794,25 @@ fn image(
             )?;
             return Ok(None);
         }
-        // The table is read only when the frame's data decodes; the walk does not
-        // depend on the table, so run it first.
+        // The table is read only when the frame's data decodes (the walk does
+        // not depend on the table, so run it first), and only up to the
+        // largest index the frame's LZW code size can produce.
+        let m_lct = data.get(end).copied().unwrap_or(0);
         let lct_read = reachable
-            && data.get(end).is_some_and(|&m| {
-                (1..=11).contains(&m) && {
-                    let sb = sub_blocks(data, end + 1);
-                    sb.terminated
-                        && matches!(
-                            lzw_extent(data, end + 1, m, u64::from(fw) * u64::from(fh)),
-                            Lzw::Ended(_)
-                        )
-                }
-            });
-        w.block(
+            && !dur_fail
+            && (1..=11).contains(&m_lct)
+            && sub_blocks(data, end + 1).terminated
+            && matches!(
+                lzw_extent(data, end + 1, m_lct, u64::from(fw) * u64::from(fh)),
+                Lzw::Ended(_)
+            );
+        colour_table(
+            w,
             at..end,
-            PartTag::None,
-            if lct_read {
-                Disposition::ImageData
-            } else {
-                Disposition::Skipped
-            },
-            Some("local colour table".into()),
-            Some(alloc::format!(
+            "local colour table",
+            lct_read,
+            1usize << m_lct.min(11),
+            alloc::format!(
                 "frame {frame}, {} entries{}",
                 size / 3,
                 if reachable && !lct_read {
@@ -681,7 +820,7 @@ fn image(
                 } else {
                     ""
                 }
-            )),
+            ),
         )?;
         at = end;
     }
@@ -733,22 +872,27 @@ fn image(
         return Ok(Some(sb.end));
     }
     let extent = lzw_extent(data, at + 1, min_code, u64::from(fw) * u64::from(fh));
-    let bad = matches!(extent, Lzw::Bad);
+    let fail_why = match extent {
+        Lzw::Bad => Some("; invalid LZW code, the decoder errors"),
+        Lzw::Short => {
+            Some("; the LZW data ends before the pixel count, the decoder errors (image truncated)")
+        }
+        Lzw::Ended(_) if dur_fail => Some(
+            "; the animation duration limit is exceeded by this frame, the decoder reports an \
+             error instead of it",
+        ),
+        Lzw::Ended(_) => None,
+    };
     match extent {
-        Lzw::Bad | Lzw::Short => {
+        _ if fail_why.is_some() => {
             w.fatal = Some(frame);
             reads_gct = false;
-            let why = if bad {
-                "; invalid LZW code, the decoder errors"
-            } else {
-                "; the LZW data ends before the pixel count, the decoder errors (image truncated)"
-            };
             w.block(
                 at..sb.end,
                 PartTag::None,
                 Disposition::Malformed,
                 Some("image data".into()),
-                Some(head(why)),
+                Some(head(fail_why.unwrap_or_default())),
             )?;
         }
         // Only the terminator is left after the last byte read.
@@ -783,9 +927,11 @@ fn image(
                 Some(head("")),
             )?;
         }
+        Lzw::Bad | Lzw::Short => {}
     }
     if reads_gct {
         w.found.gct_used = true;
+        w.found.gct_max_m = w.found.gct_max_m.max(min_code);
     }
     Ok(Some(sb.end))
 }
@@ -845,15 +991,27 @@ fn second_sub_block(data: &[u8], first: &Range<usize>) -> Option<Range<usize>> {
 
 /// Split a consumed extension whose other sub-blocks the decoder never reads:
 /// the sub-block(s) in `used` carry `disposition`, the rest is `Dropped`.
-fn split_extension(
-    w: &mut Walker<'_>,
+struct Split<'a> {
     ext: Range<usize>,
     tag: PartTag,
-    label: &str,
+    label: &'a str,
     used: Range<usize>,
     disposition: Disposition,
     detail: String,
-) -> Result<(), WalkError> {
+    /// A byte inside `used` the decoder does not read, with the reason.
+    carve: Option<(usize, &'static str)>,
+}
+
+fn split_extension(w: &mut Walker<'_>, sp: Split<'_>) -> Result<(), WalkError> {
+    let Split {
+        ext,
+        tag,
+        label,
+        used,
+        disposition,
+        detail,
+        carve,
+    } = sp;
     let (pos, end) = (ext.start, ext.end);
     let body = pos + 2..end;
     let parent = w.push(
@@ -865,9 +1023,7 @@ fn split_extension(
         )
         .with_label(label.to_owned())
         .with_body(body.start as u64..body.end as u64)
-        .with_detail(
-            "other sub-blocks in this extension are never read; they are listed separately",
-        ),
+        .with_detail("bytes in this extension that the decoder never reads are listed separately"),
     )?;
     let child = |range: Range<usize>, d: Disposition, label: &str, detail: String| {
         Part::new(
@@ -894,7 +1050,26 @@ fn split_extension(
             ),
         )?;
     }
-    w.push_child(parent, child(used.clone(), disposition, label, detail))?;
+    match carve {
+        None => {
+            w.push_child(parent, child(used.clone(), disposition, label, detail))?;
+        }
+        Some((at, why)) => {
+            if at > used.start {
+                w.push_child(
+                    parent,
+                    child(used.start..at, disposition, label, detail.clone()),
+                )?;
+            }
+            w.push_child(
+                parent,
+                child(at..at + 1, Disposition::Dropped, "unread byte", why.into()),
+            )?;
+            if at + 1 < used.end {
+                w.push_child(parent, child(at + 1..used.end, disposition, label, detail))?;
+            }
+        }
+    }
     if used.end + 1 < end {
         w.push_child(
             parent,
@@ -967,6 +1142,7 @@ fn graphic_control(w: &mut Walker<'_>, pos: usize, sb: &SubBlocks) -> Result<usi
         }
     );
     w.pending_gce = Some(pos);
+    w.pending_delay = u16::from_le_bytes([b[1], b[2]]);
     if !w.facts.gce_used.contains(&pos) {
         w.block(
             pos..end,
@@ -984,10 +1160,26 @@ fn graphic_control(w: &mut Walker<'_>, pos: usize, sb: &SubBlocks) -> Result<usi
     // Frame delay, disposal and the transparent index feed `AnimationFrame`
     // timing and the composited alpha.
     let anim = Disposition::Metadata(MetadataKind::Animation);
-    if sb.count == 1 {
+    // With the transparency flag clear the index byte is never read.
+    let carve = (b[0] & 1 == 0).then_some((
+        r.start + 3,
+        "transparent index: unread because the transparency flag is clear",
+    ));
+    if sb.count == 1 && carve.is_none() {
         w.block(pos..end, tag, anim, Some(label.into()), Some(desc))?;
     } else {
-        split_extension(w, pos..end, tag, label, r.start - 1..r.end, anim, desc)?;
+        split_extension(
+            w,
+            Split {
+                ext: pos..end,
+                tag,
+                label,
+                used: r.start - 1..r.end,
+                disposition: anim,
+                detail: desc,
+                carve,
+            },
+        )?;
     }
     Ok(end)
 }
@@ -1156,7 +1348,18 @@ fn netscape(
         w.block(pos..end, tag, anim, Some(label), Some(detail))?;
     } else {
         // Sub-blocks after the loop count are never read.
-        split_extension(w, pos..end, tag, &label, pos + 2..second.end, anim, detail)?;
+        split_extension(
+            w,
+            Split {
+                ext: pos..end,
+                tag,
+                label: &label,
+                used: pos + 2..second.end,
+                disposition: anim,
+                detail,
+                carve: None,
+            },
+        )?;
     }
     Ok(end)
 }

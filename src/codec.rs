@@ -1343,7 +1343,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
                     .min(zencodec::inventory::DEFAULT_MAX_PARTS)
             })
             .max(64);
-        match crate::inventory::walk(data, stop, max_parts) {
+        let limits = self.build_limits();
+        match crate::inventory::walk(data, stop, max_parts, &limits) {
             Ok(inv) => Ok(Some(inv)),
             Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
             // The part cap bounds the inventory's memory: report it as the

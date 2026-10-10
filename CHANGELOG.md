@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labelled by application identifier, XMP packet and ramp, image descriptors, LZW data split from
   bytes the decoder never reads, trailer, bytes after it). Overwritten or orphaned Graphic Control /
   NETSCAPE2.0 extensions, unread extra sub-blocks and an unused global table are `Dropped`. The part
-  count is bounded by the job's `max_memory`; frames after a fatal LZW/GCE error (including an invalid code right after the last pixel) are not consumed. Walker, fixtures, exiftool oracle (`just inventory-oracle`)
+  count is bounded by the job's `max_memory`; frames after a fatal LZW/GCE error (including an invalid code right after the last pixel) are not consumed. The decoder's limits (dimensions, frame count, animation duration) decide what is read; palette entries no index can reach and an unread transparent-index byte are `Dropped`; NETSCAPE2.0 follows the loop count detect.rs actually keeps. Walker, fixtures, exiftool oracle (`just inventory-oracle`)
   and an `inventory` fuzz target. Depends on imazen/zencodec#133; `[patch.crates-io]` must be swapped
   for the released zencodec before merge. bf4ac1d, 38be7609
 

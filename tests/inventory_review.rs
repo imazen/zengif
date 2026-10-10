@@ -230,7 +230,7 @@ fn overwritten_gce_is_dropped() {
     let first = (13 + 6 + 19) as u64;
     let i = inv(&g);
     assert_eq!(part_at(&i, first).disposition, D::Dropped, "{i}");
-    assert_eq!(part_at(&i, first + 8).disposition, ANIM, "{i}");
+    assert_eq!(leaf_at(&i, first + 8 + 4).disposition, ANIM, "{i}");
 }
 
 #[test]
