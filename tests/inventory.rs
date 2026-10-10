@@ -109,7 +109,7 @@ fn fixture_parts_are_pinned() {
             s("global colour table"),
         ),
         (None, blk, c(0xFF), 19, 38, anim, s("NETSCAPE2.0")),
-        (None, blk, c(0xFF), 38, 57, D::Skipped, s("ANIMEXTS1.0")),
+        (None, blk, c(0xFF), 38, 57, D::Unknown, s("ANIMEXTS1.0")),
         (None, blk, c(0xFE), 57, 67, D::Skipped, s("Comment")),
         (None, blk, c(0x01), 67, 86, D::Skipped, s("Plain Text")),
         (None, blk, c(0xFF), 86, 104, D::Unknown, s("ACMEPRIV1.0")),
@@ -227,6 +227,7 @@ fn unknown_introducer_between_frames_matches_the_decoder() {
         g.extend_from_slice(LZW_1X1);
     };
     frame(&mut g, 0);
+    // Malformed, not Unknown: probe() steps one byte and would read `2C` as an image.
     // The unknown byte is consumed alone; `03 2C AA BB 00` is then read as one
     // sub-block of 3 bytes plus the terminator, so the `2C` is not an image.
     g.extend_from_slice(&[0x05, 0x03, 0x2C, 0xAA, 0xBB, 0x00]);
@@ -238,7 +239,7 @@ fn unknown_introducer_between_frames_matches_the_decoder() {
     let r = rows(&inv);
     assert!(
         r.iter()
-            .any(|x| x.2 == PartTag::Code(0x05) && x.3 == 34 && x.4 == 40 && x.5 == D::Unknown),
+            .any(|x| x.2 == PartTag::Code(0x05) && x.3 == 34 && x.4 == 40 && x.5 == D::Malformed),
         "{inv}"
     );
     assert_eq!(
@@ -465,6 +466,12 @@ fn check_inventory_on_encoder_output() {
         .expect("encode");
         zencodec_testkit::check_inventory(GifDecoderConfig::new(), &bytes)
             .unwrap_or_else(|e| panic!("{frame_count} frames: {e}"));
+        assert!(
+            !inventory_of(&bytes)
+                .parts()
+                .iter()
+                .any(|p| p.label.as_deref() == Some("image data tail"))
+        );
     }
 }
 
@@ -507,4 +514,29 @@ fn check_inventory_on_the_repo_corpus() {
                 .unwrap_or_else(|e| panic!("{rel}: {e}\n{inv}"));
         }
     }
+}
+
+/// Conformant encoders leave nothing after the LZW end code, so no corpus
+/// file or encoder output has an `image data tail` part, and every frame's
+/// image data is consumed.
+#[test]
+fn well_formed_files_have_no_image_data_tail() {
+    let mut files = gifs_in(&conformance_dir().join("valid"));
+    files.extend(repo_corpus());
+    let mut with_tail = Vec::new();
+    for f in &files {
+        let bytes = std::fs::read(f).unwrap();
+        if GifDecoderConfig::new().decode(&bytes).is_err() {
+            continue;
+        }
+        let inv = inventory_of(&bytes);
+        if inv
+            .parts()
+            .iter()
+            .any(|p| p.label.as_deref() == Some("image data tail"))
+        {
+            with_tail.push(f.display().to_string());
+        }
+    }
+    assert!(with_tail.is_empty(), "unexpected tails: {with_tail:?}");
 }

@@ -1332,13 +1332,24 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             Some(ref s) => s,
             None => &enough::Unstoppable,
         };
-        match crate::inventory::walk(data, stop) {
+        // The job's memory limit bounds the inventory too: at most
+        // `max_memory / BYTES_PER_PART` parts (never more than zencodec's default cap).
+        let max_parts = self
+            .build_limits()
+            .max_memory
+            .map_or(zencodec::inventory::DEFAULT_MAX_PARTS, |m| {
+                u32::try_from(m / crate::inventory::BYTES_PER_PART)
+                    .unwrap_or(u32::MAX)
+                    .min(zencodec::inventory::DEFAULT_MAX_PARTS)
+            })
+            .max(64);
+        match crate::inventory::walk(data, stop, max_parts) {
             Ok(inv) => Ok(Some(inv)),
             Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
             // The part cap bounds the inventory's memory: report it as the
-            // memory limit it is (`Part` bytes, not file bytes).
+            // memory limit it is (estimated bytes, not file bytes).
             Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max })) => {
-                let part = core::mem::size_of::<zencodec::inventory::Part>() as u64;
+                let part = crate::inventory::BYTES_PER_PART;
                 Err(GifError::MemoryLimitExceeded {
                     current: (u64::from(max) + 1) * part,
                     limit: u64::from(max) * part,

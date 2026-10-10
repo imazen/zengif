@@ -10,11 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Structural inventory** (`DecodeJob::inventory`, `DecodeCapabilities::with_inventory`): every byte of a
-  GIF as a part with the decode path's true disposition (header, colour tables, each extension
-  labelled by application identifier, XMP packet and ramp, image descriptors, LZW data, trailer,
-  bytes after it). Walker, fixtures, exiftool oracle (`just inventory-oracle`) and an `inventory`
-  fuzz target. Depends on imazen/zencodec#133; `[patch.crates-io]` must be swapped for the
-  released zencodec before merge. bf4ac1d, 38be7609
+  GIF as a part with the disposition the decode path gives it (header, colour tables, each extension
+  labelled by application identifier, XMP packet and ramp, image descriptors, LZW data split from
+  bytes the decoder never reads, trailer, bytes after it). Overwritten or orphaned Graphic Control /
+  NETSCAPE2.0 extensions, unread extra sub-blocks and an unused global table are `Dropped`. The part
+  count is bounded by the job's `max_memory`. Walker, fixtures, exiftool oracle (`just inventory-oracle`)
+  and an `inventory` fuzz target. Depends on imazen/zencodec#133; `[patch.crates-io]` must be swapped
+  for the released zencodec before merge. bf4ac1d, 38be7609
 
 ### Fixed
 

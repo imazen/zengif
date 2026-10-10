@@ -82,6 +82,7 @@ fn inventory_events(data: &[u8], inv: &Inventory) -> Vec<Ev> {
         match p.tag {
             // exiftool reports application extensions whose first block is 11 bytes.
             PartTag::Code(0xFF) if b.len() >= 14 && b[2] == 0x0B => {
+                assert_walk_ends_at_range(b, "application extension");
                 let mut name = String::new();
                 for (i, &c) in b[3..14].iter().enumerate() {
                     if i == 8 {
@@ -95,15 +96,19 @@ fn inventory_events(data: &[u8], inv: &Inventory) -> Vec<Ev> {
             }
             // ... graphic control extensions with a 4-byte block.
             PartTag::Code(0xF9) if b.len() >= 8 && b[2] == 4 => {
+                assert_walk_ends_at_range(b, "graphic control");
                 evs.push(Ev::Gce(u32::from(le16(b, 4))));
             }
             PartTag::Code(0x2C) => {
+                assert_eq!(b.len(), 10, "image descriptor is 10 bytes");
                 evs.push(Ev::Image(le16(b, 1), le16(b, 3), le16(b, 5), le16(b, 7)));
             }
             PartTag::Code(0x01) if b.len() >= 15 && b[2] == 12 => {
+                assert_walk_ends_at_range(b, "plain text");
                 evs.push(Ev::Text(le16(b, 3), le16(b, 5), le16(b, 7), le16(b, 9)));
             }
             PartTag::Code(0xFE) => {
+                assert_walk_ends_at_range(b, "comment");
                 let mut text = Vec::new();
                 let mut at = 2;
                 while let Some(&n) = b.get(at) {
@@ -121,6 +126,24 @@ fn inventory_events(data: &[u8], inv: &Inventory) -> Vec<Ev> {
         }
     }
     evs
+}
+
+/// The unit's own sub-block walk (from index 2) must end exactly at the part's
+/// end: pins the length of the unit with no tool-reported offsets.
+fn assert_walk_ends_at_range(b: &[u8], what: &str) {
+    let mut at = 2;
+    while let Some(&n) = b.get(at) {
+        if n == 0 {
+            break;
+        }
+        at += 1 + usize::from(n);
+    }
+    assert_eq!(
+        at + 1,
+        b.len(),
+        "{what}: sub-block walk ends at {at}, part is {} bytes",
+        b.len()
+    );
 }
 
 fn gifs_in(dir: &Path) -> Vec<PathBuf> {
