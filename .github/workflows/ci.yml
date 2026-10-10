@@ -88,8 +88,13 @@ jobs:
         with:
           key: cross-i686
 
+      # The conformance-corpus tests download into a cache dir that the cross
+      # container cannot write; the native jobs run them.
       - name: Test (i686)
-        run: cross test --target i686-unknown-linux-gnu
+        run: >
+          cross test --target i686-unknown-linux-gnu --
+          --skip check_inventory_on_the_conformance_corpus
+          --skip well_formed_files_have_no_image_data_tail
 
   wasm:
     name: WASM check

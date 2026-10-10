@@ -442,6 +442,13 @@ fn check_inventory_on_the_fixture() {
 
 /// `check_all` does not apply (the palette quantizer is lossy, so its pixel
 /// round trip cannot be exact); run the inventory check on real encoder output.
+#[cfg(any(
+    feature = "zenquant",
+    feature = "quantette",
+    feature = "imagequant",
+    feature = "quantizr",
+    feature = "color_quant"
+))]
 #[test]
 fn check_inventory_on_encoder_output() {
     use zengif::{EncoderConfig, FrameInput, Repeat, Rgba, encode_gif};
