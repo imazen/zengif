@@ -104,6 +104,8 @@ zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
 codec-corpus = "1.0.3"
 archmage = { version = "0.9.15", features = ["std", "testable_dispatch"] }
+# LZW oracle for the inventory tests: the decoder the gif crate runs
+weezl = "0.1.12"
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

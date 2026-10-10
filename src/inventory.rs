@@ -173,6 +173,9 @@ struct Walker<'a> {
     fatal: Option<usize>,
     /// Image descriptors seen so far.
     images: usize,
+    /// The gif crate reads application extensions only until the first block
+    /// that is not an extension (image, trailer or unknown introducer).
+    header_over: bool,
 }
 
 impl Walker<'_> {
@@ -225,6 +228,7 @@ fn new_walker<'a>(data: &'a [u8], stop: &'a dyn Stop, max_parts: u32, facts: Fac
         netscapes: Vec::new(),
         fatal: None,
         images: 0,
+        header_over: false,
     }
 }
 
@@ -360,6 +364,9 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
 
     let mut frames = 0usize;
     while pos < len {
+        if data[pos] != EXT_INTRODUCER {
+            w.header_over = true;
+        }
         match data[pos] {
             TRAILER => {
                 w.block(
@@ -404,8 +411,9 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
 enum Lzw {
     /// The decoder stops after this offset (end code or last pixel).
     Ended(usize),
-    /// The sub-blocks end before an end code or the pixel count.
-    Exhausted,
+    /// The sub-blocks end before the pixel count: the decoder errors
+    /// ("image truncated"), whether or not an end code came first.
+    Short,
     /// An invalid code: the decoder errors.
     Bad,
 }
@@ -437,7 +445,7 @@ fn lzw_extent(data: &[u8], start: usize, min_code: u8, total: u64) -> Lzw {
         let end = p + 1 + usize::from(n);
         for o in p + 1..end {
             let Some(&b) = data.get(o) else {
-                return Lzw::Exhausted;
+                return Lzw::Short;
             };
             acc |= u32::from(b) << nbits;
             nbits += 8;
@@ -455,7 +463,7 @@ fn lzw_extent(data: &[u8], start: usize, min_code: u8, total: u64) -> Lzw {
                     continue;
                 }
                 if code == eoi {
-                    return Lzw::Ended(o + 1);
+                    return Lzw::Short;
                 }
                 match prev {
                     None => {
@@ -477,7 +485,10 @@ fn lzw_extent(data: &[u8], start: usize, min_code: u8, total: u64) -> Lzw {
                         if next < 4096 {
                             lens[usize::from(next)] = new_len;
                             next += 1;
-                            if u32::from(next) == 1 << size && size < 12 {
+                            // weezl bumps once the entry just derived reaches `max_code`
+                            // (`(1 << size) - 1`); at minimum code size 1 that is one
+                            // entry earlier than `next == 1 << size`.
+                            if u32::from(next) >= 1 << size && size < 12 {
                                 size += 1;
                             }
                         }
@@ -491,7 +502,7 @@ fn lzw_extent(data: &[u8], start: usize, min_code: u8, total: u64) -> Lzw {
         }
         p = end;
     }
-    full_at.map_or(Lzw::Exhausted, Lzw::Ended)
+    full_at.map_or(Lzw::Short, Lzw::Ended)
 }
 
 /// Image descriptor, optional local colour table, image data. Returns the next
@@ -521,9 +532,6 @@ fn image(
     let flags = data[pos + 9];
     let has_lct = flags & 0x80 != 0;
     w.images += 1;
-    if !has_lct {
-        w.found.gct_used = true;
-    }
 
     // Frames after one the decoder rejects are never reached.
     let after_fatal = w.fatal;
@@ -547,12 +555,16 @@ fn image(
         w.fatal = Some(frame);
     }
     let reachable = after_fatal.is_none() && problem.is_none();
+    // The global table counts as read only by a frame the decoder gets to
+    // decode; a fatal LZW error below withdraws it again.
+    let mut reads_gct = reachable && !has_lct;
     let pending = w.pending_gce.take();
     if reachable && let Some(g) = pending {
         w.found.gce_used.insert(g);
     }
     let skipped_note = after_fatal.map(|n| {
-        alloc::format!("; after frame {n}, which the decoder rejects, so this is never read")
+        alloc::format!("; after frame {n}, which the decoder rejects, so this is never read (probe() still counts \
+             the frame and reads its interlace flag)")
     });
 
     let mut detail = alloc::format!(
@@ -661,15 +673,23 @@ fn image(
         )?;
         return Ok(Some(sb.end));
     }
-    match lzw_extent(data, at + 1, min_code, u64::from(fw) * u64::from(fh)) {
-        Lzw::Bad => {
+    let extent = lzw_extent(data, at + 1, min_code, u64::from(fw) * u64::from(fh));
+    let bad = matches!(extent, Lzw::Bad);
+    match extent {
+        Lzw::Bad | Lzw::Short => {
             w.fatal = Some(frame);
+            reads_gct = false;
+            let why = if bad {
+                "; invalid LZW code, the decoder errors"
+            } else {
+                "; the LZW data ends before the pixel count, the decoder errors (image truncated)"
+            };
             w.block(
                 at..sb.end,
                 PartTag::None,
                 Disposition::Malformed,
                 Some("image data".into()),
-                Some(head("; invalid LZW code, the decoder errors")),
+                Some(head(why)),
             )?;
         }
         // Only the terminator is left after the last byte read.
@@ -693,7 +713,7 @@ fn image(
                 )),
             )?;
         }
-        Lzw::Ended(_) | Lzw::Exhausted => {
+        Lzw::Ended(_) => {
             w.block(
                 at..sb.end,
                 PartTag::None,
@@ -702,6 +722,9 @@ fn image(
                 Some(head("")),
             )?;
         }
+    }
+    if reads_gct {
+        w.found.gct_used = true;
     }
     Ok(Some(sb.end))
 }
@@ -803,7 +826,8 @@ fn split_extension(
                 Disposition::Dropped,
                 "unread sub-blocks",
                 alloc::format!(
-                    "{} bytes before the sub-block the decoder reads",
+                    "{} bytes before the sub-block the decoder reads; probe() (detect.rs) reads the first \
+                     Graphic Control sub-block, so it can take a transparency flag or delay from here",
                     used.start - body.start
                 ),
             ),
@@ -845,6 +869,8 @@ fn graphic_control(w: &mut Walker<'_>, pos: usize, sb: &SubBlocks) -> Result<usi
     let label = "Graphic Control";
     let ok = sb.terminated && sb.last.as_ref().is_some_and(|r| r.len() == 4);
     let Some(r) = sb.last.clone().filter(|_| ok) else {
+        // gif crate `read_control_extension` errors: later frames never decode.
+        w.fatal.get_or_insert(w.images + 1);
         let trunc = if sb.terminated { "" } else { "; truncated" };
         w.block(
             pos..end,
@@ -882,7 +908,8 @@ fn graphic_control(w: &mut Walker<'_>, pos: usize, sb: &SubBlocks) -> Result<usi
             Some(label.into()),
             Some(alloc::format!(
                 "{desc}; applied to no frame (overwritten by a later Graphic Control, no image \
-                 follows, or the decoder never reaches it)"
+                 follows, or the decoder never reaches it); probe() still reads a Graphic Control that precedes \
+                 an image descriptor it counts, including frames after a rejected one"
             )),
         )?;
         return Ok(end);
@@ -998,7 +1025,7 @@ fn application(w: &mut Walker<'_>, pos: usize, sb: SubBlocks) -> Result<usize, W
         Some(b"ICCRGBG1012") => (
             Disposition::Skipped,
             alloc::format!(
-                "ICC profile, {} bytes; the gif crate buffers it when it precedes the first image; zengif never surfaces it{trunc}",
+                "ICC profile, {} bytes; the gif crate buffers it when it precedes the first non-extension block; zengif never surfaces it{trunc}",
                 sb.payload.saturating_sub(11)
             ),
         ),
@@ -1039,7 +1066,7 @@ fn netscape(
     let end = sb.end;
     let tag = PartTag::Code(u32::from(LABEL_APPLICATION));
     let label = label.unwrap_or_default();
-    w.netscapes.push((pos, w.images == 0));
+    w.netscapes.push((pos, !w.header_over));
     if !w.facts.netscape_used.contains(&pos) {
         w.block(
             pos..end,
@@ -1054,7 +1081,7 @@ fn netscape(
     }
     let detail = alloc::format!(
         "loop count {n} (0 = forever); probe() reports the last one in the file, the animation \
-         decoder only one before the first image"
+         decoder only one before the first non-extension block"
     );
     let anim = Disposition::Metadata(MetadataKind::Animation);
     if second.end + 1 == end {
@@ -1107,7 +1134,7 @@ fn xmp(w: &mut Walker<'_>, pos: usize, sb: SubBlocks) -> Result<usize, WalkError
         )
         .with_label("XMP DataXMP")
         .with_body(body_start as u64..end as u64)
-        .with_detail("the gif crate buffers the packet (xmp_metadata) when it precedes the first image; zengif never surfaces it"),
+        .with_detail("the gif crate buffers the packet (xmp_metadata) when it precedes the first non-extension block; zengif never surfaces it"),
     )?;
     if ramp_start > body_start {
         let packet = &data[body_start..ramp_start];
