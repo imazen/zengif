@@ -155,6 +155,13 @@ struct Facts {
     netscape_used: BTreeSet<usize>,
     /// Some frame has no local colour table, so the global one is read.
     gct_used: bool,
+    /// The gif crate fails inside its header phase (`Decoder::new` errors), so
+    /// `probe()`, `decode()` and the animation decoder all fail.
+    header_fatal: bool,
+    /// Frames whose LZW data decodes.
+    good_frames: usize,
+    /// Image descriptors in the file (detect.rs counts frames from them).
+    images: usize,
 }
 
 struct Walker<'a> {
@@ -171,6 +178,8 @@ struct Walker<'a> {
     netscapes: Vec<(usize, bool)>,
     /// First frame the decoder rejects; later frames are never reached.
     fatal: Option<usize>,
+    /// Offset of the Graphic Control that caused `fatal`, when it did.
+    fatal_gce: Option<usize>,
     /// Image descriptors seen so far.
     images: usize,
     /// The gif crate reads application extensions only until the first block
@@ -227,6 +236,7 @@ fn new_walker<'a>(data: &'a [u8], stop: &'a dyn Stop, max_parts: u32, facts: Fac
         pending_gce: None,
         netscapes: Vec::new(),
         fatal: None,
+        fatal_gce: None,
         images: 0,
         header_over: false,
     }
@@ -245,20 +255,30 @@ pub(crate) fn walk(data: &[u8], stop: &dyn Stop, max_parts: u32) -> Result<Inven
     let (mut facts, netscapes) = {
         let mut first = new_walker(data, stop, max_parts, Facts::default());
         walk_inner(&mut first)?;
+        first.found.images = first.images;
         (first.found, first.netscapes)
     };
-    // The last loop count wins on the probe path; the gif crate only reads
-    // application extensions before the first image.
-    facts.netscape_used.extend(
-        netscapes
-            .iter()
-            .filter(|(_, early)| *early)
-            .map(|(at, _)| *at)
-            .next_back(),
-    );
-    facts
-        .netscape_used
-        .extend(netscapes.last().map(|(at, _)| *at));
+    // Which loop count reaches the caller:
+    // - the animation decoder reports the last one before the header phase
+    //   ends, but only if `Decoder::new` succeeds and a frame decodes;
+    // - `probe()` reports the last one anywhere, but only if `Decoder::new`
+    //   succeeds and detect.rs counts more than one frame.
+    if !facts.header_fatal {
+        if facts.good_frames > 0 {
+            facts.netscape_used.extend(
+                netscapes
+                    .iter()
+                    .filter(|(_, early)| *early)
+                    .map(|(at, _)| *at)
+                    .next_back(),
+            );
+        }
+        if facts.images > 1 {
+            facts
+                .netscape_used
+                .extend(netscapes.last().map(|(at, _)| *at));
+        }
+    }
 
     let mut w = new_walker(data, stop, max_parts, facts);
     walk_inner(&mut w)?;
@@ -453,8 +473,19 @@ fn lzw_extent(data: &[u8], start: usize, min_code: u8, total: u64) -> Lzw {
                 let code = (acc & ((1 << size) - 1)) as u16;
                 acc >>= size;
                 nbits -= size;
-                if let Some(d) = full_at {
-                    return Lzw::Ended(if code == eoi { o + 1 } else { d });
+                if full_at.is_some() {
+                    // The decoder does not stop at the last pixel: it reads and
+                    // validates the next code if its bits are in the current chunk,
+                    // so an invalid one fails the frame even though every pixel
+                    // was produced. Whether it reads it depends on chunking, so
+                    // assume it does.
+                    if code != eoi
+                        && code != clear
+                        && (code > next || (code == next && next >= 4096))
+                    {
+                        return Lzw::Bad;
+                    }
+                    return Lzw::Ended(o + 1);
                 }
                 if code == clear {
                     size = u32::from(min_code) + 1;
@@ -562,7 +593,14 @@ fn image(
     if reachable && let Some(g) = pending {
         w.found.gce_used.insert(g);
     }
+    let fatal_gce = w.fatal_gce;
     let skipped_note = after_fatal.map(|n| {
+        if let Some(g) = fatal_gce {
+            return alloc::format!(
+                "; after the Graphic Control at offset {g}, which the decoder rejects, so this is \
+                 never read (probe() still counts the frame and reads its interlace flag)"
+            );
+        }
         alloc::format!("; after frame {n}, which the decoder rejects, so this is never read (probe() still counts \
              the frame and reads its interlace flag)")
     });
@@ -613,16 +651,37 @@ fn image(
             )?;
             return Ok(None);
         }
+        // The table is read only when the frame's data decodes; the walk does not
+        // depend on the table, so run it first.
+        let lct_read = reachable
+            && data.get(end).is_some_and(|&m| {
+                (1..=11).contains(&m) && {
+                    let sb = sub_blocks(data, end + 1);
+                    sb.terminated
+                        && matches!(
+                            lzw_extent(data, end + 1, m, u64::from(fw) * u64::from(fh)),
+                            Lzw::Ended(_)
+                        )
+                }
+            });
         w.block(
             at..end,
             PartTag::None,
-            if reachable {
+            if lct_read {
                 Disposition::ImageData
             } else {
                 Disposition::Skipped
             },
             Some("local colour table".into()),
-            Some(alloc::format!("frame {frame}, {} entries", size / 3)),
+            Some(alloc::format!(
+                "frame {frame}, {} entries{}",
+                size / 3,
+                if reachable && !lct_read {
+                    "; the frame's image data fails to decode, so the table is never used"
+                } else {
+                    ""
+                }
+            )),
         )?;
         at = end;
     }
@@ -694,6 +753,7 @@ fn image(
         }
         // Only the terminator is left after the last byte read.
         Lzw::Ended(cut) if cut + 1 < sb.end => {
+            w.found.good_frames += 1;
             w.block(
                 at..cut,
                 PartTag::None,
@@ -708,12 +768,13 @@ fn image(
                 Some("image data tail".into()),
                 Some(alloc::format!(
                     "frame {frame}: {} bytes after the LZW end code or last pixel; the decoder \
-                     stops reading there",
+                     reads at most one more code there (it must be valid), nothing else",
                     sb.end - cut
                 )),
             )?;
         }
         Lzw::Ended(_) => {
+            w.found.good_frames += 1;
             w.block(
                 at..sb.end,
                 PartTag::None,
@@ -870,7 +931,13 @@ fn graphic_control(w: &mut Walker<'_>, pos: usize, sb: &SubBlocks) -> Result<usi
     let ok = sb.terminated && sb.last.as_ref().is_some_and(|r| r.len() == 4);
     let Some(r) = sb.last.clone().filter(|_| ok) else {
         // gif crate `read_control_extension` errors: later frames never decode.
-        w.fatal.get_or_insert(w.images + 1);
+        if !w.header_over {
+            w.found.header_fatal = true;
+        }
+        if w.fatal.is_none() {
+            w.fatal = Some(w.images + 1);
+            w.fatal_gce = Some(pos);
+        }
         let trunc = if sb.terminated { "" } else { "; truncated" };
         w.block(
             pos..end,
@@ -1074,7 +1141,8 @@ fn netscape(
             Disposition::Dropped,
             Some(label),
             Some(alloc::format!(
-                "loop count {n}; overwritten by a later NETSCAPE2.0, nothing reports it"
+                "loop count {n}; nothing reports it (overwritten by a later NETSCAPE2.0, the decoder \
+                 fails before it applies, or no frame decodes, or probe() sees a single frame)"
             )),
         )?;
         return Ok(end);

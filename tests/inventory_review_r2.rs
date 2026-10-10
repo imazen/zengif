@@ -381,8 +381,7 @@ fn q1b_lzw_cut_matches_weezl_decoder_consumption() {
 }
 
 /// EOI before the pixel count: the gif crate errors ("image truncated"); the
-/// inventory still calls the frame's data ImageData and keeps later frames
-/// consumed.
+/// frame's data is `Malformed` and later frames are `Skipped`.
 #[test]
 fn q2_eoi_before_pixel_count_is_fatal_but_consumed() {
     // 2x1 screen, frame 1 is 2x1 but its LZW data holds 1 pixel then EOI.
@@ -510,8 +509,8 @@ fn q5_probe_reads_frames_after_a_rejected_frame() {
     }
 }
 
-/// A Graphic Control with the wrong length is fatal in the gif crate, but the
-/// walker keeps the frames after it consumed.
+/// A Graphic Control with the wrong length is fatal in the gif crate: the frames
+/// after it are `Skipped`.
 #[test]
 fn q6_bad_gce_is_fatal_but_later_frames_stay_consumed() {
     let mut g = header(2);
@@ -539,10 +538,15 @@ fn q6_bad_gce_is_fatal_but_later_frames_stay_consumed() {
     let i = inv(&g);
     println!("{i}");
     assert_eq!(part_at(&i, d2 as u64).disposition, D::Skipped, "{i}");
+    let note = part_at(&i, d2 as u64).detail.clone().unwrap();
+    assert!(
+        note.contains("after the Graphic Control at offset"),
+        "{note}"
+    );
 }
 
-/// The global table is "used" if any frame lacks a local table, even one the
-/// decoder never reaches.
+/// The global table counts as read only by a frame the decoder reaches and
+/// decodes, not by one it never gets to.
 #[test]
 fn q7_gct_counted_used_by_an_unreachable_frame() {
     let mut a = header(1);
@@ -599,8 +603,8 @@ fn q8_small_max_memory() {
     }
 }
 
-/// Data that ends before both the end code and the pixel count (`Exhausted`):
-/// the decoder errors, the inventory says ImageData and keeps going.
+/// Data that ends before both the end code and the pixel count (`Short`): the
+/// decoder errors, the data is `Malformed` and later frames are `Skipped`.
 #[test]
 fn q2b_exhausted_lzw_is_fatal_but_consumed() {
     let mut g = header(2);
@@ -641,4 +645,241 @@ fn q9_large_frame_walk_time() {
         i.parts().len(),
         t.elapsed()
     );
+}
+
+/// Round 3: weezl (no yield-on-full) reads one code past the code that fills
+/// the frame; an invalid code there fails the frame. The walker cuts before it
+/// and keeps the frame and everything after it consumed.
+#[test]
+fn q10_invalid_code_after_last_pixel_is_fatal() {
+    // The frame fails although every pixel was produced; later frames are never decoded.
+    // 1x1 screen, GCT of 8 (index 7 exists), min code size 5:
+    // code 7 (the only pixel), then code 44 > next_code 34 (invalid).
+    let mut g = b"GIF89a".to_vec();
+    g.extend_from_slice(&[1, 0, 1, 0, 0x82, 0, 0]);
+    for i in 0..8u8 {
+        g.extend_from_slice(&[i * 30, 0, 0]);
+    }
+    g.extend(netscape(0));
+    let f1 = g.len();
+    g.extend_from_slice(&[0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+    let d1 = g.len();
+    g.extend_from_slice(&[0x05, 0x02, 0x07, 0x6B, 0x00]);
+    let f2 = g.len();
+    g.extend_from_slice(&[0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+    g.extend_from_slice(LZW_1X1);
+    g.push(0x3B);
+    let n = native(&g);
+    println!(
+        "native: {:?}",
+        n.as_ref().map(|(_, f)| f.len()).map_err(|e| e.clone())
+    );
+    let z = GifDecoderConfig::new().decode(&g);
+    println!(
+        "zencodec decode: {:?}",
+        z.as_ref().err().map(|e| e.to_string())
+    );
+    assert!(z.is_err(), "the decoder rejects frame 1");
+    let i = inv(&g);
+    println!("{i}");
+    let _ = f1;
+    assert_eq!(part_at(&i, d1 as u64).disposition, D::Malformed, "{i}");
+    assert_eq!(
+        part_at(&i, f2 as u64).disposition,
+        D::Skipped,
+        "frame 2 never decoded\n{i}"
+    );
+}
+
+/// Round 3: a fatal error inside the gif crate's header phase makes
+/// `Decoder::new` fail, so probe(), decode() and the animation decoder all
+/// fail; a NETSCAPE2.0 before it reaches nobody.
+#[test]
+fn q11_fatal_in_header_phase_nothing_reports_netscape() {
+    let mut g = header(2);
+    let ns = g.len();
+    g.extend(netscape(5));
+    g.extend_from_slice(&[0x21, 0xF9, 2, 0, 0, 0]); // wrong-length GCE before frame 1
+    frame_at(&mut g, 0, 0);
+    frame_at(&mut g, 1, 0);
+    g.push(0x3B);
+    let p = GifDecoderConfig::new().job().probe(&g);
+    println!("probe: {:?}", p.as_ref().err().map(|e| e.to_string()));
+    assert!(p.is_err());
+    assert!(GifDecoderConfig::new().decode(&g).is_err());
+    assert!(
+        GifDecoderConfig::new()
+            .job()
+            .animation_frame_decoder(Cow::Borrowed(&g[..]), &[])
+            .is_err()
+    );
+    let i = inv(&g);
+    println!("{i}");
+    assert_eq!(part_at(&i, ns as u64).disposition, D::Dropped, "{i}");
+}
+
+/// Round 3: a NETSCAPE2.0 after the header phase in a file detect.rs counts
+/// as single-frame: probe() reports no loop count (not animated), the gif
+/// crate ignores it; nothing reports it.
+#[test]
+fn q12_late_netscape_in_single_frame_file() {
+    let mut g = header(1);
+    frame_at(&mut g, 0, 0);
+    let ns = g.len();
+    g.extend(netscape(5));
+    g.push(0x3B);
+    let info = GifDecoderConfig::new().job().probe(&g).unwrap();
+    println!("probe sequence {:?}", info.sequence);
+    assert_eq!(info.sequence, ImageSequence::Single);
+    let mut d = GifDecoderConfig::new()
+        .job()
+        .animation_frame_decoder(Cow::Borrowed(&g[..]), &[])
+        .unwrap();
+    while d.render_next_frame(None).unwrap().is_some() {}
+    println!("animation decoder loop_count {:?}", d.loop_count());
+    assert_ne!(d.loop_count(), Some(5));
+    let i = inv(&g);
+    println!("{i}");
+    assert_eq!(part_at(&i, ns as u64).disposition, D::Dropped, "{i}");
+}
+
+/// Round 3: the local colour table of a frame whose LZW data is fatal is not
+/// read (same rule as the global table).
+#[test]
+fn q13_lct_of_a_fatal_frame_is_not_read() {
+    let mut a = header(2);
+    a.extend_from_slice(&[0x2C, 0, 0, 0, 0, 2, 0, 1, 0, 0x80]);
+    let lct = a.len();
+    a.extend_from_slice(&[1, 2, 3, 4, 5, 6]);
+    a.extend_from_slice(LZW_1X1); // 1 pixel for a 2x1 frame: image truncated
+    a.push(0x3B);
+    let mut b = a.clone();
+    b[lct..lct + 6].copy_from_slice(b"SECRET");
+    let ea = GifDecoderConfig::new()
+        .decode(&a)
+        .err()
+        .map(|e| e.to_string());
+    let eb = GifDecoderConfig::new()
+        .decode(&b)
+        .err()
+        .map(|e| e.to_string());
+    println!("{ea:?} / {eb:?}");
+    assert!(ea.is_some() && ea == eb);
+    let i = inv(&b);
+    println!("{i}");
+    assert_eq!(part_at(&i, lct as u64).disposition, D::Skipped, "{i}");
+}
+
+/// Round 3 differential: random LZW streams (valid weezl-encoded for min 2..=8,
+/// mirror-encoded for min 1, bit-flipped, truncated, short/long pixel counts,
+/// random payloads, junk after the end code) wrapped in a one-frame GIF. The
+/// inventory's verdict on the frame's image data must agree with the real
+/// decoder (gif crate on weezl): `Malformed` exactly when decoding fails. The
+/// one tolerated difference is the safe direction: the walker says `Malformed`
+/// where the decoder succeeds because it never reads a code that sits beyond a
+/// chunk boundary.
+#[test]
+fn q14_walker_agrees_with_the_decoder_on_random_streams() {
+    use weezl::{BitOrder, encode::Encoder};
+    let iters: usize = std::env::var("INVENTORY_LZW_DIFF_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20_000);
+    let mut rng = Rng(0xA5A5_1234_DEAD_BEEF);
+    let (mut complete, mut short_or_bad, mut safe_dir) = (0usize, 0usize, 0usize);
+    let mut bad: Vec<String> = Vec::new();
+    for it in 0..iters {
+        let min = 1 + (rng.next() % 8) as u8;
+        let colours = 1u64 << min;
+        let npx = 1 + (rng.next() % if it.is_multiple_of(4) { 30_000 } else { 600 }) as usize;
+        let mode = rng.next() % 3;
+        let px: Vec<u8> = (0..npx)
+            .map(|i| match mode {
+                0 => (rng.next() % colours) as u8,
+                1 => ((i / (1 + it % 9)) as u64 % colours) as u8,
+                _ => {
+                    if rng.next().is_multiple_of(10) {
+                        (rng.next() % colours) as u8
+                    } else {
+                        0
+                    }
+                }
+            })
+            .collect();
+        let mut raw = if min >= 2 {
+            Encoder::new(BitOrder::Lsb, min).encode(&px).unwrap()
+        } else {
+            lzw_encode(min, &px, 0).0
+        };
+        let kind = rng.next() % 6;
+        let total = match kind {
+            1 => npx + 1 + (rng.next() % 50) as usize,
+            2 => 1 + (rng.next() % npx as u64) as usize,
+            _ => npx,
+        };
+        if kind == 3 {
+            for _ in 0..1 + rng.next() % 3 {
+                let i = (rng.next() % raw.len() as u64) as usize;
+                raw[i] ^= 1 << (rng.next() % 8);
+            }
+        }
+        if kind == 4 {
+            let n = 1 + (rng.next() % 200) as usize;
+            raw = (0..n).map(|_| rng.next() as u8).collect();
+        }
+        if kind == 5 || kind == 0 {
+            for _ in 0..rng.next() % 40 {
+                raw.push(rng.next() as u8);
+            }
+        }
+        // One total x 1 frame, full 256-entry global table.
+        let w = total as u16;
+        let mut g = b"GIF89a".to_vec();
+        g.extend_from_slice(&w.to_le_bytes());
+        g.extend_from_slice(&1u16.to_le_bytes());
+        g.extend_from_slice(&[0x87, 0, 0]);
+        g.extend((0..768).map(|i| i as u8));
+        g.extend_from_slice(&[0x2C, 0, 0, 0, 0]);
+        g.extend_from_slice(&w.to_le_bytes());
+        g.extend_from_slice(&1u16.to_le_bytes());
+        g.push(0);
+        let at = g.len();
+        g.push(min);
+        for c in raw.chunks(255) {
+            g.push(c.len() as u8);
+            g.extend_from_slice(c);
+        }
+        g.push(0);
+        g.push(0x3B);
+        let decoded = native(&g).is_ok();
+        let i = inv(&g);
+        let data = part_at(&i, at as u64);
+        let walker_ok = data.disposition != D::Malformed;
+        if decoded {
+            complete += 1;
+        } else {
+            short_or_bad += 1;
+        }
+        match (walker_ok, decoded) {
+            (true, true) | (false, false) => {}
+            (false, true) => safe_dir += 1,
+            (true, false) => bad.push(format!(
+                "it {it} min {min} total {total} kind {kind}: walker {:?}, decoder fails; raw {} B",
+                data.disposition,
+                raw.len()
+            )),
+        }
+    }
+    println!("{complete} decodable, {short_or_bad} failing, {safe_dir} walker-stricter");
+    assert!(
+        bad.is_empty(),
+        "{} unsafe mismatches:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+    assert!(
+        safe_dir * 500 <= iters,
+        "{safe_dir} walker-stricter cases of {iters}"
+    );
+    assert!(complete > iters / 5 && short_or_bad > iters / 5);
 }
