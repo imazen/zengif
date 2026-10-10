@@ -829,9 +829,17 @@ fn image(
         return Ok(None);
     };
     let sb = sub_blocks(data, at + 1);
+    // Known limitation: interlaced frames are decoded row by row, which drives
+    // weezl through a call pattern this walk does not model; on rare streams the
+    // decoder then reports "image truncated" where the walk sees a complete frame.
+    let interlaced_note = if flags & 0x40 != 0 {
+        "; interlaced: the gif crate's row-by-row reads can fail a stream this walk accepts"
+    } else {
+        ""
+    };
     let head = |note: &str| {
         alloc::format!(
-            "frame {frame}: LZW minimum code size {min_code}, {} sub-blocks, {} bytes{note}",
+            "frame {frame}: LZW minimum code size {min_code}, {} sub-blocks, {} bytes{note}{interlaced_note}",
             sb.count,
             sb.payload
         )

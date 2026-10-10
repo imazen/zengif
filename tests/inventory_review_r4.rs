@@ -574,7 +574,7 @@ fn n7_interlaced_multirow_differential_and_tail_invariance() {
     // does not model; on rare streams (including weezl-encoded ones with data
     // appended) the decoder reports "image truncated" where a whole-frame decode
     // succeeds. That divergence is open and awaiting a decision (see the round-4
-    // report), so it is counted and printed here, not asserted.
+    // report and zengif issue 26), so it is counted and printed here, not asserted.
     println!("interlaced walker-ok/decoder-fails: {unsafe_interlaced}");
     assert_eq!(unsafe_ - unsafe_interlaced, 0);
     assert_eq!(tail_changed, 0);
@@ -665,4 +665,22 @@ fn animation_duration_limit_fails_the_crossing_frame() {
     assert_eq!(part_at(&i, f2 as u64).disposition, D::Structure, "{i}");
     assert_eq!(part_at(&i, f2 as u64 + 10).disposition, D::Malformed, "{i}");
     assert_eq!(part_at(&i, f3 as u64).disposition, D::Skipped, "{i}");
+}
+
+/// Known limitation, stated on the part: interlaced image data says the gif
+/// crate's row-by-row reads can fail a stream the walk accepts.
+#[test]
+fn interlaced_image_data_names_the_limitation() {
+    let mut g = screen(1, 1);
+    g.extend_from_slice(&[0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0x40]);
+    let at = g.len();
+    g.extend_from_slice(LZW_1X1);
+    g.push(0x3B);
+    let i = inv(&g);
+    let d = part_at(&i, at as u64).detail.clone().unwrap();
+    assert!(d.contains("row-by-row reads can fail"), "{d}");
+    let mut flat = g.clone();
+    flat[at - 1] = 0;
+    let d = part_at(&inv(&flat), at as u64).detail.clone().unwrap();
+    assert!(!d.contains("row-by-row"), "{d}");
 }
