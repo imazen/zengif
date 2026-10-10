@@ -27,6 +27,8 @@ use core::ops::Range;
 use enough::Stop;
 
 use crate::limits::Limits;
+use crate::screen::Screen;
+use crate::stats::Stats;
 use zencodec::ImageFormat;
 use zencodec::inventory::{
     Disposition, Inventory, InventoryError, MetadataKind, Part, PartId, PartKind, PartTag,
@@ -359,7 +361,19 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
     // `Decoder::new` runs the dimension limits (zero sizes always fail) before
     // anything else is read: every zencodec path fails, nothing after the
     // header is consumed.
-    let screen_err = w.limits.check_dimensions(sw, sh).is_err();
+    let dims_err = w.limits.check_dimensions(sw, sh).is_err();
+    // `Decoder::new` then charges the RGBA canvas (`ScreenBuilder::build`) and
+    // the indexed pixel buffer (`alloc_zeroed`, one byte per pixel) against
+    // `max_memory`; charge the same amounts on a fresh `Stats`, allocating
+    // nothing.
+    let mem_err = !dims_err && {
+        let stats = Stats::new();
+        stats
+            .try_alloc(Screen::canvas_bytes_for(sw, sh), w.limits)
+            .and_then(|()| stats.try_alloc(usize::from(sw) * usize::from(sh), w.limits))
+            .is_err()
+    };
+    let screen_err = dims_err || mem_err;
     if screen_err {
         w.fatal_screen = true;
         w.fatal = Some(0);
@@ -371,10 +385,15 @@ fn walk_inner(w: &mut Walker<'_>) -> Result<(), WalkError> {
         data[11],
         data[12]
     );
-    if screen_err {
+    if dims_err {
         header_detail.push_str(
             "; the decoder's dimension limits reject this screen, so every zencodec path fails \
              and nothing after the header is read",
+        );
+    } else if mem_err {
+        header_detail.push_str(
+            "; the canvas and indexed buffer exceed the decoder's memory limit, so every zencodec \
+             path fails and nothing after the header is read",
         );
     }
     if w.limits.max_decompression_ratio.is_some() {
@@ -735,7 +754,7 @@ fn image(
     let skipped_note = after_fatal.map(|n| {
         if fatal_screen {
             return String::from(
-                "; the decoder rejects the logical screen (dimension limits), so this is never read",
+                "; the decoder rejects the logical screen (dimension or memory limits), so this is never read",
             );
         }
         if let Some(g) = fatal_gce {

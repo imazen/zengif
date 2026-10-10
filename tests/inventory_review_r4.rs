@@ -684,3 +684,56 @@ fn interlaced_image_data_names_the_limitation() {
     let d = part_at(&inv(&flat), at as u64).detail.clone().unwrap();
     assert!(!d.contains("row-by-row"), "{d}");
 }
+
+// ── round 5 ──────────────────────────────────────────────────────────
+
+/// Finding 1 residual: `Decoder::new` also enforces the memory limit when it
+/// allocates the canvas. A screen within the dimension limits but over the
+/// job's `max_memory` fails every zencodec path.
+#[test]
+fn r5_canvas_over_max_memory() {
+    let mut g = b"GIF89a".to_vec();
+    g.extend_from_slice(&1024u16.to_le_bytes());
+    g.extend_from_slice(&1024u16.to_le_bytes());
+    g.extend_from_slice(&[0x80, 0, 0, 255, 0, 0, 0, 0, 255]);
+    g.extend_from_slice(&[0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+    g.extend_from_slice(&[0x02, 0x02, 0x44, 0x01, 0x00]);
+    g.push(0x3B);
+    let lim = zencodec::ResourceLimits::none().with_max_memory(1 << 20);
+    let job = || GifDecoderConfig::new().job().with_limits(lim);
+    let pe = job().probe(&g).err().map(|e| e.to_string());
+    println!("probe with max_memory 1 MiB: {pe:?}");
+    let ok_default = GifDecoderConfig::new().job().probe(&g).is_ok();
+    println!("probe with default limits ok: {ok_default}");
+    let i = job().inventory(&g).unwrap().unwrap();
+    i.validate().unwrap();
+    println!("{i}");
+    let data = i
+        .parts()
+        .iter()
+        .find(|p| p.label.as_deref() == Some("image data"))
+        .unwrap();
+    println!("image data disposition: {:?}", data.disposition);
+    assert!(pe.is_some());
+    assert!(ok_default);
+    assert_eq!(data.disposition, D::Skipped, "{i}");
+    let header = &i.parts()[0];
+    assert!(
+        header.detail.as_deref().unwrap().contains("memory limit"),
+        "{i}"
+    );
+    // Within the limit the same file is read.
+    let roomy = zencodec::ResourceLimits::none().with_max_memory(8 << 20);
+    let j = GifDecoderConfig::new()
+        .job()
+        .with_limits(roomy)
+        .inventory(&g)
+        .unwrap()
+        .unwrap();
+    let data = j
+        .parts()
+        .iter()
+        .find(|p| p.label.as_deref() == Some("image data"))
+        .unwrap();
+    assert_eq!(data.disposition, D::ImageData, "{j}");
+}
