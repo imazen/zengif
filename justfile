@@ -188,3 +188,8 @@ metadata-part-limit-check:
     cargo test --features inventory --test inventory part_cap_is_a_resource_error
     cargo test --features inventory --test inventory_review max_memory_bounds_the_part_count
     cargo clippy --features inventory --lib --test inventory --test inventory_review -- -D warnings
+
+metadata-cross-corpus-check:
+    cargo test --features inventory --test inventory check_inventory_on_the_conformance_corpus -- --exact
+    cargo test --features inventory --test inventory well_formed_files_have_no_image_data_tail -- --exact
+    actionlint .github/workflows/ci.yml

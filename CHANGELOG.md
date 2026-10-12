@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
+  into cross; i686 no longer tries to create a cache under an unwritable home.
+
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`
   gained defaulted `quantize_frame_with_stop` /
   `quantize_frame_with_palette_with_stop` methods (additive — third-party impls keep compiling), `ZenquantQuantizer`
