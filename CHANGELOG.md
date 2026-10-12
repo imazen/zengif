@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Report the global inventory part cap as typed `InventoryParts`; configured
+  lower memory-derived caps retain memory errors (approved test update).
+
 ### Metadata inventory
 
 - Reuse PR23 (`36c7ff1d`) behind default-off `inventory`; keep the normal codec

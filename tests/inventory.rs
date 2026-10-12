@@ -464,7 +464,13 @@ fn part_cap_is_a_resource_error() {
         .job()
         .inventory(&g)
         .expect_err("cap error");
-    assert!(err.to_string().to_lowercase().contains("memory"), "{err}");
+    use zencodec::CategorizedError;
+    assert_eq!(
+        err.category(),
+        zencodec::ErrorCategory::Resource(zencodec::ResourceError::Limits(
+            zencodec::LimitKind::InventoryParts
+        ))
+    );
 }
 
 // ── conformance ──────────────────────────────────────────────────────

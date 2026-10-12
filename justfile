@@ -183,3 +183,8 @@ metadata-api-validation:
     cargo check --manifest-path fuzz/Cargo.toml --bin inventory
     just api-doc
     just metadata-api-check
+
+metadata-part-limit-check:
+    cargo test --features inventory --test inventory part_cap_is_a_resource_error
+    cargo test --features inventory --test inventory_review max_memory_bounds_the_part_count
+    cargo clippy --features inventory --lib --test inventory --test inventory_review -- -D warnings

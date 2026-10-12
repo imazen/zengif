@@ -1345,9 +1345,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         match crate::inventory::walk(data, stop, max_parts, &limits) {
             Ok(inv) => Ok(inv),
             Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
-            // The part cap bounds the inventory's memory: report it as the
-            // memory limit it is (estimated bytes, not file bytes).
-            Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max })) => {
+            // A lower configured memory-derived cap is a memory limit. The
+            // global structural cap retains the shared InventoryParts category.
+            Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max }))
+                if max < zencodec::inventory::DEFAULT_MAX_PARTS =>
+            {
                 let part = crate::inventory::BYTES_PER_PART;
                 Err(GifError::MemoryLimitExceeded {
                     current: (u64::from(max) + 1) * part,
