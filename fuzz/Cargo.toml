@@ -16,7 +16,7 @@ version = ">=0.1.26, <0.3.0"
 
 [dependencies.zengif]
 path = ".."
-features = ["std"]
+features = ["std", "inventory"]
 
 # Re-exported by zengif, but needed directly for fuzz targets
 [dependencies.enough]
@@ -77,4 +77,4 @@ opt-level = 1
 # Depends on imazen/zencodec#133 (structural inventories). Swap this patch for the
 # released zencodec before merge.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", branch = "feat/inventory" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }

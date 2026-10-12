@@ -1,7 +1,7 @@
 //! Structural inventory (`DecodeJob::inventory`) conformance and pinned fixtures.
 //!
 //! Depends on the `zencodec` inventory API (imazen/zencodec#133).
-#![cfg(feature = "std")]
+#![cfg(feature = "inventory")]
 
 use enough::Unstoppable;
 use zencodec::decode::{DecodeJob, DecoderConfig};
@@ -16,7 +16,6 @@ fn inventory_of(data: &[u8]) -> Inventory {
         .job()
         .inventory(data)
         .expect("inventory")
-        .expect("Some")
 }
 
 /// (parent index, kind, tag, start, end, disposition, label) per part.

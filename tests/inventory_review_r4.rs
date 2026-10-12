@@ -1,6 +1,6 @@
 //! Round-4 review probes for the GIF inventory (PR 23) with the assertions that hold once
 //! each finding is fixed, plus tests for the decoder limits and palette reach.
-#![cfg(feature = "std")]
+#![cfg(feature = "inventory")]
 
 use std::borrow::Cow;
 
@@ -23,7 +23,7 @@ fn inv_with(
         Some(l) => job.with_limits(l),
         None => job,
     };
-    let i = job.inventory(data).expect("inventory").expect("Some");
+    let i = job.inventory(data).expect("inventory");
     i.validate().unwrap_or_else(|e| panic!("{e}\n{i}"));
     i
 }
@@ -151,7 +151,6 @@ fn n2_zero_width_screen_nothing_decodes() {
     assert!(
         part_at(&i, 0)
             .detail()
-            .as_deref()
             .unwrap()
             .contains("dimension limits"),
         "{i}"
@@ -347,13 +346,7 @@ fn n5_palette_entries_beyond_the_code_size_are_unreachable() {
         (lct as u64 + 12, lct as u64 + 768, D::Dropped),
         "{i}"
     );
-    assert!(
-        kids[1]
-            .detail()
-            .as_deref()
-            .unwrap()
-            .contains("no index can reach")
-    );
+    assert!(kids[1].detail().unwrap().contains("no index can reach"));
 }
 
 /// The transparent-index byte of a Graphic Control whose transparency flag is
@@ -417,7 +410,7 @@ fn n8_long_detail_memory() {
         job = job.with_limits(zencodec::ResourceLimits::none().with_max_memory(m));
     }
     match job.inventory(&g) {
-        Ok(Some(i)) => {
+        Ok(i) => {
             let detail: usize = i
                 .parts()
                 .iter()
@@ -430,7 +423,6 @@ fn n8_long_detail_memory() {
                 detail / i.parts().len()
             );
         }
-        Ok(None) => unreachable!(),
         Err(e) => println!("err {e}"),
     }
 }
@@ -720,7 +712,7 @@ fn r5_canvas_over_max_memory() {
     println!("probe with max_memory 1 MiB: {pe:?}");
     let ok_default = GifDecoderConfig::new().job().probe(&g).is_ok();
     println!("probe with default limits ok: {ok_default}");
-    let i = job().inventory(&g).unwrap().unwrap();
+    let i = job().inventory(&g).unwrap();
     i.validate().unwrap();
     println!("{i}");
     let data = i
@@ -740,7 +732,6 @@ fn r5_canvas_over_max_memory() {
         .job()
         .with_limits(roomy)
         .inventory(&g)
-        .unwrap()
         .unwrap();
     let data = j
         .parts()

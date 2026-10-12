@@ -71,6 +71,23 @@ impl From<InventoryError> for WalkError {
     }
 }
 
+// The probe historically consumes stop errors as parse failures. Latch the
+// original reason so the inventory cannot turn a one-shot timeout into success.
+struct LatchedStop<'a> {
+    inner: &'a dyn Stop,
+    reason: std::sync::OnceLock<enough::StopReason>,
+}
+impl Stop for LatchedStop<'_> {
+    fn check(&self) -> Result<(), enough::StopReason> {
+        if let Some(reason) = self.reason.get() {
+            return Err(*reason);
+        }
+        self.inner
+            .check()
+            .map_err(|reason| *self.reason.get_or_init(|| reason))
+    }
+}
+
 /// Result of walking a run of length-prefixed sub-blocks.
 struct SubBlocks {
     /// One past the terminator, or `data.len()` when truncated.
@@ -278,6 +295,12 @@ pub(crate) fn walk(
     max_parts: u32,
     limits: &Limits,
 ) -> Result<Inventory, WalkError> {
+    let latched = LatchedStop {
+        inner: stop,
+        reason: std::sync::OnceLock::new(),
+    };
+    let stop: &dyn Stop = &latched;
+    stop.check().map_err(WalkError::Cancelled)?;
     if data.is_empty() {
         return Ok(new_walker(data, stop, max_parts, limits, Facts::default()).inv);
     }
@@ -311,6 +334,7 @@ pub(crate) fn walk(
         }
     }
 
+    stop.check().map_err(WalkError::Cancelled)?;
     let mut w = new_walker(data, stop, max_parts, limits, facts);
     walk_inner(&mut w)?;
     w.inv.fill_gaps(None, Disposition::Trailing)?;

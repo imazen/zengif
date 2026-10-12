@@ -236,7 +236,7 @@ pub use types::{
 
 #[cfg(feature = "std")]
 mod codec;
-#[cfg(feature = "std")]
+#[cfg(feature = "inventory")]
 mod inventory;
 
 /// Sweep-plan construction over the encoder knob space (variant-

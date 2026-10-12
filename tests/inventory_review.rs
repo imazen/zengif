@@ -1,7 +1,7 @@
 //! Reproducers from the independent review of the GIF inventory (PR 23), with
 //! the assertions that hold once each finding is fixed. The principle: a part
 //! reported as consumed must not contain bytes the decoder never reads.
-#![cfg(feature = "std")]
+#![cfg(feature = "inventory")]
 
 mod common;
 
@@ -19,8 +19,7 @@ fn inv(data: &[u8]) -> Inventory {
     let i = GifDecoderConfig::new()
         .job()
         .inventory(data)
-        .expect("inventory")
-        .expect("Some");
+        .expect("inventory");
     i.validate().unwrap_or_else(|e| panic!("{e}\n{i}"));
     i
 }

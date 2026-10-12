@@ -233,7 +233,7 @@ static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
         .with_animation(true)
         .with_cheap_probe(false)
         .with_native_alpha(true)
-        .with_inventory(true)
+        .with_inventory(cfg!(feature = "inventory"))
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_enforces_max_input_bytes(true);
@@ -1322,10 +1322,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         Ok(info)
     }
 
-    fn inventory(
-        &self,
-        data: &[u8],
-    ) -> Result<Option<zencodec::inventory::Inventory>, At<CodecError>> {
+    #[cfg(feature = "inventory")]
+    fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, At<CodecError>> {
         use crate::inventory::WalkError;
         self.check_file_size(data)?;
         let stop: &dyn enough::Stop = match self.stop {
@@ -1345,7 +1343,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             .max(64);
         let limits = self.build_limits();
         match crate::inventory::walk(data, stop, max_parts, &limits) {
-            Ok(inv) => Ok(Some(inv)),
+            Ok(inv) => Ok(inv),
             Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
             // The part cap bounds the inventory's memory: report it as the
             // memory limit it is (estimated bytes, not file bytes).
@@ -1357,10 +1355,13 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
                 }
                 .into())
             }
-            Err(WalkError::Parts(_)) => Err(GifError::InvalidDecoderState {
-                message: "inventory walker produced an invalid part",
+            Err(WalkError::Parts(error)) => {
+                use zencodec::CategorizedError;
+                Err(
+                    CodecError::from_parts(Some("zengif"), error.category(), Box::new(error))
+                        .into(),
+                )
             }
-            .into()),
         }
     }
 

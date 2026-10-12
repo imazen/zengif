@@ -9,7 +9,7 @@
 //! values exiftool prints must equal the values read from the bytes at the
 //! inventory's offsets, which pins each unit's offset and length. Coverage
 //! of every other byte is the inventory's own `validate` guarantee.
-#![cfg(feature = "std")]
+#![cfg(feature = "inventory")]
 
 mod common;
 
@@ -185,11 +185,7 @@ fn inventory_agrees_with_exiftool() {
     let mut failures = Vec::new();
     for f in &files {
         let data = std::fs::read(f).unwrap();
-        let inv = GifDecoderConfig::new()
-            .job()
-            .inventory(&data)
-            .unwrap()
-            .unwrap();
+        let inv = GifDecoderConfig::new().job().inventory(&data).unwrap();
         inv.validate().unwrap();
         let ours = inventory_events(&data, &inv);
         let theirs = exiftool_events(&bin, f);
@@ -218,11 +214,7 @@ fn inventory_agrees_with_exiftool() {
     let fixture_path = dir.join("inventory-fixture.gif");
     let data = common::fixture();
     std::fs::write(&fixture_path, &data).unwrap();
-    let inv = GifDecoderConfig::new()
-        .job()
-        .inventory(&data)
-        .unwrap()
-        .unwrap();
+    let inv = GifDecoderConfig::new().job().inventory(&data).unwrap();
     let (ours, theirs) = (
         inventory_events(&data, &inv),
         exiftool_events(&bin, &fixture_path),
@@ -247,11 +239,7 @@ fn oracle_helpers_read_a_known_file() {
     g.extend_from_slice(&[
         0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3B,
     ]);
-    let inv = GifDecoderConfig::new()
-        .job()
-        .inventory(&g)
-        .unwrap()
-        .unwrap();
+    let inv = GifDecoderConfig::new().job().inventory(&g).unwrap();
     assert_eq!(
         inventory_events(&g, &inv),
         vec![Ev::Gce(7), Ev::Comment("hi".into()), Ev::Image(0, 0, 1, 1)]

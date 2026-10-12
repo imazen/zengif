@@ -150,3 +150,36 @@ profile-view:
 arm-bench-macos bench="decode_bench":
     mkdir -p "$HOME/tmp"
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p zengif --bench '{{bench}}' -- --format=llm > "$HOME/tmp/zengif-{{bench}}.log" 2>&1
+
+metadata-check:
+    cargo test --features inventory --test inventory --test inventory_review --test inventory_review_r4 --test inventory_review_r2 --test inventory_feature --test fuzz_regression
+    cargo clippy --features inventory --lib --tests -- -D warnings
+    cargo check --no-default-features
+    cargo test --test inventory_feature
+
+metadata-review-check:
+    cargo test --features inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
+    cargo clippy --features inventory --lib --tests -- -D warnings
+    cargo check --no-default-features
+    cargo test --test inventory_feature
+
+metadata-oracle:
+    INVENTORY_ORACLE_EXIFTOOL="$(command -v exiftool)" cargo test --features inventory --test inventory_oracle -- --nocapture
+
+metadata-portability:
+    CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --target i686-unknown-linux-gnu --features inventory --test inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
+    cargo check --manifest-path fuzz/Cargo.toml --bin inventory
+    just api-doc
+
+metadata-api-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    baseline=$(cargo read zengif==0.7.3 --path-only)
+    RUSTC_BOOTSTRAP=1 cargo rustdoc --lib --features inventory -- -Zunstable-options --output-format json
+    RUSTC_BOOTSTRAP=1 cargo rustdoc --manifest-path "$baseline/Cargo.toml" --target-dir "$PWD/target/published-api/0.7.3" --lib --features zencodec -- -Zunstable-options --output-format json
+    cargo semver-checks check-release --current-rustdoc target/doc/zengif.json --baseline-rustdoc target/published-api/0.7.3/doc/zengif.json --release-type patch
+
+metadata-api-validation:
+    cargo check --manifest-path fuzz/Cargo.toml --bin inventory
+    just api-doc
+    just metadata-api-check

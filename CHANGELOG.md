@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Metadata inventory
+
+- Reuse PR23 (`36c7ff1d`) behind default-off `inventory`; keep the normal codec
+  independent of structural inspection. Preserve typed unsupported and invariant
+  failures and latch one-shot timeouts across the walker/probe boundary.
+- Native/i686 and ExifTool checks passed; the 0.7.3 API audit retains pre-existing
+  error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
+
 ### Fixed
 
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`

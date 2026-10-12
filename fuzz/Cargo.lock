@@ -328,9 +328,8 @@ checksum = "d107c80dd656e1a2c254dfb1d57ece73b7f515b8a8684c270c23cab68f4a440d"
 
 [[package]]
 name = "zencodec"
-version = "0.1.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be4b0d4108a8f062c85090bf8d0e6dd00fea976ffacc0e4f3cb6b03284a75531"
+version = "0.1.27"
+source = "git+https://github.com/imazen/zencodec?rev=c1c3292ff10f386191780ad407526951165da47a#c1c3292ff10f386191780ad407526951165da47a"
 dependencies = [
  "almost-enough",
  "enough",
@@ -363,6 +362,7 @@ dependencies = [
  "arbitrary",
  "enough",
  "libfuzzer-sys",
+ "zencodec",
  "zengif",
 ]
 
@@ -378,11 +378,11 @@ dependencies = [
 
 [[package]]
 name = "zenquant"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "440257260e03abacc233712332cd164f59afb98e8385e49ca5a0581ef0c7269d"
+version = "0.1.4"
+source = "git+https://github.com/imazen/zenquant?rev=1dc144cace307fc744ccc5c5ff0b1812d2845f07#1dc144cace307fc744ccc5c5ff0b1812d2845f07"
 dependencies = [
  "archmage",
+ "enough",
  "imgref",
  "linear-srgb",
  "magetypes",

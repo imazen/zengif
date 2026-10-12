@@ -14,8 +14,7 @@ fuzz_target!(|data: &[u8]| {
     let inv = GifDecoderConfig::new()
         .job()
         .inventory(data)
-        .expect("inventory must not fail on malformed input")
-        .expect("zengif declares inventory support");
+        .expect("inventory must not fail on malformed input");
     assert_eq!(inv.input_len(), data.len() as u64);
     inv.validate().expect("inventory must validate");
 });

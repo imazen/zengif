@@ -1,6 +1,6 @@
 //! Round-2 review probes for the GIF inventory (PR 23) with the assertions that hold once
 //! each finding is fixed, plus a differential check of the LZW walk against weezl.
-#![cfg(feature = "std")]
+#![cfg(feature = "inventory")]
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -18,8 +18,7 @@ fn inv(data: &[u8]) -> Inventory {
     let i = GifDecoderConfig::new()
         .job()
         .inventory(data)
-        .expect("inventory")
-        .expect("Some");
+        .expect("inventory");
     i.validate().unwrap_or_else(|e| panic!("{e}\n{i}"));
     i
 }
@@ -547,7 +546,7 @@ fn q6_bad_gce_is_fatal_but_later_frames_stay_consumed() {
     let i = inv(&g);
     println!("{i}");
     assert_eq!(part_at(&i, d2 as u64).disposition(), D::Skipped, "{i}");
-    let note = part_at(&i, d2 as u64).detail().clone().unwrap();
+    let note = part_at(&i, d2 as u64).detail().unwrap();
     assert!(
         note.contains("after the Graphic Control at offset"),
         "{note}"
@@ -603,11 +602,10 @@ fn q8_small_max_memory() {
         .with_limits(limits)
         .inventory(&g)
     {
-        Ok(Some(i)) => {
+        Ok(i) => {
             i.validate().unwrap();
             println!("ok parts {} in {:?}", i.parts().len(), t.elapsed())
         }
-        Ok(None) => unreachable!(),
         Err(e) => println!("err {e} in {:?}", t.elapsed()),
     }
 }
