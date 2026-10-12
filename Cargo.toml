@@ -19,6 +19,8 @@ include = [
 ]
 
 [features]
+# Structural inspection; normal metadata and decode do not need it.
+inventory = ["std"]
 default = ["std", "zenquant"]
 # std feature - enables std::error::Error impl and std I/O traits
 # Disable for no_std+alloc environments (e.g., WASM)
@@ -104,6 +106,8 @@ zenutils-fuzz = "0.1.0"
 imgref = "1.12.0"
 codec-corpus = "1.0.3"
 archmage = { version = "0.9.15", features = ["std", "testable_dispatch"] }
+# LZW oracle for the inventory tests: the decoder the gif crate runs
+weezl = "0.1.12"
 
 # Dependencies that don't work on wasm32
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
@@ -179,3 +183,9 @@ required-features = ["std"]
 [[bench]]
 name = "expand_palette"
 harness = false
+
+# Depends on imazen/zencodec#133 (structural inventories). Swap this patch for the
+# released zencodec / zencodec-testkit before merge.
+[patch.crates-io]
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }

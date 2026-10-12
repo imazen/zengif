@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, review/zenmeta-integration]
   pull_request:
     branches: [main]
 
@@ -38,6 +39,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - name: Metadata inventory and feature boundary
+        run: cargo test --features inventory --test inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
 
       - name: Test (default features)
         run: cargo test
@@ -88,8 +92,16 @@ jobs:
         with:
           key: cross-i686
 
+      - name: Prefetch inventory corpus on the host
+        env:
+          CODEC_CORPUS_CACHE: ${{ github.workspace }}/.corpus-cache
+        run: cargo test --features inventory --test inventory check_inventory_on_the_conformance_corpus -- --exact
+
       - name: Test (i686)
-        run: cross test --target i686-unknown-linux-gnu
+        env:
+          CROSS_CONTAINER_OPTS: "-v ${{ github.workspace }}/.corpus-cache:/codec-corpus"
+          CODEC_CORPUS_CACHE: /codec-corpus
+        run: cross test --target i686-unknown-linux-gnu --features inventory
 
   wasm:
     name: WASM check

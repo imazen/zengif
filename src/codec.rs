@@ -233,6 +233,7 @@ static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
         .with_animation(true)
         .with_cheap_probe(false)
         .with_native_alpha(true)
+        .with_inventory(cfg!(feature = "inventory"))
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_enforces_max_input_bytes(true);
@@ -1319,6 +1320,51 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         }
 
         Ok(info)
+    }
+
+    #[cfg(feature = "inventory")]
+    fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, At<CodecError>> {
+        use crate::inventory::WalkError;
+        self.check_file_size(data)?;
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
+        // The job's memory limit bounds the inventory too: at most
+        // `max_memory / BYTES_PER_PART` parts (never more than zencodec's default cap).
+        let max_parts = self
+            .build_limits()
+            .max_memory
+            .map_or(zencodec::inventory::DEFAULT_MAX_PARTS, |m| {
+                u32::try_from(m / crate::inventory::BYTES_PER_PART)
+                    .unwrap_or(u32::MAX)
+                    .min(zencodec::inventory::DEFAULT_MAX_PARTS)
+            })
+            .max(64);
+        let limits = self.build_limits();
+        match crate::inventory::walk(data, stop, max_parts, &limits) {
+            Ok(inv) => Ok(inv),
+            Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
+            // A lower configured memory-derived cap is a memory limit. The
+            // global structural cap retains the shared InventoryParts category.
+            Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max }))
+                if max < zencodec::inventory::DEFAULT_MAX_PARTS =>
+            {
+                let part = crate::inventory::BYTES_PER_PART;
+                Err(GifError::MemoryLimitExceeded {
+                    current: (u64::from(max) + 1) * part,
+                    limit: u64::from(max) * part,
+                }
+                .into())
+            }
+            Err(WalkError::Parts(error)) => {
+                use zencodec::CategorizedError;
+                Err(
+                    CodecError::from_parts(Some("zengif"), error.category(), Box::new(error))
+                        .into(),
+                )
+            }
+        }
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<CodecError>> {

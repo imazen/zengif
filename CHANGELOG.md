@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Report the global inventory part cap as typed `InventoryParts`; configured
+  lower memory-derived caps retain memory errors (approved test update).
+
+### Metadata inventory
+
+- Reuse PR23 (`36c7ff1d`) behind default-off `inventory`; keep the normal codec
+  independent of structural inspection. Preserve typed unsupported and invariant
+  failures and latch one-shot timeouts across the walker/probe boundary.
+- Native/i686 and ExifTool checks passed; the 0.7.3 API audit retains pre-existing
+  error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
+
 ### Fixed
+
+- Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
+  into cross; i686 no longer tries to create a cache under an unwritable home.
 
 - **Cancellation now reaches the zenquant palette build.** `QuantizerTrait`
   gained defaulted `quantize_frame_with_stop` /
