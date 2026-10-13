@@ -198,3 +198,8 @@ metadata-color-admission-check:
     cargo test --lib codec::tests
     cargo clippy --lib -- -D warnings
     cargo fmt --check
+
+# Adapter timing and metadata against the pinned shared contract.
+shared-contract-check:
+    cargo test --features inventory --lib codec::
+    cargo clippy --features inventory --lib -- -D warnings

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve rational duration directly when correcting an owned frame index;
+  remove the intermediate legacy millisecond conversion.
+
 - Report the global inventory part cap as typed `InventoryParts`; configured
   lower memory-derived caps retain memory errors (approved test update).
 
