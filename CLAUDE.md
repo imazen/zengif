@@ -375,6 +375,10 @@ MIT OR Apache-2.0 (dual license)
 
 ## Known Bugs
 
+- The codec adapter discarded the color-emission plan while accepting retained
+  ICC/CICP. Consumer CI caught silent color-description loss. Still and animation
+  jobs now reject it; keep the native and zencodecs GIF capability regressions.
+
 - CI run 38263201869 failed two inventory corpus tests on i686 with PermissionDenied
   in `Corpus::new`. The workflow now prefetches the corpus on the host, mounts
   it into cross, and passes `CODEC_CORPUS_CACHE` explicitly. Assertions stay intact.

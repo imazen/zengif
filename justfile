@@ -193,3 +193,8 @@ metadata-cross-corpus-check:
     cargo test --features inventory --test inventory check_inventory_on_the_conformance_corpus -- --exact
     cargo test --features inventory --test inventory well_formed_files_have_no_image_data_tail -- --exact
     actionlint .github/workflows/ci.yml
+
+metadata-color-admission-check:
+    cargo test --lib codec::tests
+    cargo clippy --lib -- -D warnings
+    cargo fmt --check

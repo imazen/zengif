@@ -70,19 +70,18 @@ fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_uti
 /// against [`GIF_ENCODE_CAPS`]. This puts GIF on the same color-emission
 /// contract as every other zen codec.
 ///
-/// GIF, however, embeds **no** color description — no ICC profile chunk, no
-/// CICP — so `GIF_ENCODE_CAPS` advertises no CICP carrier and the returned
-/// [`ColorEmitPlan`](zencodec::ColorEmitPlan) always has `cicp: None` with the
-/// ICC dropped (or kept-but-unwritable). The bitstream is emitted as sRGB,
-/// which is GIF's universally-assumed color space. The call therefore never
-/// changes the output; its value is (1) consulting the policy uniformly and
-/// (2) confirming color-managed input is handled gracefully (no error) instead
-/// of being silently ignored. Returned for inspection; the caller discards it.
+/// This encoder cannot embed ICC/CICP or convert their color spaces. Reject
+/// retained color metadata before emitting implicitly sRGB palette pixels.
 fn resolve_gif_color_emit(
     metadata: Option<&Metadata>,
     policy: Option<&zencodec::encode::EncodePolicy>,
     channel_count: u8,
-) -> zencodec::ColorEmitPlan {
+) -> Result<zencodec::ColorEmitPlan, At<CodecError>> {
+    if metadata.is_some_and(|meta| meta.icc_profile.is_some() || meta.cicp.is_some()) {
+        return Err(GifError::InvalidEncoderState {
+            message: "GIF cannot retain ICC/CICP; convert pixels to sRGB and explicitly drop color metadata",
+        }.into());
+    }
     let color_policy = policy
         .map(|p| p.resolve_color(zencodec::ColorEmitPolicy::Balanced))
         .unwrap_or(zencodec::ColorEmitPolicy::Balanced);
@@ -101,7 +100,11 @@ fn resolve_gif_color_emit(
         }
     }
 
-    zencodec::resolve_color_emit(&src, &GIF_ENCODE_CAPS, color_policy)
+    Ok(zencodec::resolve_color_emit(
+        &src,
+        &GIF_ENCODE_CAPS,
+        color_policy,
+    ))
 }
 
 fn limits_from_resource(rl: &ResourceLimits) -> Limits {
@@ -609,25 +612,14 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
-        // Stored and consulted in the color decision: its `ColorEmitPolicy`
-        // drives `resolve_color_emit` against GIF's capabilities. GIF carries
-        // no ICC/CICP, so every policy resolves to "emit sRGB pixels, embed no
-        // color description" — but consulting it keeps GIF on the same
-        // color-emission contract as the other codecs (and proves color-managed
-        // input is dropped gracefully rather than erroring).
+        // Consulted by the shared color-emission resolver.
         self.policy = Some(policy);
         self
     }
 
     fn with_metadata(mut self, meta: Metadata) -> Self {
-        // Stored (no longer silently discarded). GIF can represent none of the
-        // carriers zencodec's `Metadata` holds — ICC, EXIF, XMP, CICP, the HDR
-        // light-level/mastering blocks, nor EXIF orientation — so nothing is
-        // emitted to the bitstream (a conservative, no-error skip; see
-        // `resolve_gif_color_emit`). The only GIF-representable metadata is the
-        // animation loop count, which travels via `with_loop_count`. We keep
-        // the value so the decision is explicit and so a future GIF-carriable
-        // signal (e.g. a comment extension) has it to hand.
+        // Retained color metadata is checked before encoding. Descriptive
+        // metadata has no carrier in this encoder and is omitted.
         self.metadata = Some(meta);
         self
     }
@@ -648,6 +640,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn encoder(self) -> Result<GifEncoder, At<CodecError>> {
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
         Ok(GifEncoder {
             config: self.config,
             stop: self.stop,
@@ -667,11 +660,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
                 None => Repeat::Once,
             };
         }
-        // Consult the color policy once up front. GIF embeds no ICC/CICP, so
-        // this never alters the output, but it keeps the animation path on the
-        // same color contract and proves color-managed input is handled
-        // gracefully. RGBA frames → 4 channels.
-        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
         // Pre-compute limits so they're ready when the encoder is created
         let base = limits_from_resource(&self.config.limits);
         let gif_limits = match self.limits {
@@ -733,13 +722,7 @@ impl GifEncoder {
             .into());
         }
 
-        // Consult the color-emission policy. GIF embeds no ICC/CICP, so the
-        // plan never carries anything to write — but running the resolver puts
-        // GIF on the same color contract as the other codecs and confirms
-        // color-managed input is dropped gracefully (no error). The GIF
-        // bitstream is always sRGB-described-implicitly. Pixels are RGBA here →
-        // 4 channels.
-        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
 
         let limits = self.build_limits();
         let stop: &dyn enough::Stop = match self.stop {
@@ -1913,6 +1896,41 @@ mod tests {
         feature = "color_quant"
     ))]
     use zencodec::encode::{EncodeJob as _, Encoder as _};
+
+    #[test]
+    fn retained_icc_is_rejected_for_still_and_animation_jobs() {
+        use zencodec::encode::EncodeJob as _;
+        let config = GifEncoderConfig::new;
+        let metadata = Metadata::none().with_icc(alloc::vec![0; 256]);
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                .encoder()
+                .is_err()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                .animation_frame_encoder()
+                .is_err()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .encoder()
+                .is_ok()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .animation_frame_encoder()
+                .is_ok()
+        );
+    }
 
     // Minimal valid GIF89a (1x1 red pixel)
     const MINIMAL_GIF: &[u8] = &[

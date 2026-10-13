@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
 
 ### Fixed
+- Reject retained ICC/CICP in still and animation codec jobs instead of
+  silently emitting palette pixels without their color description. Callers
+  must convert to sRGB and explicitly drop the metadata. No signature changes.
 
 - Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
   into cross; i686 no longer tries to create a cache under an unwritable home.
