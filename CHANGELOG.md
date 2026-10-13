@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve the typed unsupported-operation cause through native errors and erased
+  dispatch; timing refusal now supports `CodecErrorExt::unsupported_operation`.
+
+
+### Tests
+
+- Shared testkit verifies rational-timing refusal without damaging legacy
+  animation, policy admission and inventory boundaries with inventory on/off.
+
+
 - Keep the independent fuzz workspace on the same shared-contract revision as
   its codec dependency, avoiding duplicate zencodec trait identities.
 

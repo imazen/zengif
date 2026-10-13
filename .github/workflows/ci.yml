@@ -40,7 +40,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Metadata inventory and feature boundary
-        run: cargo test --features inventory --test inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
+        run: cargo test --features inventory --test inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression --test shared_contracts
 
       - name: Test (default features)
         run: cargo test

@@ -77,4 +77,4 @@ opt-level = 1
 # Depends on imazen/zencodec#133 (structural inventories). Swap this patch for the
 # released zencodec before merge.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "4d542d6412469d0c99e2e3e723cdcecd9d1208a1" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "3ef1cfde5e781d10eaf966253da7697e662be362" }

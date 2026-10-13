@@ -201,5 +201,9 @@ metadata-color-admission-check:
 
 # Adapter timing and metadata against the pinned shared contract.
 shared-contract-check:
+    cargo test --features inventory --test shared_contracts
+    cargo test --test shared_contracts
+    cargo test --no-default-features --features std --test shared_contracts
+    cargo clippy --features inventory --test shared_contracts -- -D warnings
     cargo test --features inventory --lib codec::
     cargo clippy --features inventory --lib -- -D warnings

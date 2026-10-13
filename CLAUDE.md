@@ -877,3 +877,11 @@ src/encode/
 - Test module imports updated for relocated functions
 - Maintained backward compatibility - public API unchanged
 
+
+## Known Bugs: unsupported-operation source chain (fixed)
+
+The shared timing-refusal test failed because `GifError::UnsupportedOperation`
+retained its category but omitted its nested cause from `Error::source`.
+`#[source]` restores typed extraction through native and erased errors. Keep the
+shared regression test alongside the category mapping test; they check different
+observations of the same error.
