@@ -21,7 +21,7 @@ mod encode_checks {
         tk::check_animation_timing_unsupported(
             E::new(),
             D::new(),
-            &tk::TestImage::rgb8_gradient(4, 3),
+            tk::TestImage::rgb8_gradient(4, 3).as_slice(),
         )
         .unwrap();
     }
@@ -45,7 +45,7 @@ mod encode_checks {
             tk::check_encode_policy_admission(
                 enc.clone(),
                 D::new(),
-                &img,
+                img.as_slice(),
                 Metadata::none(),
                 EncodePolicy::none(),
                 policy,
