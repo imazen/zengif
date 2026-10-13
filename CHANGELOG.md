@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the independent fuzz workspace on the same shared-contract revision as
+  its codec dependency, avoiding duplicate zencodec trait identities.
+
 - Preserve rational duration directly when correcting an owned frame index;
   remove the intermediate legacy millisecond conversion.
 
