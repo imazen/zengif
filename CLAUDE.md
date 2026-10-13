@@ -377,7 +377,8 @@ MIT OR Apache-2.0 (dual license)
 
 - The codec adapter discarded the color-emission plan while accepting retained
   ICC/CICP. Consumer CI caught silent color-description loss. Still and animation
-  jobs now reject it; keep the native and zencodecs GIF capability regressions.
+  jobs now reject ICC/non-sRGB CICP; explicit sRGB CICP remains readable after
+  conversion. Keep native and zencodecs GIF capability/transcode regressions.
 
 - CI run 38263201869 failed two inventory corpus tests on i686 with PermissionDenied
   in `Corpus::new`. The workflow now prefetches the corpus on the host, mounts

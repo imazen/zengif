@@ -71,15 +71,18 @@ fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_uti
 /// contract as every other zen codec.
 ///
 /// This encoder cannot embed ICC/CICP or convert their color spaces. Reject
-/// retained color metadata before emitting implicitly sRGB palette pixels.
+/// retained profiles or non-sRGB CICP before emitting implicitly sRGB palette
+/// pixels. Explicit sRGB CICP agrees with that interpretation.
 fn resolve_gif_color_emit(
     metadata: Option<&Metadata>,
     policy: Option<&zencodec::encode::EncodePolicy>,
     channel_count: u8,
 ) -> Result<zencodec::ColorEmitPlan, At<CodecError>> {
-    if metadata.is_some_and(|meta| meta.icc_profile.is_some() || meta.cicp.is_some()) {
+    if metadata.is_some_and(|meta| {
+        meta.icc_profile.is_some() || meta.cicp.is_some_and(|c| c != zencodec::Cicp::SRGB)
+    }) {
         return Err(GifError::InvalidEncoderState {
-            message: "GIF cannot retain ICC/CICP; convert pixels to sRGB and explicitly drop color metadata",
+            message: "GIF cannot retain ICC or non-sRGB CICP; convert pixels to sRGB and explicitly drop the source metadata",
         }.into());
     }
     let color_policy = policy
@@ -1930,6 +1933,33 @@ mod tests {
                 .animation_frame_encoder()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn explicit_srgb_cicp_is_admitted_but_other_cicp_is_rejected() {
+        use zencodec::encode::EncodeJob as _;
+        let mut wide_gamut = zencodec::Cicp::SRGB;
+        wide_gamut.color_primaries = 9;
+        for (cicp, accepted) in [(zencodec::Cicp::SRGB, true), (wide_gamut, false)] {
+            let mut metadata = Metadata::none();
+            metadata.cicp = Some(cicp);
+            assert_eq!(
+                GifEncoderConfig::new()
+                    .job()
+                    .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                    .encoder()
+                    .is_ok(),
+                accepted
+            );
+            assert_eq!(
+                GifEncoderConfig::new()
+                    .job()
+                    .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                    .animation_frame_encoder()
+                    .is_ok(),
+                accepted
+            );
+        }
     }
 
     // Minimal valid GIF89a (1x1 red pixel)
