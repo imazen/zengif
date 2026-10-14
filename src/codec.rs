@@ -236,6 +236,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
 static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
     zencodec::decode::DecodeCapabilities::new()
         .with_stop(true)
+        .with_incremental(true)
         .with_animation(true)
         .with_cheap_probe(false)
         .with_native_alpha(true)
@@ -1472,6 +1473,22 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             start_frame_index: self.start_frame_index,
             preferred: preferred.to_vec(),
         })
+    }
+
+    /// Incremental (sans-I/O) decode. GIF's LZW stream, compositing and
+    /// limit bookkeeping run through the `Read`-based decoder, so this
+    /// reports the header as soon as it probes and decodes the first frame
+    /// through `push_decoder` once the whole file is offered.
+    fn dyn_incremental_decoder(
+        self,
+        preferred: &[PixelDescriptor],
+    ) -> Result<
+        alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
+        zencodec::decode::BoxedError,
+    > {
+        Ok(zencodec::decode::erase_incremental(
+            zencodec::helpers::WholeFileIncremental::new(self, preferred),
+        ))
     }
 }
 
