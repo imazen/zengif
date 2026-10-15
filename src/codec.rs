@@ -677,6 +677,9 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             canvas_size: self.canvas_size,
             encoder: None,
             has_frames: false,
+            begun: false,
+            declared_frames: None,
+            pushed: 0,
         })
     }
 }
@@ -907,6 +910,12 @@ pub struct GifAnimationFrameEncoder {
     encoder: Option<crate::encode::Encoder<'static>>,
     /// Whether at least one frame has been pushed.
     has_frames: bool,
+    /// `begin` succeeded.
+    begun: bool,
+    /// The frame count `begin` declared, binding on `finish`.
+    declared_frames: Option<u32>,
+    /// Frames pushed.
+    pushed: u32,
 }
 
 impl GifAnimationFrameEncoder {
@@ -963,10 +972,88 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
         let frame = FrameInput::new(w, h, delay_cs, rgba);
 
+        if let Some(n) = self.declared_frames
+            && self.pushed >= n
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "more frames than begin declared",
+            }
+            .into());
+        }
         let enc = self.ensure_encoder(w, h)?;
         enc.add_frame(frame).map_err(CodecError::of)?;
+        let total = enc.handed_out() + enc.pending_output().len() as u64;
+        self.gif_limits
+            .check_output_bytes(total)
+            .map_err(CodecError::of)?;
         self.has_frames = true;
+        self.pushed += 1;
         Ok(())
+    }
+
+    /// GIF writes each frame as it is pushed, so output streams at lag 0.
+    /// With a shared palette, frames wait until the palette is built: the
+    /// lag is `max_buffer_frames - 1`, and an animation that fits in the
+    /// buffer is written at `finish` (`AT_FINISH`). The header goes out
+    /// with the first frame written.
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        _descriptor: PixelDescriptor,
+        frame_count: Option<u32>,
+    ) -> Result<zencodec::encode::AnimationOutputTiming, At<CodecError>> {
+        use zencodec::encode::AnimationOutputTiming;
+        let refuse = |message: &'static str| -> At<CodecError> {
+            GifError::InvalidEncoderState { message }.into()
+        };
+        if self.begun {
+            return Err(refuse("begin called twice"));
+        }
+        if self.has_frames {
+            return Err(refuse("begin after push_frame"));
+        }
+        if width == 0 || height == 0 || width > u32::from(u16::MAX) || height > u32::from(u16::MAX)
+        {
+            return Err(refuse("GIF canvas must be 1 to 65535 pixels on each side"));
+        }
+        if self.canvas_size.is_some_and(|c| c != (width, height)) {
+            return Err(refuse("begin: canvas differs from with_canvas_size"));
+        }
+        if frame_count == Some(0) {
+            return Err(refuse("GIF needs at least one frame"));
+        }
+        let previous = self.canvas_size.replace((width, height));
+        let held = match self.ensure_encoder(width as u16, height as u16) {
+            Ok(enc) => enc.max_held_frames(),
+            Err(e) => {
+                self.canvas_size = previous;
+                return Err(e);
+            }
+        };
+        self.begun = true;
+        self.declared_frames = frame_count;
+        let lag = u32::try_from(held).unwrap_or(u32::MAX);
+        if frame_count.is_some_and(|n| lag >= n) {
+            return Ok(AnimationOutputTiming::AT_FINISH);
+        }
+        Ok(AnimationOutputTiming::streaming(lag))
+    }
+
+    fn pending_output(&self) -> &[u8] {
+        self.encoder.as_ref().map_or(&[], |e| e.pending_output())
+    }
+
+    fn consume_output(&mut self, n: usize) {
+        if let Some(e) = &mut self.encoder {
+            e.consume_output(n);
+        }
+    }
+
+    fn take_output(&mut self, into: &mut Vec<u8>) {
+        if let Some(e) = &mut self.encoder {
+            e.take_output(into);
+        }
     }
 
     fn finish(
@@ -975,6 +1062,14 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
     ) -> Result<EncodeOutput, At<CodecError>> {
         if let Some(stop) = stop {
             stop.check().map_err(GifError::Cancelled)?;
+        }
+        if let Some(n) = self.declared_frames
+            && self.pushed != n
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "finish: a different number of frames than begin declared",
+            }
+            .into());
         }
         let enc = match self.encoder {
             Some(enc) => enc,
@@ -993,11 +1088,8 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
             .into());
         }
 
-        let mut data = enc.finish().map_err(CodecError::of)?;
-        // Ensure GIF trailer byte is present.
-        if data.last() != Some(&0x3B) {
-            data.push(0x3B);
-        }
+        // `finish` writes the trailer and checks the whole file's size.
+        let data = enc.finish().map_err(CodecError::of)?;
         Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 }
