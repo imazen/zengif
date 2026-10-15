@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Streaming animation output (zencodec `AnimationFrameEncoder::begin`): GIF writes
+  each frame as it is pushed, so `begin` reports `streaming(0)`; with a shared
+  palette, frames wait until the palette is built (`streaming(max_buffer_frames - 1)`,
+  or `AT_FINISH` when the declared frame count fits the buffer). The streamed file is
+  byte-identical to the encode without `begin`. `pending_output` / `consume_output` /
+  `take_output` drain it; a declared frame count binds `push_frame` and `finish`.
+  The inner `Encoder` gains `pending_output`, `consume_output`, `take_output` and
+  `handed_out`, and its output-size limit now counts bytes already handed out
+  (`tests/animation_streaming.rs`).
+
 ### Dependency integration
 
 - Align temporary zencodec/zenmeta/testkit pins with the checked fidelity and operation-matrix contracts (`4fda4391`). Replace coordinated git pins with released versions before publication.
