@@ -3,7 +3,17 @@
 //! the palette is built (lag `max_buffer_frames - 1`). The streamed file is
 //! byte-identical to the same encode without `begin`.
 
-#![cfg(feature = "std")]
+// Shared palettes and RGBA input need a quantizer.
+#![cfg(all(
+    feature = "std",
+    any(
+        feature = "zenquant",
+        feature = "quantette",
+        feature = "imagequant",
+        feature = "quantizr",
+        feature = "color_quant"
+    )
+))]
 
 use zencodec::encode::{AnimationFrameEncoder, AnimationOutputTiming, EncodeJob, EncoderConfig};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
