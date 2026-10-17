@@ -330,7 +330,7 @@ pub enum GifError {
     /// Unsupported codec operation.
     #[cfg(feature = "std")]
     #[error("unsupported operation: {0}")]
-    UnsupportedOperation(zencodec::UnsupportedOperation),
+    UnsupportedOperation(#[source] zencodec::UnsupportedOperation),
 }
 
 // Conversion from std::io::Error

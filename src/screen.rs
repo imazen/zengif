@@ -155,6 +155,12 @@ pub struct Screen {
 }
 
 impl Screen {
+    /// Bytes the RGBA canvas of a `width`×`height` screen charges against
+    /// `Limits::max_memory` (the structural inventory reuses it).
+    pub(crate) fn canvas_bytes_for(width: u16, height: u16) -> usize {
+        width as usize * height as usize * core::mem::size_of::<Rgba>()
+    }
+
     /// Create a new screen with the given dimensions.
     pub fn new(
         width: u16,
@@ -168,7 +174,7 @@ impl Screen {
         limits.check_dimensions(width, height)?;
 
         let pixel_count = width as usize * height as usize;
-        let canvas_bytes = pixel_count * core::mem::size_of::<Rgba>();
+        let canvas_bytes = Self::canvas_bytes_for(width, height);
 
         // Canvas is always initialized as transparent, matching browser behavior.
         // The GIF background color index is only used for "Restore to Background"
