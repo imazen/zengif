@@ -7,7 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Streaming animation output (zencodec `AnimationFrameEncoder::begin`): GIF writes
+  each frame as it is pushed, so `begin` reports `streaming(0)`; with a shared
+  palette, frames wait until the palette is built (`streaming(max_buffer_frames - 1)`,
+  or `AT_FINISH` when the declared frame count fits the buffer). The streamed file is
+  byte-identical to the encode without `begin`. `pending_output` / `consume_output` /
+  `take_output` drain it; a declared frame count binds `push_frame` and `finish`.
+  The inner `Encoder` gains `pending_output`, `consume_output`, `take_output` and
+  `handed_out`, and its output-size limit now counts bytes already handed out
+  (`tests/animation_streaming.rs`).
+
+### Dependency integration
+
+- Align temporary zencodec/zenmeta/testkit pins with the checked fidelity and operation-matrix contracts (`4fda4391`). Replace coordinated git pins with released versions before publication.
+
+
 ### Fixed
+
+- Preserve the typed unsupported-operation cause through native errors and erased
+  dispatch; timing refusal now supports `CodecErrorExt::unsupported_operation`.
+
+
+### Tests
+
+- Shared testkit verifies rational-timing refusal without damaging legacy
+  animation, policy admission and inventory boundaries with inventory on/off.
+
+
+- Keep the independent fuzz workspace on the same shared-contract revision as
+  its codec dependency, avoiding duplicate zencodec trait identities.
+
+- Preserve rational duration directly when correcting an owned frame index;
+  remove the intermediate legacy millisecond conversion.
+
+- Report the global inventory part cap as typed `InventoryParts`; configured
+  lower memory-derived caps retain memory errors (approved test update).
+
+### Metadata inventory
+
+- Reuse PR23 (`36c7ff1d`) behind default-off `inventory`; keep the normal codec
+  independent of structural inspection. Preserve typed unsupported and invariant
+  failures and latch one-shot timeouts across the walker/probe boundary.
+- Native/i686 and ExifTool checks passed; the 0.7.3 API audit retains pre-existing
+  error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
+
+### Fixed
+- Reject retained ICC/non-sRGB CICP in still and animation codec jobs instead of
+  silently emitting palette pixels without their color description. Callers
+  must convert to sRGB and explicitly drop the source metadata. Explicit sRGB
+  CICP is accepted after conversion. No signature changes.
+
+- Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
+  into cross; i686 no longer tries to create a cache under an unwritable home.
 
 - Transparent background disposal now signals a transparent index even when
   the preceding canvas is opaque. If that canvas uses all 256 palette indices,

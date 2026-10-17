@@ -106,7 +106,7 @@ cargo fuzz coverage fuzz_decode
 ## CI Integration
 
 For continuous fuzzing, consider:
-- [OSS-Fuzz](https://github.com/google/oss-fuzz) - Google's fuzzing infrastructure
+- [OSS-Fuzz](https://github.com/google/oss-fuzz) - hosted fuzzing infrastructure
 - [cifuzz](https://github.com/CodeIntelligenceTesting/cifuzz) - CI/CD integration
 
 ## Sanitizers

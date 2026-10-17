@@ -149,4 +149,61 @@ profile-view:
 # Native ARM audit; full output retained under ~/tmp.
 arm-bench-macos bench="decode_bench":
     mkdir -p "$HOME/tmp"
-    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p zengif --bench '{{bench}}' -- --format=llm > "$HOME/tmp/zengif-{{bench}}.log" 2>&1
+    TMPDIR="$HOME/tmp" "$HOME/work/claudehints/scripts/run-heavy" --mem 12G --jobs 4 -- cargo bench -p zengif --bench '{{bench}}' -- --format=llm > "$HOME/tmp/zengif-{{bench}}.log" 2>&1
+
+metadata-check:
+    cargo test --features inventory --test inventory --test inventory_review --test inventory_review_r4 --test inventory_review_r2 --test inventory_feature --test fuzz_regression
+    cargo clippy --features inventory --lib --tests -- -D warnings
+    cargo check --no-default-features
+    cargo test --test inventory_feature
+
+metadata-review-check:
+    cargo test --features inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
+    cargo clippy --features inventory --lib --tests -- -D warnings
+    cargo check --no-default-features
+    cargo test --test inventory_feature
+
+metadata-oracle:
+    INVENTORY_ORACLE_EXIFTOOL="$(command -v exiftool)" cargo test --features inventory --test inventory_oracle -- --nocapture
+
+metadata-portability:
+    CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --target i686-unknown-linux-gnu --features inventory --test inventory --test inventory_review --test inventory_review_r2 --test inventory_review_r4 --test inventory_feature --test fuzz_regression
+    cargo check --manifest-path fuzz/Cargo.toml --bin inventory
+    just api-doc
+
+metadata-api-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    baseline=$(cargo read zengif==0.7.3 --path-only)
+    RUSTC_BOOTSTRAP=1 cargo rustdoc --lib --features inventory -- -Zunstable-options --output-format json
+    RUSTC_BOOTSTRAP=1 cargo rustdoc --manifest-path "$baseline/Cargo.toml" --target-dir "$PWD/target/published-api/0.7.3" --lib --features zencodec -- -Zunstable-options --output-format json
+    cargo semver-checks check-release --current-rustdoc target/doc/zengif.json --baseline-rustdoc target/published-api/0.7.3/doc/zengif.json --release-type patch
+
+metadata-api-validation:
+    cargo check --manifest-path fuzz/Cargo.toml --bin inventory
+    just api-doc
+    just metadata-api-check
+
+metadata-part-limit-check:
+    cargo test --features inventory --test inventory part_cap_is_a_resource_error
+    cargo test --features inventory --test inventory_review max_memory_bounds_the_part_count
+    cargo clippy --features inventory --lib --test inventory --test inventory_review -- -D warnings
+
+metadata-cross-corpus-check:
+    cargo test --features inventory --test inventory check_inventory_on_the_conformance_corpus -- --exact
+    cargo test --features inventory --test inventory well_formed_files_have_no_image_data_tail -- --exact
+    actionlint .github/workflows/ci.yml
+
+metadata-color-admission-check:
+    cargo test --lib codec::tests
+    cargo clippy --lib -- -D warnings
+    cargo fmt --check
+
+# Adapter timing and metadata against the pinned shared contract.
+shared-contract-check:
+    cargo test --features inventory --test shared_contracts
+    cargo test --test shared_contracts
+    cargo test --no-default-features --features std --test shared_contracts
+    cargo clippy --features inventory --test shared_contracts -- -D warnings
+    cargo test --features inventory --lib codec::
+    cargo clippy --features inventory --lib -- -D warnings

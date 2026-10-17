@@ -12,36 +12,30 @@
 #   pub modules                                 1
 #   pub types (struct/enum/trait/alias)         1
 #   free functions                              2
-#   inherent methods                           14
+#   inherent methods                            9
 #   struct fields                               5
 #   trait roster entries (type × trait)        12
 #   auto-trait-complete types                   1
 #
 # per-module pub lines:
-#   (root)                           18
+#   (root)                           15
 #   __bench_expand                    2
-#   detect                            2
-#   heuristics                        1
+#   detect                            1
 
-## items (23 lines)
+## items (18 lines)
 
 #[non_exhaustive] pub struct InternalParams
-pub fn DisposalMethod::assert_fields_are_eq(&self)
 pub fn EncoderConfig::quantizer_backend(self, QuantizerBackend) -> Self
 pub fn EncoderConfig::with_internal_params(self, InternalParams) -> Self
-pub fn InternalParams::clone(&self) -> InternalParams
-pub fn InternalParams::default() -> InternalParams
+pub fn InternalParams::clone(&self) -> Self
+pub fn InternalParams::default() -> Self
 pub fn InternalParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub fn PaletteStrategy::assert_fields_are_eq(&self)
-pub fn QuantizerBackend::assert_fields_are_eq(&self)
 pub fn Repeat::assert_fields_are_eq(&self)
 pub fn Rgba::assert_fields_are_eq(&self)
 pub fn StatsSnapshot::assert_fields_are_eq(&self)
 pub fn __bench_expand::opaque(&mut [Rgba], &[u8], &[Rgba; 256])
 pub fn __bench_expand::transparent(&mut [Rgba], &[u8], &[Rgba; 256], u8)
-pub fn detect::FormatSuggestion::assert_fields_are_eq(&self)
 pub fn detect::ProbeError::assert_fields_are_eq(&self)
-pub fn heuristics::QuantizerType::assert_fields_are_eq(&self)
 pub mod __bench_expand
 pub EncoderConfig::quantizer_backend: QuantizerBackend
 pub InternalParams::dithering: core::option::Option<f32>
