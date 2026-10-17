@@ -375,6 +375,14 @@ MIT OR Apache-2.0 (dual license)
 
 ## Known Bugs
 
+- On Apple M4 Pro, `just arm-bench-macos decode_bench` currently reaches
+  zenbench 0.1.11 but cannot produce an admitted benchmark: `zenbench cpu-info`
+  reports an asymmetric Performance/Efficiency topology without an enforceable
+  process boundary on macOS. The bench refuses CPU placement before timing.
+  `--cpu-policy=unrestricted` is explicitly exploratory, so do not promote its
+  numbers as a baseline. The recipe no longer requests `--locked` because this
+  repo does not track a root Cargo.lock; that earlier failure is fixed.
+
 - The codec adapter discarded the color-emission plan while accepting retained
   ICC/CICP. Consumer CI caught silent color-description loss. Still and animation
   jobs now reject ICC/non-sRGB CICP; explicit sRGB CICP remains readable after
