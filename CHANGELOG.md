@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject unsupported or conflicting color/range/alpha interpretation before GIF frame admission. Supported F32 input is explicitly linear BT.709 in finite 0..1; unsupported ICC, HDR, premultiplied input and encoded F32 need prior conversion. Packing now checks cancellation per row, reserves fallibly, and checks its allocation against the configured memory bound.
+
 - Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.
 
 - Preserve the typed unsupported-operation cause through native errors and erased
@@ -57,10 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
 
 ### Fixed
-- Reject retained ICC/non-sRGB CICP in still and animation codec jobs instead of
-  silently emitting palette pixels without their color description. Callers
-  must convert to sRGB and explicitly drop the source metadata. Explicit sRGB
-  CICP is accepted after conversion. No signature changes.
+- Reject retained ICC, and CICP outside sRGB / linear BT.709, in still and
+  animation codec jobs instead of silently emitting palette pixels without their
+  color description; reject CICP that disagrees with the pixel descriptor before
+  each frame. Callers convert to sRGB
+  (or pass linear BT.709 F32, which is converted) and drop the source profile.
+  No signature changes.
 
 - Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
   into cross; i686 no longer tries to create a cache under an unwritable home.
