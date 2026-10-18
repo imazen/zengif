@@ -123,7 +123,8 @@ fn n1b_detect_rs_counts_more_frames_netscape_underclaimed() {
     println!("probe loop {pl:?}");
     let i = inv(&g);
     println!("{i}");
-    assert_eq!(pl.unwrap(), Some(5), "probe() reports loop 5");
+    // Native repeats 5 = 6 plays.
+    assert_eq!(pl.unwrap(), Some(6), "probe() reports 6 plays");
     assert_eq!(part_at(&i, ns as u64).disposition(), ANIM, "{i}");
 }
 

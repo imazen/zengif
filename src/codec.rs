@@ -205,6 +205,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     zencodec::encode::EncodeCapabilities::new()
         .with_stop(true)
         .with_animation(true)
+        .with_animation_timing(true)
         .with_lossless(true)
         .with_lossy(true)
         .with_native_alpha(true)
@@ -225,6 +226,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     zencodec::encode::EncodeCapabilities::new()
         .with_stop(true)
         .with_animation(true)
+        .with_animation_timing(true)
         .with_lossless(true)
         .with_lossy(true)
         .with_native_alpha(true)
@@ -660,8 +662,12 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
         if let Some(count) = self.loop_count {
             inner_config.repeat = match count {
                 Some(0) => Repeat::Infinite,
-                Some(n) => Repeat::Count(n as u16),
-                None => Repeat::Once,
+                Some(1) | None => Repeat::Once,
+                Some(n) => Repeat::Count(u16::try_from(n - 1).map_err(|_| {
+                    GifError::InvalidEncoderState {
+                        message: "GIF supports at most 65536 total animation plays",
+                    }
+                })?),
             };
         }
         resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
@@ -677,9 +683,11 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             canvas_size: self.canvas_size,
             encoder: None,
             has_frames: false,
+            stop: self.stop,
             begun: false,
             declared_frames: None,
             pushed: 0,
+            timing: GIF_TIMING,
         })
     }
 }
@@ -892,8 +900,9 @@ fn pixels_to_gif_rgba(
 /// Animation GIF encoder — streams frames to the underlying encoder.
 ///
 /// Frames are encoded immediately on [`push_frame`](Self::push_frame)
-/// rather than buffered until [`finish`](Self::finish), keeping peak
-/// memory proportional to one frame instead of all frames combined.
+/// rather than buffering all source pixels until [`finish`](Self::finish).
+/// Shared-palette mode can retain its configured frame window. The native
+/// writer retains compressed output bytes until finish.
 ///
 /// The underlying `zengif::Encoder` is created lazily on the first
 /// `push_frame` call, using either the explicit canvas size (from
@@ -910,13 +919,23 @@ pub struct GifAnimationFrameEncoder {
     encoder: Option<crate::encode::Encoder<'static>>,
     /// Whether at least one frame has been pushed.
     has_frames: bool,
+    stop: Option<zencodec::StopToken>,
     /// `begin` succeeded.
     begun: bool,
     /// The frame count `begin` declared, binding on `finish`.
     declared_frames: Option<u32>,
     /// Frames pushed.
     pushed: u32,
+    /// Rounding phase for [`push_frame_timed`](zencodec::encode::AnimationFrameEncoder::push_frame_timed).
+    timing: zencodec::animation::TimingQuantizer,
 }
+
+/// GIF frame delays are `u16` centiseconds.
+const GIF_TIMING: zencodec::animation::TimingQuantizer =
+    match zencodec::animation::TimingQuantizer::new(100, u16::MAX as u64) {
+        Ok(q) => q,
+        Err(_) => panic!("GIF timing clock is nonzero"),
+    };
 
 impl GifAnimationFrameEncoder {
     /// Ensure the underlying streaming encoder exists, creating it on first call.
@@ -926,20 +945,15 @@ impl GifAnimationFrameEncoder {
         frame_h: u16,
     ) -> Result<&mut crate::encode::Encoder<'static>, At<CodecError>> {
         if self.encoder.is_none() {
-            let (w, h) = self.canvas_size.map_or((frame_w, frame_h), |(cw, ch)| {
-                (
-                    cw.min(u16::MAX as u32) as u16,
-                    ch.min(u16::MAX as u32) as u16,
-                )
-            });
+            let (w, h) = (frame_w, frame_h);
 
             // Use Cow::Owned so config and limits are owned by the encoder
             // and dropped when it is dropped -- no memory leak.
             let config = std::borrow::Cow::Owned(self.inner_config.clone());
             let limits = std::borrow::Cow::Owned(self.gif_limits.clone());
 
-            // Encoder<'static> requires a 'static stop token. Per-frame
-            // stop checks are added in push_frame()/finish() instead.
+            // Call-scoped tokens enter through add_frame_with_stop and
+            // finish_with_stop; no borrowed token is retained by this owner.
             let stop: &'static dyn enough::Stop = &enough::Unstoppable;
 
             let enc = crate::encode::Encoder::build_encoder(config, w, h, limits, stop)
@@ -964,31 +978,43 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         duration_ms: u32,
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<(), At<CodecError>> {
-        if let Some(stop) = stop {
-            stop.check().map_err(GifError::Cancelled)?;
-        }
-        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
-        let delay_cs = ((duration_ms + 5) / 10).max(1) as u16;
-        let frame = FrameInput::new(w, h, delay_cs, rgba);
+        // This is the legacy quantizing API. Do not overflow or wrap the wire field.
+        let delay_cs = u16::try_from(((u64::from(duration_ms) + 5) / 10).max(1))
+            .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
+        self.push_frame_centiseconds(pixels, delay_cs, stop)
+    }
 
-        if let Some(n) = self.declared_frames
-            && self.pushed >= n
-        {
-            return Err(GifError::InvalidEncoderState {
-                message: "more frames than begin declared",
-            }
-            .into());
-        }
-        let enc = self.ensure_encoder(w, h)?;
-        enc.add_frame(frame).map_err(CodecError::of)?;
-        let total = enc.handed_out() + enc.pending_output().len() as u64;
-        self.gif_limits
-            .check_output_bytes(total)
-            .map_err(CodecError::of)?;
-        self.has_frames = true;
-        self.pushed += 1;
-        Ok(())
+    fn push_frame_exact(
+        &mut self,
+        pixels: PixelSlice<'_>,
+        duration: zencodec::animation::FrameDuration,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<(), At<CodecError>> {
+        let delay_cs = duration
+            .ticks_at(100)
+            .ok()
+            .and_then(|v| u16::try_from(v).ok())
+            .ok_or_else(|| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
+        self.push_frame_centiseconds(pixels, delay_cs, stop)
+    }
+
+    /// Rounds cumulative frame endpoints to GIF's centisecond clock, so
+    /// fractional durations (1/30 s) do not drift. The rounding phase
+    /// advances only when the frame is accepted.
+    fn push_frame_timed(
+        &mut self,
+        pixels: PixelSlice<'_>,
+        duration: zencodec::animation::FrameDuration,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<zencodec::animation::FrameDuration, At<CodecError>> {
+        let mut next = self.timing;
+        let encoded = next
+            .quantize(duration)
+            .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
+        self.push_frame_exact(pixels, encoded, stop)?;
+        self.timing = next;
+        Ok(encoded)
     }
 
     /// GIF writes each frame as it is pushed, so output streams at lag 0.
@@ -1060,9 +1086,61 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         self,
         stop: Option<&dyn zencodec::enough::Stop>,
     ) -> Result<EncodeOutput, At<CodecError>> {
-        if let Some(stop) = stop {
-            stop.check().map_err(GifError::Cancelled)?;
+        self.finish_inner(stop)
+    }
+}
+
+impl GifAnimationFrameEncoder {
+    fn push_frame_centiseconds(
+        &mut self,
+        pixels: PixelSlice<'_>,
+        delay_cs: u16,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<(), At<CodecError>> {
+        let job_stop = self.stop.clone();
+        let stop = crate::stop::AnimationStops(&job_stop, &stop);
+        enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
+        if pixels.width() == 0
+            || pixels.rows() == 0
+            || self
+                .canvas_size
+                .is_some_and(|size| size != (pixels.width(), pixels.rows()))
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "animation frame must match its nonempty canvas",
+            }
+            .into());
         }
+        if let Some(n) = self.declared_frames
+            && self.pushed >= n
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "more frames than begin declared",
+            }
+            .into());
+        }
+        let (rgba, w, h) = pixels_to_gif_rgba(&pixels)?;
+        let frame = FrameInput::new(w, h, delay_cs, rgba);
+
+        let enc = self.ensure_encoder(w, h)?;
+        enc.add_frame_with_stop(frame, &stop)
+            .map_err(CodecError::of)?;
+        let total = enc.handed_out() + enc.pending_output().len() as u64;
+        self.gif_limits
+            .check_output_bytes(total)
+            .map_err(CodecError::of)?;
+        self.has_frames = true;
+        self.canvas_size = Some((u32::from(w), u32::from(h)));
+        self.pushed += 1;
+        Ok(())
+    }
+
+    fn finish_inner(
+        self,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<EncodeOutput, At<CodecError>> {
+        let stop = crate::stop::AnimationStops(&self.stop, &stop);
+        enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
         if let Some(n) = self.declared_frames
             && self.pushed != n
         {
@@ -1088,8 +1166,8 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
             .into());
         }
 
-        // `finish` writes the trailer and checks the whole file's size.
-        let data = enc.finish().map_err(CodecError::of)?;
+        // `finish_with_stop` writes the trailer and checks the whole file's size.
+        let data = enc.finish_with_stop(&stop).map_err(CodecError::of)?;
         Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 }
@@ -1336,7 +1414,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
                 .with_sequence(if p.is_animated {
                     ImageSequence::Animation {
                         frame_count: Some(p.frame_count),
-                        loop_count: p.repeat.map(|r| r as u32),
+                        loop_count: Some(gif_total_plays(p.repeat)),
                         random_access: false,
                     }
                 } else {
@@ -1373,7 +1451,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             frame_count += 1;
         }
 
-        let loop_count = probe.as_ref().and_then(|p| p.repeat.map(|r| r as u32));
+        let loop_count = probe.as_ref().map(|p| gif_total_plays(p.repeat));
 
         let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
 
@@ -1547,10 +1625,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             )
             .with_alpha(has_alpha)
             .with_progressive(has_interlacing)
-            .with_sequence(if metadata.frame_count > 1 {
+            .with_sequence(if probe.as_ref().is_some_and(|p| p.is_animated) {
                 ImageSequence::Animation {
-                    frame_count: Some(metadata.frame_count as u32),
-                    loop_count: None,
+                    frame_count: probe.as_ref().map(|p| p.frame_count),
+                    loop_count: probe.as_ref().map(|p| gif_total_plays(p.repeat)),
                     random_access: false,
                 }
             } else {
@@ -1560,6 +1638,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         Ok(GifAnimationFrameDecoder {
             decoder,
             shared_info,
+            // Same reading as `shared_info`: a still plays once, and a NETSCAPE
+            // block in a file probe() classifies as a still is dropped.
+            loop_count: probe.as_ref().map(|p| {
+                if p.is_animated {
+                    gif_total_plays(p.repeat)
+                } else {
+                    1
+                }
+            }),
             current_frame: None,
             frame_index: 0,
             start_frame_index: self.start_frame_index,
@@ -1708,10 +1795,10 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         )
         .with_alpha(has_alpha)
         .with_progressive(has_interlacing)
-        .with_sequence(if metadata.frame_count > 1 {
+        .with_sequence(if source_probe.as_ref().is_some_and(|p| p.is_animated) {
             ImageSequence::Animation {
-                frame_count: Some(metadata.frame_count as u32),
-                loop_count: None,
+                frame_count: source_probe.as_ref().map(|p| p.frame_count),
+                loop_count: source_probe.as_ref().map(|p| gif_total_plays(p.repeat)),
                 random_access: false,
             }
         } else {
@@ -1728,12 +1815,22 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
     }
 }
 
+// GIF's extension stores repeats after the first play. Absence means one play.
+fn gif_total_plays(repeat: Option<u16>) -> u32 {
+    match repeat {
+        None => 1,
+        Some(0) => 0,
+        Some(n) => u32::from(n) + 1,
+    }
+}
+
 // ── GifAnimationFrameDecoder ──────────────────────────────────────────────
 
 /// Animation GIF decoder — yields frames one at a time.
 pub struct GifAnimationFrameDecoder {
     decoder: Decoder<'static, std::io::Cursor<Vec<u8>>>,
     shared_info: Arc<ImageInfo>,
+    loop_count: Option<u32>,
     /// Stores the current frame's pixel data so `render_next_frame` can
     /// return a borrowing `AnimationFrame<'_>`.
     current_frame: Option<(PixelBuffer, u32, u32)>,
@@ -1765,11 +1862,15 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
     }
 
     fn loop_count(&self) -> Option<u32> {
-        match self.decoder.metadata().repeat {
-            Repeat::Infinite => Some(0),
-            Repeat::Count(n) => Some(n as u32),
-            Repeat::Once => Some(1),
-        }
+        self.loop_count.or_else(|| {
+            // A streaming decoder has not necessarily consumed the extension
+            // until the first frame. Do not infer infinity from its placeholder.
+            (self.frame_index > 0).then(|| match self.decoder.metadata().repeat {
+                Repeat::Infinite => 0,
+                Repeat::Count(n) => u32::from(n) + 1,
+                Repeat::Once => 1,
+            })
+        })
     }
 
     fn render_next_frame(

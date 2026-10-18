@@ -445,8 +445,10 @@ fn q3_netscape_after_unknown_block_before_first_image() {
     while d.render_next_frame(None).unwrap().is_some() {}
     let anim = d.loop_count();
     println!("probe {probe:?}, animation decoder {anim:?}");
-    assert_eq!(probe, Some(7));
-    assert_ne!(anim, Some(3));
+    // Native repeats 7 = 8 plays.
+    assert_eq!(probe, Some(8));
+    // The first NETSCAPE (3 repeats = 4 plays) must not win, in either reading.
+    assert!(!matches!(anim, Some(3 | 4)), "{anim:?}");
     assert_ne!(m.repeat, zengif::Repeat::Count(3));
     let i = inv(&g);
     println!("{i}");
@@ -744,7 +746,12 @@ fn q12_late_netscape_in_single_frame_file() {
         .unwrap();
     while d.render_next_frame(None).unwrap().is_some() {}
     println!("animation decoder loop_count {:?}", d.loop_count());
-    assert_ne!(d.loop_count(), Some(5));
+    // Native repeats 5 = 6 plays; neither reading may surface.
+    assert!(
+        !matches!(d.loop_count(), Some(5 | 6)),
+        "{:?}",
+        d.loop_count()
+    );
     let i = inv(&g);
     println!("{i}");
     assert_eq!(part_at(&i, ns as u64).disposition(), D::Dropped, "{i}");

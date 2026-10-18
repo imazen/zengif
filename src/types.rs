@@ -206,7 +206,9 @@ pub enum Repeat {
     #[default]
     Infinite,
 
-    /// Loop a specific number of times.
+    /// Repeat this many times after the first play (the native GIF wire count).
+    /// `Count(0)` behaves like `Once`; use `Infinite` for unbounded playback.
+    /// The zencodec adapter instead accepts total plays, including the first.
     Count(u16),
 }
 

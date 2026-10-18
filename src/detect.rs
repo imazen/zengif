@@ -92,7 +92,7 @@ pub struct GifProbe {
     /// - `None` — no NETSCAPE extension found (GIF87a or single-frame GIF89a).
     ///   Treat as play-once.
     /// - `Some(0)` — loop forever.
-    /// - `Some(n)` — loop `n` times.
+    /// - `Some(n)` — repeat `n` times after the first play (`n + 1` total).
     pub repeat: Option<u16>,
     /// Suggestions for re-encoding or format conversion.
     pub suggestions: Vec<FormatSuggestion>,

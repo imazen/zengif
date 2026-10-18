@@ -34,6 +34,14 @@ fn io_display_no_std(context: Option<&'static str>) -> &'static str {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum GifError {
+    /// A native caller's packed RGBA vector does not match its dimensions.
+    #[error("frame pixel count {actual} does not match expected {expected}")]
+    FrameBufferLength {
+        /// Required number of RGBA pixels.
+        expected: usize,
+        /// Supplied number of RGBA pixels.
+        actual: usize,
+    },
     // === Header/Format Errors ===
     /// Invalid GIF header (not GIF87a or GIF89a).
     #[error("invalid GIF header")]
@@ -469,7 +477,9 @@ impl zencodec::CategorizedError for GifError {
             // declared dimensions don't match the encoder's canvas. The bytes
             // aren't the problem — the caller passed the wrong-shaped buffer —
             // so this is a Request-origin fault, not an Image-origin one.
-            GifError::FrameDimensionMismatch { .. } => C::Request(Req::Invalid(Inv::Buffer)),
+            GifError::FrameDimensionMismatch { .. } | GifError::FrameBufferLength { .. } => {
+                C::Request(Req::Invalid(Inv::Buffer))
+            }
 
             // === Truncated input ===
             GifError::UnexpectedEof => C::Image(Img::UnexpectedEof),

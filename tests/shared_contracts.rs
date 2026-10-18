@@ -17,11 +17,38 @@ mod encode_checks {
     use zengif::{GifDecoderConfig as D, GifEncoderConfig as E};
 
     #[test]
-    fn unsupported_rational_timing_does_not_damage_legacy_frames() {
-        tk::check_animation_timing_unsupported(
+    fn rational_timing_is_exact_or_rounded_on_the_centisecond_clock() {
+        use zencodec::animation::FrameDuration;
+        let cs = |n| Some(FrameDuration::new(n, 100).unwrap());
+        let img = tk::TestImage::rgb8_gradient(4, 3);
+        // Exact: whole centiseconds (including 0 and u16::MAX) are kept;
+        // anything finer or larger is rejected without accepting the frame.
+        tk::check_animation_timing(
             E::new(),
             D::new(),
-            tk::TestImage::rgb8_gradient(4, 3).as_slice(),
+            img.as_slice(),
+            true,
+            &[
+                (FrameDuration::new(0, 100).unwrap(), cs(0)),
+                (FrameDuration::new(1, 30).unwrap(), None),
+                (FrameDuration::from_millis(10), cs(1)),
+                (FrameDuration::new(65536, 100).unwrap(), None),
+                (FrameDuration::new(65535, 100).unwrap(), cs(65535)),
+            ],
+        )
+        .unwrap();
+        // Timed: cumulative endpoints round to the clock (3.33, 6.67, 10 cs).
+        tk::check_animation_timing(
+            E::new(),
+            D::new(),
+            img.as_slice(),
+            false,
+            &[
+                (FrameDuration::new(1, 30).unwrap(), cs(3)),
+                (FrameDuration::new(u64::MAX, 1).unwrap(), None),
+                (FrameDuration::new(1, 30).unwrap(), cs(4)),
+                (FrameDuration::new(1, 30).unwrap(), cs(3)),
+            ],
         )
         .unwrap();
     }

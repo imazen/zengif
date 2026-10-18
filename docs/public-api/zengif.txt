@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zengif.txt 519 lines (supported surface) | zengif.features.txt 37 added (features: color_quant,imagequant,imgref,imgref-interop,inventory,quantette,quantizr,std,zenquant) | zengif.internal.txt 34 lines (23 hidden + 19 excluded-feature)
+# files: zengif.txt 528 lines (supported surface) | zengif.features.txt 37 added (features: color_quant,imagequant,imgref,imgref-interop,inventory,quantette,quantizr,std,zenquant) | zengif.internal.txt 29 lines (18 hidden + 19 excluded-feature)
 
 ## summary
 #
@@ -14,21 +14,21 @@
 #   pub types (struct/enum/trait/alias)        49
 #   pub consts/statics                          7
 #   free functions                             19
-#   inherent methods                          158
-#   struct fields                             162
-#   enum variants                              63
+#   inherent methods                          164
+#   struct fields                             164
+#   enum variants                              64
 #   re-exports                                  2
 #   trait roster entries (type × trait)       135
 #   auto-trait-complete types                  34
 #   auto-trait exceptions                      11
 #
 # per-module pub lines:
-#   (root)                          366
+#   (root)                          375
 #   detect                           35
 #   heuristics                       30
 #   sweep                            33
 
-## items (464 lines)
+## items (473 lines)
 
 pub mod zengif
 pub use Stop
@@ -160,6 +160,9 @@ pub GifError::DimensionsTooLarge::width: u16
 pub GifError::FileTooLarge
 pub GifError::FileTooLarge::max: u64
 pub GifError::FileTooLarge::size: u64
+pub GifError::FrameBufferLength
+pub GifError::FrameBufferLength::actual: usize
+pub GifError::FrameBufferLength::expected: usize
 pub GifError::FrameDimensionMismatch
 pub GifError::FrameDimensionMismatch::actual_height: u16
 pub GifError::FrameDimensionMismatch::actual_width: u16
@@ -250,7 +253,7 @@ pub fn ComposedFrame::get_pixel(&self, u16, u16) -> core::option::Option<Rgba>
 pub fn ComposedFrame::new(usize, u16, u16, u16, alloc::vec::Vec<Rgba>) -> Self
 pub fn ComposedFrame::pixel_count(&self) -> usize
 pub fn ComposedFrame::with_palette(usize, u16, u16, u16, alloc::vec::Vec<Rgba>, Palette) -> Self
-pub struct Decoder<'a, R: std::io::Read>
+pub struct Decoder<'a, R: alloc::io::read::Read>
 pub fn Decoder<'a, R>::decode_all(&mut self) -> Result<alloc::vec::Vec<ComposedFrame>>
 pub fn Decoder<'a, R>::frame_index(&self) -> usize
 pub fn Decoder<'a, R>::frames(self) -> FrameIterator<'a, R>
@@ -269,17 +272,23 @@ pub struct EncodeRequest<'a>
 pub fn EncodeRequest<'a>::build(self) -> Result<Encoder<'a>>
 pub fn EncodeRequest<'a>::encode(self, alloc::vec::Vec<FrameInput>) -> Result<alloc::vec::Vec<u8>>
 pub fn EncodeRequest<'a>::encode_into(self, alloc::vec::Vec<FrameInput>, &mut alloc::vec::Vec<u8>) -> Result<()>
-pub fn EncodeRequest<'a>::encode_to<W: std::io::Write>(self, alloc::vec::Vec<FrameInput>, W) -> Result<()>
+pub fn EncodeRequest<'a>::encode_to<W: core::io::write::Write>(self, alloc::vec::Vec<FrameInput>, W) -> Result<()>
 pub fn EncodeRequest<'a>::limits(self, &'a Limits) -> Self
 pub fn EncodeRequest<'a>::new(&'a EncoderConfig, u16, u16) -> Self
 pub fn EncodeRequest<'a>::stop(self, &'a dyn enough::Stop) -> Self
 pub struct Encoder<'a>
 pub fn Encoder<'a>::add_frame(&mut self, FrameInput) -> Result<()>
+pub fn Encoder<'a>::add_frame_with_stop(&mut self, FrameInput, &dyn enough::Stop) -> Result<()>
 pub fn Encoder<'a>::config(&self) -> &EncoderConfig
+pub fn Encoder<'a>::consume_output(&mut self, usize)
 pub fn Encoder<'a>::finish(self) -> Result<alloc::vec::Vec<u8>>
+pub fn Encoder<'a>::finish_with_stop(self, &dyn enough::Stop) -> Result<alloc::vec::Vec<u8>>
 pub fn Encoder<'a>::frame_index(&self) -> usize
 pub fn Encoder<'a>::from_metadata(&Metadata, &'a Limits, &'a dyn enough::Stop) -> Result<Self>
+pub fn Encoder<'a>::handed_out(&self) -> u64
+pub fn Encoder<'a>::pending_output(&self) -> &[u8]
 pub fn Encoder<'a>::stats(&self) -> &Stats
+pub fn Encoder<'a>::take_output(&mut self, &mut alloc::vec::Vec<u8>)
 #[non_exhaustive] pub struct EncoderConfig
 pub EncoderConfig::dithering: f32
 pub EncoderConfig::global_palette: core::option::Option<alloc::vec::Vec<Rgba>>
@@ -316,7 +325,7 @@ pub FrameInput::width: u16
 pub fn FrameInput::from_bytes(u16, u16, u16, &[u8]) -> Self
 pub fn FrameInput::new(u16, u16, u16, alloc::vec::Vec<Rgba>) -> Self
 pub fn FrameInput::with_palette(u16, u16, u16, alloc::vec::Vec<Rgba>, Palette) -> Self
-pub struct FrameIterator<'a, R: std::io::Read>
+pub struct FrameIterator<'a, R: alloc::io::read::Read>
 pub struct GifAnimationFrameDecoder
 pub struct GifAnimationFrameEncoder
 pub struct GifDecodeJob
@@ -510,7 +519,7 @@ GifDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConf
 GifEncodeJob: zencodec::traits::encoding::EncodeJob
 GifEncoder: zencodec::traits::encoder::Encoder
 GifEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
-GifError: Debug, Display, Error, From<enough::reason::StopReason>, From<gif::encoder::EncodingError>, From<gif::reader::decoder::DecodingError>, From<std::io::error::Error>, From<zencodec::capabilities::UnsupportedOperation>, zencodec::error::CategorizedError
+GifError: Debug, Display, Error, From<core::io::error::Error>, From<enough::reason::StopReason>, From<gif::encoder::EncodingError>, From<gif::reader::decoder::DecodingError>, From<zencodec::capabilities::UnsupportedOperation>, zencodec::error::CategorizedError
 Limits: Clone, Debug, Default
 Metadata: Clone, Debug, Default
 Palette: Clone, Debug, Default

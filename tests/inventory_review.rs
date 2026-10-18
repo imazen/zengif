@@ -471,5 +471,7 @@ fn animation_decoder_still_agrees_on_the_fixture() {
         n += 1;
     }
     assert_eq!(n, 2);
-    assert_eq!(d.loop_count(), Some(3));
+    // The fixture's NETSCAPE block repeats 3 times: 4 plays in total, which is
+    // what zencodec's `loop_count` reports.
+    assert_eq!(d.loop_count(), Some(4));
 }
