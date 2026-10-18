@@ -114,7 +114,7 @@ fn exact_delays_preserve_zero_and_u16_max_and_reject_before_accepting() {
     ] {
         assert!(
             encoder
-                .push_frame_timed(pixels.as_slice(), duration, None)
+                .push_frame_exact(pixels.as_slice(), duration, None)
                 .is_err()
         );
     }
@@ -125,7 +125,7 @@ fn exact_delays_preserve_zero_and_u16_max_and_reject_before_accepting() {
     );
     for centiseconds in [0, 1, 65535] {
         encoder
-            .push_frame_timed(
+            .push_frame_exact(
                 pixels.as_slice(),
                 FrameDuration::new(centiseconds, 100).unwrap(),
                 None,
@@ -143,6 +143,55 @@ fn exact_delays_preserve_zero_and_u16_max_and_reject_before_accepting() {
             frame.duration(),
             FrameDuration::new(centiseconds, 100).unwrap()
         );
+    }
+    assert!(decoder.render_next_frame(None).unwrap().is_none());
+}
+
+#[test]
+fn timed_delays_round_cumulative_endpoints_without_drift() {
+    let pixels = pixels();
+    let mut encoder = GifEncoderConfig::new()
+        .job()
+        .animation_frame_encoder()
+        .unwrap();
+    let third = FrameDuration::new(1, 30).unwrap();
+    assert!(
+        encoder
+            .push_frame_exact(pixels.as_slice(), third, None)
+            .is_err()
+    );
+    // A rejected frame must not advance the rounding phase.
+    assert!(
+        encoder
+            .push_frame_timed(
+                pixels.as_slice(),
+                FrameDuration::new(65536, 100).unwrap(),
+                None
+            )
+            .is_err()
+    );
+    let mut returned = Vec::new();
+    for _ in 0..6 {
+        returned.push(
+            encoder
+                .push_frame_timed(pixels.as_slice(), third, None)
+                .unwrap(),
+        );
+    }
+    // Endpoints 3.33, 6.67, 10, ... cs round to 3, 7, 10, ...
+    let expected: Vec<_> = [3, 4, 3, 3, 4, 3]
+        .into_iter()
+        .map(|cs| FrameDuration::new(cs, 100).unwrap())
+        .collect();
+    assert_eq!(returned, expected);
+    let encoded = encoder.finish(None).unwrap();
+    let mut decoder = GifDecoderConfig::new()
+        .job()
+        .animation_frame_decoder(Cow::Borrowed(encoded.data()), &[])
+        .unwrap();
+    for duration in &expected {
+        let frame = decoder.render_next_frame(None).unwrap().unwrap();
+        assert_eq!(frame.duration(), *duration);
     }
     assert!(decoder.render_next_frame(None).unwrap().is_none());
 }

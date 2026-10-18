@@ -91,6 +91,18 @@ fn fuzz_regression() {
                 }
             }
         })
+        .target("inventory", |_input| {
+            #[cfg(feature = "inventory")]
+            {
+                use zencodec::decode::{DecodeJob, DecoderConfig};
+                let inv = zengif::GifDecoderConfig::new()
+                    .job()
+                    .inventory(_input)
+                    .expect("inventory must not fail on regression inputs");
+                assert_eq!(inv.input_len(), _input.len() as u64);
+                inv.validate().expect("inventory must validate");
+            }
+        })
         .target("roundtrip", |input| {
             let limits = Limits::default()
                 .max_dimensions(256, 256)

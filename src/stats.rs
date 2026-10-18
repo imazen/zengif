@@ -93,11 +93,13 @@ impl Stats {
     pub fn track_dealloc(&self, bytes: usize) {
         self.dealloc_count.fetch_add(1, Ordering::Relaxed);
         self.total_deallocated.fetch_add(bytes, Ordering::Relaxed);
-        self.current_bytes
+        // `try_update` is the new name but needs Rust 1.95; MSRV is 1.93.
+        #[allow(deprecated)]
+        let _ = self
+            .current_bytes
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 Some(current.saturating_sub(bytes))
-            })
-            .ok();
+            });
     }
 
     /// Get current memory usage in bytes.

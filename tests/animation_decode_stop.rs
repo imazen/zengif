@@ -154,3 +154,23 @@ fn exact_frame_limit_allows_eof_but_rejects_an_extra_frame() {
         }
     }
 }
+
+#[test]
+fn animation_probe_does_not_swallow_a_one_shot_timeout() {
+    // Entry poll succeeds; the probe sees the one-shot timeout.
+    let error = match zengif::GifDecoderConfig::new()
+        .job()
+        .with_stop(zencodec::StopToken::new(Pulse(AtomicUsize::new(0))))
+        .animation_frame_decoder(Cow::Owned(animation()), &[])
+    {
+        Ok(_) => panic!("probe discarded timeout"),
+        Err(error) => error,
+    };
+    assert!(
+        matches!(
+            error.error().category(),
+            zencodec::ErrorCategory::Stopped(StopReason::TimedOut)
+        ),
+        "{error:?}"
+    );
+}
