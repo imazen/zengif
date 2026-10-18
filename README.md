@@ -516,3 +516,10 @@ zengif = { version = "0.7", default-features = false, features = ["std", "quante
 [imageflow-dotnet]: https://github.com/imazen/imageflow-dotnet
 [imageflow-node]: https://github.com/imazen/imageflow-node
 [imageflow-go]: https://github.com/imazen/imageflow-go
+
+The native decoder accepts borrowed cancellation with `Decoder::new`, or an
+owned `Arc<dyn Stop>` with `Decoder::with_owned_stop`. The shared animation
+adapter retains its job token and polls it on compressed reads. GIF's buffered
+LZW work cannot be interrupted between reads. Per-call animation cancellation
+is checked around frame work and within the skip loop; a failed animation
+adapter cannot be reused.

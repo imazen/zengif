@@ -16,6 +16,20 @@ use crate::screen::{Screen, ScreenBuilder};
 use crate::stats::Stats;
 use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, Repeat, Rgba};
 
+#[derive(Clone)]
+enum DecodeStop<'a> {
+    Borrowed(&'a dyn Stop),
+    Owned(Arc<dyn Stop>),
+}
+impl Stop for DecodeStop<'_> {
+    fn check(&self) -> core::result::Result<(), enough::StopReason> {
+        match self {
+            Self::Borrowed(s) => s.check(),
+            Self::Owned(s) => s.check(),
+        }
+    }
+}
+
 /// A reader wrapper that counts bytes read and checks for cancellation.
 ///
 /// Used to:
@@ -34,11 +48,11 @@ use crate::types::{ComposedFrame, DisposalMethod, Metadata, Palette, RawFrame, R
 struct StopCheckingRead<'a, R> {
     inner: R,
     bytes_read: Arc<AtomicUsize>,
-    stop: &'a dyn Stop,
+    stop: DecodeStop<'a>,
 }
 
 impl<'a, R> StopCheckingRead<'a, R> {
-    fn new(inner: R, stop: &'a dyn Stop) -> (Self, Arc<AtomicUsize>) {
+    fn new(inner: R, stop: DecodeStop<'a>) -> (Self, Arc<AtomicUsize>) {
         let bytes_read = Arc::new(AtomicUsize::new(0));
         (
             Self {
@@ -54,11 +68,10 @@ impl<'a, R> StopCheckingRead<'a, R> {
 impl<R: Read> Read for StopCheckingRead<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Check for cancellation on every read
-        if self.stop.check().is_err() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                "cancelled",
-            ));
+        if let Err(reason) = self.stop.check() {
+            // Interrupted asks read_exact/BufReader to retry. Persistent
+            // cancellation must terminate the read, retaining its reason.
+            return Err(std::io::Error::other(crate::error::CancelledRead(reason)));
         }
 
         let n = self.inner.read(buf)?;
@@ -146,7 +159,7 @@ pub struct Decoder<'a, R: Read> {
     stats: Stats,
 
     /// Cancellation checker.
-    stop: &'a dyn Stop,
+    stop: DecodeStop<'a>,
 
     /// Whether we've finished reading all frames.
     finished: bool,
@@ -164,6 +177,17 @@ pub struct Decoder<'a, R: Read> {
     cumulative_duration_ms: u64,
 }
 
+impl<R: Read> Decoder<'static, R> {
+    /// Create a decoder retaining an owned cancellation checker.
+    ///
+    /// Polls before frames and every compressed read, including when the
+    /// decoder is stored independently of the job that created it. The GIF
+    /// library's buffered LZW work does not poll between reads.
+    pub fn with_owned_stop(reader: R, limits: Limits, stop: Arc<dyn Stop>) -> Result<Self> {
+        Self::with_stop_source(reader, limits, DecodeStop::Owned(stop))
+    }
+}
+
 // Stats is always owned by the decoder - no unsafe raw pointers.
 
 impl<'a, R: Read> Decoder<'a, R> {
@@ -177,13 +201,17 @@ impl<'a, R: Read> Decoder<'a, R> {
     /// * `limits` - Size and memory limits
     /// * `stop` - Cancellation checker (checked on every read)
     pub fn new(reader: R, limits: Limits, stop: &'a dyn Stop) -> Result<Self> {
+        Self::with_stop_source(reader, limits, DecodeStop::Borrowed(stop))
+    }
+
+    fn with_stop_source(reader: R, limits: Limits, stop: DecodeStop<'a>) -> Result<Self> {
         let stats = Stats::new();
 
         // Check for cancellation
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
         // Wrap in StopCheckingRead to track bytes and enable cancellation during reads
-        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop);
+        let (mut stop_reader, bytes_read) = StopCheckingRead::new(reader, stop.clone());
 
         // Pre-validate header and check dimensions BEFORE gif crate can allocate
         let (header, width, height, par_byte) = pre_validate_header(&mut stop_reader, &limits)?;

@@ -187,17 +187,38 @@ pub fn probe_with_limits(
     limits: &Limits,
     stop: &dyn Stop,
 ) -> Result<GifProbe, ProbeError> {
-    probe_located(data, limits, stop).map(|(probe, _)| probe)
+    probe_with_stop_reason(data, limits, stop, &mut None)
+}
+
+// Preserve the reason for internal codec adapters without changing ProbeError's
+// public unit variant. The public probe API retains its existing error shape.
+pub(crate) fn probe_with_stop_reason(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn Stop,
+    stopped: &mut Option<enough::StopReason>,
+) -> Result<GifProbe, ProbeError> {
+    probe_located_with_stop_reason(data, limits, stop, stopped).map(|(probe, _)| probe)
 }
 
 /// [`probe_with_limits`], also returning the offset of the `0x21` introducer of
 /// the NETSCAPE2.0 extension whose loop count ended up in
 /// [`GifProbe::repeat`]. The structural inventory uses it to say which bytes
 /// `probe()` reads.
+#[cfg(feature = "inventory")]
 pub(crate) fn probe_located(
     data: &[u8],
     limits: &Limits,
     stop: &dyn Stop,
+) -> Result<(GifProbe, Option<usize>), ProbeError> {
+    probe_located_with_stop_reason(data, limits, stop, &mut None)
+}
+
+fn probe_located_with_stop_reason(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn Stop,
+    stopped: &mut Option<enough::StopReason>,
 ) -> Result<(GifProbe, Option<usize>), ProbeError> {
     // GIF minimum: header(6) + logical screen descriptor(7) = 13 bytes
     if data.len() < 13 {
@@ -271,7 +292,10 @@ pub(crate) fn probe_located(
         iters = iters.saturating_add(1);
 
         // Cancellation poll: cheap when Unstoppable, bounded latency otherwise.
-        if frame_count.is_multiple_of(PROBE_STOP_POLL_INTERVAL) && stop.check().is_err() {
+        if frame_count.is_multiple_of(PROBE_STOP_POLL_INTERVAL)
+            && let Err(reason) = stop.check()
+        {
+            *stopped = Some(reason);
             return Err(ProbeError::Cancelled);
         }
 

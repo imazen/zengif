@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
   into cross; i686 no longer tries to create a cache under an unwritable home.
 
+- GIF read cancellation is terminal and preserves the original stop reason.
+  Returning `Interrupted` previously asked `read_exact` to retry cancellation.
+- Animation decoders retain the job token using `Decoder::with_owned_stop` and
+  poll it on compressed reads. Borrowed per-call cancellation is checked while
+  skipping frames and after composition. Failed wrapper state cannot resume.
+  Buffered LZW computation itself still only polls at reader boundaries.
+
+
 - Transparent background disposal now signals a transparent index even when
   the preceding canvas is opaque. If that canvas uses all 256 palette indices,
   merge its least-used color into the nearest RGB neighbor to free one index;
