@@ -375,9 +375,6 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Check for cancellation periodically
         self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
-        // Check frame count limit
-        self.limits.check_frame_count(self.frame_index as u64)?;
-
         // Try to read the next frame info
         let frame_info = match self.reader.next_frame_info() {
             Ok(Some(info)) => info.clone(),
@@ -397,6 +394,10 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Err(at!(GifError::from(e)));
             }
         };
+
+        // EOF is not a frame. Apply the bound only after finding a header,
+        // before allocating or decoding its pixels.
+        self.limits.check_frame_count(self.frame_index as u64)?;
 
         // Reject zero-dimension frames: the gif crate's LZW decoder loops
         // forever when given a zero-length output buffer because it keeps
@@ -503,9 +504,6 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Check for cancellation periodically
         self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
-        // Check frame count limit
-        self.limits.check_frame_count(self.frame_index as u64)?;
-
         // Try to read the next frame info
         let frame_info = match self.reader.next_frame_info() {
             Ok(Some(info)) => info.clone(),
@@ -521,6 +519,10 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Err(at!(GifError::from(e)));
             }
         };
+
+        // EOF is not a frame. Apply the bound only after finding a header,
+        // before allocating or decoding its pixels.
+        self.limits.check_frame_count(self.frame_index as u64)?;
 
         // Reject zero-dimension frames (same as next_frame — prevents
         // infinite loop in the gif crate's LZW decoder).
@@ -626,9 +628,6 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Check for cancellation periodically
         self.stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 
-        // Check frame count limit
-        self.limits.check_frame_count(self.frame_index as u64)?;
-
         // Try to read the next frame info
         let frame_info = match self.reader.next_frame_info() {
             Ok(Some(info)) => info.clone(),
@@ -645,6 +644,10 @@ impl<'a, R: Read> Decoder<'a, R> {
                 return Err(at!(GifError::from(e)));
             }
         };
+
+        // EOF is not a frame. Apply the bound only after finding a header,
+        // before allocating or decoding its pixels.
+        self.limits.check_frame_count(self.frame_index as u64)?;
 
         // Reject zero-dimension frames (same as next_frame — prevents
         // infinite loop in the gif crate's LZW decoder).

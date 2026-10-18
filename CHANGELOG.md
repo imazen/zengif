@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Streaming animation output (zencodec `AnimationFrameEncoder::begin`): GIF writes
-  each frame as it is pushed, so `begin` reports `streaming(0)`; with a shared
-  palette, frames wait until the palette is built (`streaming(max_buffer_frames - 1)`,
-  or `AT_FINISH` when the declared frame count fits the buffer). The streamed file is
+  each frame when the next one arrives (its disposal depends on the next display),
+  so `begin` reports `streaming(1)`; with a shared palette, frames wait until the
+  palette is built (`streaming(max_buffer_frames - 1)`, at least 1), or `AT_FINISH`
+  when the declared frame count fits the lag. The streamed file is
   byte-identical to the encode without `begin`. `pending_output` / `consume_output` /
   `take_output` drain it; a declared frame count binds `push_frame` and `finish`.
   The inner `Encoder` gains `pending_output`, `consume_output`, `take_output` and
@@ -25,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+
+- Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.
 
 - Preserve the typed unsupported-operation cause through native errors and erased
   dispatch; timing refusal now supports `CodecErrorExt::unsupported_operation`.

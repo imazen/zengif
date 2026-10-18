@@ -121,6 +121,41 @@ fn borrowed_cancellation_is_polled_inside_skip_loop() {
 }
 
 #[test]
+fn exact_frame_limit_allows_eof_but_rejects_an_extra_frame() {
+    for mode in 0..3 {
+        for limit in [2, 3] {
+            let mut limits = zengif::Limits::default();
+            limits.max_frame_count = Some(limit);
+            let mut decoder = zengif::Decoder::new(
+                std::io::Cursor::new(animation()),
+                limits,
+                &enough::Unstoppable,
+            )
+            .unwrap();
+            // The take API transfers the canvas and is intentionally final.
+            for _ in 1..limit {
+                assert!(decoder.next_frame().unwrap().is_some());
+            }
+            let mut next = || match mode {
+                0 => decoder.next_frame().map(|x| x.is_some()),
+                1 => decoder.next_frame_take().map(|x| x.is_some()),
+                _ => decoder.with_next_frame(|_, _, _| ()).map(|x| x.is_some()),
+            };
+            assert!(next().unwrap());
+            if limit == 3 {
+                assert!(
+                    !next().unwrap(),
+                    "EOF was counted as another frame, mode={mode}"
+                );
+                assert!(!next().unwrap());
+            } else {
+                assert!(next().is_err(), "extra frame accepted, mode={mode}");
+            }
+        }
+    }
+}
+
+#[test]
 fn animation_probe_does_not_swallow_a_one_shot_timeout() {
     // Entry poll succeeds; the probe sees the one-shot timeout.
     let error = match zengif::GifDecoderConfig::new()
