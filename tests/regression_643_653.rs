@@ -385,36 +385,10 @@ fn issue_653_opaque_then_transparent_frames() {
     let f1_all_opaque = frames[0].pixels.iter().all(|p| p.a == 255);
     assert!(f1_all_opaque, "frame 0 should be fully opaque");
 
-    // Frame 2: bottom half should be opaque (red), top half depends on
-    // disposal method. With Keep disposal, top half shows frame 1's green
-    // (opaque). With Background disposal, top half would be transparent.
-    // Either way, bottom half must be opaque.
+    // The second full display has an opaque lower half and a clear upper half.
     let bottom_start = (h as usize / 2) * w as usize;
-    let bottom_all_opaque = frames[1].pixels[bottom_start..].iter().all(|p| p.a == 255);
-    assert!(bottom_all_opaque, "frame 1 bottom half should be opaque");
-
-    // Top half: with either disposal method, every pixel must be fully
-    // resolved — either opaque (Keep: frame 1 green shows through) or
-    // fully transparent (Background: cleared to transparent). No partial
-    // alpha or corrupt values.
-    let top_pixels = &frames[1].pixels[..bottom_start];
-    for (i, p) in top_pixels.iter().enumerate() {
-        assert!(
-            p.a == 0 || p.a == 255,
-            "frame 1 top-half pixel {i}: expected alpha 0 or 255, got {}",
-            p.a
-        );
-    }
-    // Additionally, all top-half pixels should agree on their disposal
-    // outcome — either all opaque (Keep) or all transparent (Background).
-    let top_transparent = top_pixels.iter().filter(|p| p.a == 0).count();
-    let top_opaque = top_pixels.iter().filter(|p| p.a == 255).count();
-    assert!(
-        top_transparent == top_pixels.len() || top_opaque == top_pixels.len(),
-        "frame 1 top half should be uniformly opaque or transparent, \
-         got {top_transparent} transparent + {top_opaque} opaque out of {}",
-        top_pixels.len()
-    );
+    assert!(frames[1].pixels[bottom_start..].iter().all(|p| p.a == 255));
+    assert!(frames[1].pixels[..bottom_start].iter().all(|p| p.a == 0));
 }
 
 /// Verify the encoder handles frames where ALL pixels are transparent.
@@ -495,9 +469,7 @@ fn issue_653_disposal_method_keep_default() {
     let _frame1 = decoder.next_frame().unwrap().expect("frame 1 missing");
     let frame2 = decoder.next_frame().unwrap().expect("frame 2 missing");
 
-    // With Keep disposal (the encoder default), frame 2 should show frame 2's
-    // content, not a mix. Both frames fill the entire canvas, so frame 2 should
-    // be entirely blue regardless of disposal.
+    // Both inputs describe full displays, so frame 2 must be entirely blue.
     let f2_center = frame2.pixels[(h as usize / 2) * w as usize + w as usize / 2];
     // Due to quantization the exact blue value may vary, but blue channel
     // should dominate
@@ -537,10 +509,8 @@ fn issue_653_background_disposal_creates_transparency() {
     let f1_all_opaque = frames[0].pixels.iter().all(|p| p.a == 255);
     assert!(f1_all_opaque, "frame 0 should be fully opaque");
 
-    // Frame 2: with Keep disposal (encoder default), transparent frame 2
-    // pixels show through to frame 1's red. With Background disposal, they
-    // would be transparent. Either way, the decode must succeed and produce
-    // a valid frame with the correct dimensions.
+    // The second full-canvas display clears all prior opaque content.
+    assert!(frames[1].pixels.iter().all(|p| p.a == 0));
     assert_eq!(frames[1].width, w);
     assert_eq!(frames[1].height, h);
     assert_eq!(
@@ -590,21 +560,12 @@ fn issue_653_different_transparency_per_frame() {
         "frame 0 should be fully opaque"
     );
 
-    // Frame 2: checkerboard of transparent/green input. The encoder always uses
-    // DisposalMethod::Keep. Transparent pixels in the encoded GIF skip writing
-    // to the canvas (they use the GIF transparent index), so the prior frame's
-    // red shows through at those positions. The result: every pixel is either
-    // opaque-red (where frame 2 was transparent) or opaque-green (where frame 2
-    // was green). Either way all pixels must be fully opaque.
+    // Full-canvas input must retain its authored alpha pattern.
     assert_eq!(frames[1].pixel_count(), total);
     assert_eq!(frames[1].pixels.len(), total);
     for (i, p) in frames[1].pixels.iter().enumerate() {
-        assert_eq!(
-            p.a, 255,
-            "frame 1 pixel {i}: expected opaque (Keep disposal shows frame 0 red \
-             through transparent areas), got alpha={}",
-            p.a
-        );
+        let opaque = !(i % w as usize + i / w as usize).is_multiple_of(2);
+        assert_eq!(p.a, if opaque { 255 } else { 0 }, "frame 1 pixel {i}");
     }
     // Sanity-check that the non-transparent pixels (odd checkerboard) are greenish.
     // Frame 2 had green at odd (x+y) positions. After compositing they should remain
@@ -628,19 +589,10 @@ fn issue_653_different_transparency_per_frame() {
          got {greenish_count}/{odd_count}"
     );
 
-    // Frame 3: entirely transparent input. With Keep disposal all pixels use
-    // the GIF transparent index and skip writing, so the canvas retains frame 2's
-    // composited content. Every pixel must be fully opaque.
+    // The fully transparent display must erase all preceding content.
     assert_eq!(frames[2].pixel_count(), total);
     assert_eq!(frames[2].pixels.len(), total);
-    for (i, p) in frames[2].pixels.iter().enumerate() {
-        assert_eq!(
-            p.a, 255,
-            "frame 2 pixel {i}: expected opaque (Keep disposal retains prior \
-             canvas through all-transparent frame), got alpha={}",
-            p.a
-        );
-    }
+    assert!(frames[2].pixels.iter().all(|p| p.a == 0));
 }
 
 /// Verify that encoding and decoding preserves the animation delay values
@@ -867,16 +819,10 @@ fn first_frame_transparent_pixels() {
 ///   - Frame 2: 4x4 opaque red center, transparent surround (8x8)
 ///   - Frame 3: solid opaque green (8x8)
 ///
-/// With DisposalMethod::Keep (the encoder default), the transparent outer ring
-/// in frame 2 shows frame 1's blue through. The opaque red center overwrites.
-/// Frame 3 fully covers the canvas with green.
-///
-/// Assertions:
-///   - Frame 2 center pixels are reddish.
-///   - Frame 2 corner pixels are opaque (blue shows through from frame 1).
-///   - Frame 3 is fully opaque green.
+/// The transparent outer ring in frame 2 clears the preceding blue display.
+/// The opaque center remains red; frame 3 fully covers the canvas with green.
 #[test]
-fn animation_transparent_overlay() {
+fn animation_transparent_surround_clears_prior_content() {
     let w = 8u16;
     let h = 8u16;
 
@@ -920,14 +866,8 @@ fn animation_transparent_overlay() {
         }
     }
 
-    // Corner pixel (0,0): transparent in frame 2 input, so Keep disposal shows
-    // frame 1's blue through. Must be opaque.
-    let corner = frames[1].pixels[0];
-    assert_eq!(
-        corner.a, 255,
-        "frame 1 corner (0,0): expected opaque (frame 1 blue shows through), got {:?}",
-        corner
-    );
+    // Full-canvas source transparency clears the previous blue corner.
+    assert_eq!(frames[1].pixels[0].a, 0);
 
     // --- Frame 3 assertions ---
 

@@ -45,7 +45,8 @@ pub struct EncoderConfig {
     /// When using the streaming `Encoder::add_frame()` API with this enabled,
     /// frames are buffered until `max_buffer_frames` or `max_buffer_bytes` is
     /// reached, at which point the palette is computed and all buffered frames
-    /// are encoded. Subsequent frames use the shared palette immediately.
+    /// are encoded. Subsequent frames reuse the shared palette with one canvas of lookahead
+    /// for disposal selection.
     #[cfg(any(
         feature = "zenquant",
         feature = "quantette",
@@ -441,7 +442,8 @@ impl EncoderConfig {
     ///
     /// For streaming encoding, frames are buffered up to `max_buffer_frames`
     /// or `max_buffer_bytes`, then the palette is built and buffered frames
-    /// are encoded. Subsequent frames use the shared palette immediately.
+    /// are encoded. Subsequent frames reuse the shared palette with one canvas of lookahead
+    /// for disposal selection.
     #[cfg(any(
         feature = "zenquant",
         feature = "quantette",

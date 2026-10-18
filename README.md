@@ -141,7 +141,9 @@ fn transcode(input: &[u8]) -> zengif::Result<Vec<u8>> {
 
 **Key points for round-tripping correctly:**
 
-- **Feed composited (full-canvas) frames back, not sub-frames.** `ComposedFrame` is the
+- **Feed composited (full-canvas) frames back, not sub-frames.** Transparent source
+  pixels clear the displayed canvas. The encoder retains one canvas of lookahead
+  to choose disposal; `finish()` writes the final pending canvas. `ComposedFrame` is the
   result *after* disposal + transparency are applied, so its `pixels` is always
   `width * height` for the full canvas. There is **no offset field** — and you don't need
   one. The encoder derives per-frame dirty rectangles and offsets itself from successive
@@ -157,6 +159,12 @@ fn transcode(input: &[u8]) -> zengif::Result<Vec<u8>> {
 - **For large/streaming inputs**, swap `decode_gif` for `Decoder::new(reader, limits, &stop)`
   and pull frames with `next_frame()` instead of materializing the whole `Vec`. Read the
   loop count *after* the iteration completes.
+
+Transparent disposal requires a transparent index in the preceding GIF frame.
+When all 256 palette indices are used by opaque pixels, the encoder merges the
+least-used color into its nearest RGB neighbor to free one index. This inherent
+GIF capacity tradeoff also applies to supplied palettes; a disposal frame can
+carry at most 255 distinct opaque colors while clearing to transparency.
 
 ### `ComposedFrame` fields
 

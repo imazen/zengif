@@ -78,6 +78,89 @@ pub use internal_params::InternalParams;
 pub use palette::PaletteStrategy;
 pub use request::EncodeRequest;
 
+/// Whether the next display can expose pixels retained from this canvas.
+/// Fractional alpha is conservative because quantizer threshold policies vary.
+fn needs_canvas_clear(
+    previous: &[crate::Rgba],
+    next: &[crate::Rgba],
+    stop: &dyn Stop,
+) -> Result<bool> {
+    for (a, b) in previous.chunks(4096).zip(next.chunks(4096)) {
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+        if a.iter().zip(b).any(|(old, new)| old.a > 0 && new.a < 255) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Background disposal is transparent only if this frame declares transparency.
+/// Reserve an unused palette index even for an entirely opaque display. When
+/// every index is used, merge the least-used color into its nearest RGB entry;
+/// GIF cannot express 256 opaque colors plus a transparent disposal index.
+fn clear_disposal(
+    frame: &mut gif::Frame<'_>,
+    global_palette: &[u8],
+    stop: &dyn Stop,
+) -> Result<()> {
+    frame.dispose = gif::DisposalMethod::Background;
+    if frame.transparent.is_some() {
+        return Ok(());
+    }
+    let palette = frame.palette.as_deref().unwrap_or(global_palette);
+    if palette.is_empty() || !palette.len().is_multiple_of(3) || palette.len() > 768 {
+        return Err(at!(GifError::InvalidEncoderState {
+            message: "invalid palette for transparent disposal"
+        }));
+    }
+    let mut used = [0usize; 256];
+    for chunk in frame.buffer.chunks(4096) {
+        stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+        for &index in chunk {
+            used[usize::from(index)] += 1;
+        }
+    }
+    let slot = if let Some(index) = used.iter().position(|&n| n == 0) {
+        index
+    } else {
+        let index = used.iter().enumerate().min_by_key(|&(_, n)| n).unwrap().0;
+        let rgb = &palette[3 * index..3 * index + 3];
+        let nearest = palette
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != index)
+            .min_by_key(|&(_, other)| {
+                rgb.iter()
+                    .zip(other)
+                    .map(|(&a, &b)| {
+                        let delta = i32::from(a) - i32::from(b);
+                        delta * delta
+                    })
+                    .sum::<i32>()
+            })
+            .unwrap()
+            .0;
+        for chunk in frame.buffer.to_mut().chunks_mut(4096) {
+            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
+            for value in chunk {
+                if usize::from(*value) == index {
+                    *value = nearest as u8;
+                }
+            }
+        }
+        index
+    };
+    if slot >= palette.len() / 3 {
+        let mut local = palette.to_vec();
+        local.resize((slot + 1) * 3, 0);
+        frame.palette = Some(local);
+    }
+    frame.transparent = Some(slot as u8);
+    Ok(())
+}
+
 /// Convenience function to encode frames to a GIF byte vector.
 ///
 /// For more control over encoding options, use [`EncodeRequest`] and [`Encoder`].
@@ -257,7 +340,18 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
     // Encode each frame using the shared palette with set_background()
     let mut previous_frame: Option<Vec<Rgba>> = None;
 
-    for (frame_index, frame) in frames.into_iter().enumerate() {
+    let first_has_alpha = frames
+        .first()
+        .is_some_and(|f| f.pixels.iter().any(|p| p.a < 255));
+    let mut frames = frames.into_iter().enumerate().peekable();
+    while let Some((frame_index, frame)) = frames.next() {
+        let clear_after = match frames.peek() {
+            Some((_, next)) => needs_canvas_clear(&frame.pixels, &next.pixels, stop)?,
+            None => first_has_alpha,
+        };
+        if clear_after {
+            previous_frame = None;
+        }
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
         limits.check_frame_count(frame_index as u64)?;
 
@@ -273,26 +367,36 @@ pub fn encode_gif_with_quantizer<Q: crate::quantize::QuantizerTrait>(
         )?;
 
         // Build gif frame (no local palette - uses global)
-        let gif_frame = gif::Frame {
+        let mut gif_frame = gif::Frame {
             left: 0,
             top: 0,
             width: frame.width,
             height: frame.height,
             delay: frame.delay,
-            dispose: gif::DisposalMethod::Keep,
+            dispose: if clear_after {
+                gif::DisposalMethod::Background
+            } else {
+                gif::DisposalMethod::Keep
+            },
             transparent: quantized.transparent_index,
-            palette: None, // Use global palette
+            palette: (quantized.palette != palette_bytes).then_some(quantized.palette),
             buffer: Cow::Owned(quantized.pixels),
             ..Default::default()
         };
+
+        if clear_after {
+            clear_disposal(&mut gif_frame, &palette_bytes, stop)?;
+        }
 
         gif_encoder
             .write_frame(&gif_frame)
             .map_err(|e| at!(GifError::from(e)))?;
 
         // Save for next frame's background
-        if config.use_transparency {
+        if config.use_transparency && !clear_after {
             previous_frame = Some(frame.pixels);
+        } else {
+            previous_frame = None;
         }
     }
 

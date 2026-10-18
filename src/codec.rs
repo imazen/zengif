@@ -1017,10 +1017,11 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         Ok(encoded)
     }
 
-    /// GIF writes each frame as it is pushed, so output streams at lag 0.
-    /// With a shared palette, frames wait until the palette is built: the
-    /// lag is `max_buffer_frames - 1`, and an animation that fits in the
-    /// buffer is written at `finish` (`AT_FINISH`). The header goes out
+    /// GIF writes each frame when the next one arrives (its disposal depends
+    /// on the next display), so output streams at lag 1. With a shared
+    /// palette, frames wait until the palette is built: the lag is
+    /// `max_buffer_frames - 1` (at least 1), and an animation that fits in
+    /// the lag is written at `finish` (`AT_FINISH`). The header goes out
     /// with the first frame written.
     fn begin(
         &mut self,

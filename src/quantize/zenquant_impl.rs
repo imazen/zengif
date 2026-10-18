@@ -295,9 +295,28 @@ impl QuantizerTrait for ZenquantQuantizer {
         let zq_config = Self::make_config(config);
         let zq_pixels = Self::convert_pixels(pixels);
 
-        let result = cached
-            .remap_rgba_with_stop(zq_pixels, width as usize, height as usize, &zq_config, stop)
-            .map_err(|e| Self::map_zq_err(e, "zenquant remapping failed"))?;
+        let result = match cached.remap_rgba_with_stop(
+            zq_pixels,
+            width as usize,
+            height as usize,
+            &zq_config,
+            stop,
+        ) {
+            Ok(result) => result,
+            Err(zenquant::QuantizeError::NoVisibleColors) => {
+                // A transparent prefix cannot supply colors for later frames.
+                // The encoder must attach this fresh result as a local table.
+                return self.quantize_frame_with_stop(
+                    pixels,
+                    width,
+                    height,
+                    _background,
+                    config,
+                    stop,
+                );
+            }
+            Err(error) => return Err(Self::map_zq_err(error, "zenquant remapping failed")),
+        };
 
         self.finish_quantize_with_palette(result, pixels)
     }

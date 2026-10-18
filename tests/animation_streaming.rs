@@ -78,8 +78,10 @@ fn per_frame_palettes_stream_each_frame() {
     let fr = frames(6);
     for declare in [Some(6), None] {
         let (timing, streamed, seen) = encode(&cfg, &fr, Some(declare));
-        assert_eq!(timing, Some(AnimationOutputTiming::streaming(0)));
-        assert!(seen.windows(2).all(|p| p[1] > p[0]), "{seen:?}");
+        // One canvas of lookahead: frame k is written when frame k + 1 arrives.
+        assert_eq!(timing, Some(AnimationOutputTiming::streaming(1)));
+        assert_eq!(seen[1], seen[0], "{seen:?}");
+        assert!(seen[1..].windows(2).all(|p| p[1] > p[0]), "{seen:?}");
         let (_, whole, _) = encode(&cfg, &fr, None);
         assert_eq!(streamed, whole);
     }
