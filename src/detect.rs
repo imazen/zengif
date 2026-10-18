@@ -198,6 +198,28 @@ pub(crate) fn probe_with_stop_reason(
     stop: &dyn Stop,
     stopped: &mut Option<enough::StopReason>,
 ) -> Result<GifProbe, ProbeError> {
+    probe_located_with_stop_reason(data, limits, stop, stopped).map(|(probe, _)| probe)
+}
+
+/// [`probe_with_limits`], also returning the offset of the `0x21` introducer of
+/// the NETSCAPE2.0 extension whose loop count ended up in
+/// [`GifProbe::repeat`]. The structural inventory uses it to say which bytes
+/// `probe()` reads.
+#[cfg(feature = "inventory")]
+pub(crate) fn probe_located(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn Stop,
+) -> Result<(GifProbe, Option<usize>), ProbeError> {
+    probe_located_with_stop_reason(data, limits, stop, &mut None)
+}
+
+fn probe_located_with_stop_reason(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn Stop,
+    stopped: &mut Option<enough::StopReason>,
+) -> Result<(GifProbe, Option<usize>), ProbeError> {
     // GIF minimum: header(6) + logical screen descriptor(7) = 13 bytes
     if data.len() < 13 {
         return Err(ProbeError::TooShort);
@@ -254,6 +276,7 @@ pub(crate) fn probe_with_stop_reason(
     let mut max_local_palette_size = 0u16;
     let mut has_interlacing = false;
     let mut repeat: Option<u16> = None;
+    let mut repeat_at: Option<usize> = None;
     let mut pending_gce_transparent = false;
     let mut pending_gce_delay = 0u16;
     let mut pending_gce_disposal = 0u8;
@@ -308,6 +331,8 @@ pub(crate) fn probe_with_stop_reason(
                         && data[pos + 13] == 1
                     {
                         repeat = Some(u16::from_le_bytes([data[pos + 14], data[pos + 15]]));
+                        // `pos` is past the introducer and label here.
+                        repeat_at = Some(pos - 2);
                     }
                 }
 
@@ -449,22 +474,25 @@ pub(crate) fn probe_with_stop_reason(
 
     suggestions.push(FormatSuggestion::ReencodeForSize);
 
-    Ok(GifProbe {
-        width,
-        height,
-        version,
-        global_palette_size,
-        is_animated,
-        frame_count,
-        total_duration_cs,
-        has_transparency,
-        has_local_palettes,
-        max_local_palette_size,
-        has_interlacing,
-        background_color_index,
-        repeat,
-        suggestions,
-    })
+    Ok((
+        GifProbe {
+            width,
+            height,
+            version,
+            global_palette_size,
+            is_animated,
+            frame_count,
+            total_duration_cs,
+            has_transparency,
+            has_local_palettes,
+            max_local_palette_size,
+            has_interlacing,
+            background_color_index,
+            repeat,
+            suggestions,
+        },
+        repeat_at,
+    ))
 }
 
 impl GifProbe {
