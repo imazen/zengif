@@ -23,7 +23,10 @@ fn verify(bytes: &[u8], expected: &[Vec<Rgba>]) {
     for (index, pixels) in expected.iter().enumerate() {
         let frame = decoder.render_next_frame_owned(None).unwrap().unwrap();
         assert_eq!(frame.frame_index(), index as u32);
-        assert_eq!(frame.duration_ms(), (index as u32 + 1) * 10);
+        assert_eq!(
+            frame.duration(),
+            zencodec::animation::FrameDuration::from_millis((index as u32 + 1) * 10)
+        );
         let actual = frame.pixels();
         let expected: Vec<_> = pixels.iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
         for y in 0..actual.rows() {

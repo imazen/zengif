@@ -7,11 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Streaming animation output (zencodec `AnimationFrameEncoder::begin`): GIF writes
+  each frame when the next one arrives (its disposal depends on the next display),
+  so `begin` reports `streaming(1)`; with a shared palette, frames wait until the
+  palette is built (`streaming(max_buffer_frames - 1)`, at least 1), or `AT_FINISH`
+  when the declared frame count fits the lag. The streamed file is
+  byte-identical to the encode without `begin`. `pending_output` / `consume_output` /
+  `take_output` drain it; a declared frame count binds `push_frame` and `finish`.
+  The inner `Encoder` gains `pending_output`, `consume_output`, `take_output` and
+  `handed_out`, and its output-size limit now counts bytes already handed out
+  (`tests/animation_streaming.rs`).
+
+### Dependency integration
+
+- Align temporary zencodec/zenmeta/testkit pins with the checked fidelity and operation-matrix contracts (`4fda4391`). Replace coordinated git pins with released versions before publication.
+
+
+### Fixed
+
 - Reject unsupported or conflicting color/range/alpha interpretation before GIF frame admission. Supported F32 input is explicitly linear BT.709 in finite 0..1; unsupported ICC, HDR, premultiplied input and encoded F32 need prior conversion. Packing now checks cancellation per row, reserves fallibly, and checks its allocation against the configured memory bound.
 
 - Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.
 
+- Preserve the typed unsupported-operation cause through native errors and erased
+  dispatch; timing refusal now supports `CodecErrorExt::unsupported_operation`.
+
+
+### Tests
+
+- Shared testkit verifies rational-timing refusal without damaging legacy
+  animation, policy admission and inventory boundaries with inventory on/off.
+
+
+- Keep the independent fuzz workspace on the same shared-contract revision as
+  its codec dependency, avoiding duplicate zencodec trait identities.
+
+- Preserve rational duration directly when correcting an owned frame index;
+  remove the intermediate legacy millisecond conversion.
+
+- Report the global inventory part cap as typed `InventoryParts`; configured
+  lower memory-derived caps retain memory errors (approved test update).
+
+### Metadata inventory
+
+- Reuse PR23 (`36c7ff1d`) behind default-off `inventory`; keep the normal codec
+  independent of structural inspection. Preserve typed unsupported and invariant
+  failures and latch one-shot timeouts across the walker/probe boundary.
+- Native/i686 and ExifTool checks passed; the 0.7.3 API audit retains pre-existing
+  error-type and feature breaks (`ebb0d42d`). See [the report](docs/METADATA_INTEGRATION.md).
+
 ### Fixed
+- Reject retained ICC, and CICP outside sRGB / linear BT.709, in still and
+  animation codec jobs instead of silently emitting palette pixels without their
+  color description; reject CICP that disagrees with the pixel descriptor before
+  each frame. Callers convert to sRGB
+  (or pass linear BT.709 F32, which is converted) and drop the source profile.
+  No signature changes.
+
+- Prefetch the GIF inventory corpus on the CI host and mount its explicit cache
+  into cross; i686 no longer tries to create a cache under an unwritable home.
 
 - GIF read cancellation is terminal and preserves the original stop reason.
   Returning `Interrupted` previously asked `read_exact` to retry cancellation.

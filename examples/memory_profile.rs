@@ -6,6 +6,8 @@
 //! ```bash
 //! cargo run --release --all-features --example memory_profile
 //! ```
+// `fetch_update` is renamed `try_update` in Rust 1.95; MSRV is 1.93.
+#![allow(deprecated)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::Write;

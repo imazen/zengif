@@ -1,5 +1,5 @@
 # zengif public API — additions from non-default features
-# features: color_quant,imagequant,imgref,imgref-interop,quantette,quantizr,std,zenquant
+# features: color_quant,imagequant,imgref,imgref-interop,inventory,quantette,quantizr,std,zenquant
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -10,7 +10,7 @@
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         4
-#   inherent methods                           16
+#   inherent methods                           17
 #   struct fields                               5
 #   enum variants                               4
 #   trait roster entries (type × trait)         9
@@ -18,9 +18,9 @@
 #   auto-trait exceptions                       1
 #
 # per-module pub lines:
-#   (root)                           29
+#   (root)                           30
 
-## items (29 lines)
+## items (30 lines)
 
 pub Quantizer::ColorQuant
 pub Quantizer::ColorQuant::sample_factor: i32
@@ -45,6 +45,7 @@ pub fn ComposedFrame::as_imgref(&self) -> imgref::ImgVec<rgb::RGBA8>
 pub fn ComposedFrame::into_imgvec(self) -> imgref::ImgVec<rgb::RGBA8>
 pub fn FrameInput::from_imgref(u16, imgref::ImgRef<'_, rgb::RGBA8>) -> Self
 pub fn FrameInput::from_imgvec(u16, imgref::ImgVec<rgb::RGBA8>) -> Self
+pub fn GifDecodeJob::inventory(&self, &[u8]) -> core::result::Result<zencodec::inventory::Inventory, whereat::at::At<zencodec::error::CodecError>>
 pub struct ImagequantQuantizer
 pub fn ImagequantQuantizer::new() -> Self
 pub struct QuantetteQuantizer

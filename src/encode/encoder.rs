@@ -107,6 +107,11 @@ pub struct Encoder<'a> {
     /// Whether the repeat extension has been written.
     repeat_written: bool,
 
+    /// Output bytes already handed out through
+    /// [`consume_output`](Self::consume_output) or
+    /// [`take_output`](Self::take_output), for the output-size limit.
+    handed_out: u64,
+
     /// Buffered frames for shared palette mode.
     /// Frames are buffered until limits are reached, then palette is built.
     #[cfg(any(
@@ -330,6 +335,7 @@ impl<'a> Encoder<'a> {
             stats,
             stop,
             repeat_written: false,
+            handed_out: 0,
             #[cfg(any(
                 feature = "zenquant",
                 feature = "quantette",
@@ -1298,7 +1304,78 @@ impl<'a> Encoder<'a> {
         Ok(frame)
     }
 
-    /// Finish encoding and return the writer.
+    /// Encoded bytes written so far and not yet handed out.
+    ///
+    /// GIF writes each frame as it is added (with a shared palette, once the
+    /// palette is built), so a caller can send the file while it is being
+    /// made: take bytes with [`consume_output`](Self::consume_output) or
+    /// [`take_output`](Self::take_output), and [`finish`](Self::finish)
+    /// returns only the rest.
+    pub fn pending_output(&self) -> &[u8] {
+        match &self.encoder {
+            Some(enc) => enc.get_ref(),
+            None => &self.buffer,
+        }
+    }
+
+    /// Mark the first `n` pending bytes as handed out (clamped to what is
+    /// pending).
+    pub fn consume_output(&mut self, n: usize) {
+        let out = match &mut self.encoder {
+            Some(enc) => enc.get_mut(),
+            None => &mut self.buffer,
+        };
+        let n = n.min(out.len());
+        if n == out.len() {
+            out.clear();
+        } else {
+            out.drain(..n);
+        }
+        self.handed_out += n as u64;
+    }
+
+    /// Append the pending bytes to `into` and mark them handed out. With
+    /// `into` empty, the output buffer itself moves into it.
+    pub fn take_output(&mut self, into: &mut Vec<u8>) {
+        let out = match &mut self.encoder {
+            Some(enc) => enc.get_mut(),
+            None => &mut self.buffer,
+        };
+        self.handed_out += out.len() as u64;
+        if into.is_empty() {
+            core::mem::swap(into, out);
+        } else {
+            into.extend_from_slice(out);
+            out.clear();
+        }
+    }
+
+    /// Bytes handed out so far.
+    pub fn handed_out(&self) -> u64 {
+        self.handed_out
+    }
+
+    /// The most added frames whose bytes are not yet pending. The newest
+    /// input canvas is always retained, because its disposal depends on the
+    /// next frame. With a shared palette, frames also wait (at most
+    /// `max_buffer_frames - 1` of them) until the palette is built, and the
+    /// flush keeps the newest as that lookahead.
+    pub(crate) fn max_held_frames(&self) -> usize {
+        #[cfg(any(
+            feature = "zenquant",
+            feature = "quantette",
+            feature = "imagequant",
+            feature = "quantizr",
+            feature = "color_quant"
+        ))]
+        if self.config.shared_palette && self.computed_palette.is_none() {
+            return self.config.max_buffer_frames.saturating_sub(1).max(1);
+        }
+        1
+    }
+
+    /// Finish encoding and return the bytes not yet handed out (the whole
+    /// file when nothing was taken).
     ///
     /// If there are buffered frames (from shared palette mode), they are
     /// encoded before finishing.
@@ -1338,7 +1415,7 @@ impl<'a> Encoder<'a> {
         // empty — the old `.expect()` panicked here (sweep issue #14).
         let mut output = if let Some(encoder) = self.encoder {
             encoder.into_inner().map_err(|e| at!(GifError::from(e)))?
-        } else if !self.buffer.is_empty() {
+        } else if !self.buffer.is_empty() || self.handed_out > 0 {
             self.buffer
         } else {
             return Err(at!(GifError::InvalidEncoderState {
@@ -1351,8 +1428,10 @@ impl<'a> Encoder<'a> {
             output.push(0x3B);
         }
 
-        // Check output size against limits
-        self.limits.check_output_bytes(output.len() as u64)?;
+        // Check the whole file's size against limits, bytes already handed
+        // out included.
+        self.limits
+            .check_output_bytes(self.handed_out + output.len() as u64)?;
 
         stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
 

@@ -34,6 +34,21 @@ use whereat::at;
 
 use crate::{Decoder, GifError, Limits};
 
+// An optional metadata probe may fail on unsupported input, but a stop is
+// terminal. Re-polling cannot recover a reason from a token that fires once.
+fn optional_probe(
+    data: &[u8],
+    limits: &Limits,
+    stop: &dyn enough::Stop,
+) -> Result<Option<crate::detect::GifProbe>, At<CodecError>> {
+    let mut stopped = None;
+    let probe = crate::detect::probe_with_stop_reason(data, limits, stop, &mut stopped);
+    if let Some(reason) = stopped {
+        return Err(GifError::Cancelled(reason).into());
+    }
+    Ok(probe.ok())
+}
+
 /// Bridge a decode-sink error into the [`CodecError`] envelope.
 ///
 /// [`copy_decode_to_sink`](zencodec::helpers::copy_decode_to_sink) wants a `fn`
@@ -72,13 +87,31 @@ fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_uti
 ///
 /// This adapter writes no ICC or CICP extension. Input is separately validated
 /// as sRGB U8 or linear BT.709 F32 and the latter is converted to sRGB. A color
-/// emission plan never substitutes for pixel conversion; unsupported ICC or
-/// conflicting color interpretation is rejected before frame admission.
+/// emission plan never substitutes for pixel conversion. A retained ICC profile,
+/// or CICP no accepted input can carry, is rejected here, before any frame;
+/// other CICP is checked against each frame's pixel descriptor
+/// (`validate_gif_metadata`) before frame admission.
 fn resolve_gif_color_emit(
     metadata: Option<&Metadata>,
     policy: Option<&zencodec::encode::EncodePolicy>,
     channel_count: u8,
-) -> zencodec::ColorEmitPlan {
+) -> Result<zencodec::ColorEmitPlan, At<CodecError>> {
+    // CICP that no accepted input descriptor carries (wide gamut, HDR) can
+    // never match a frame; refuse it now. A matching CICP is checked against
+    // each frame's descriptor in `validate_gif_metadata`.
+    if metadata.is_some_and(|meta| {
+        meta.icc_profile.is_some()
+            || meta.cicp.is_some_and(|c| {
+                !ENCODE_DESCRIPTORS
+                    .iter()
+                    .any(|d| zenpixels::Cicp::from_descriptor(d) == Some(c))
+            })
+    }) {
+        return Err(GifError::InvalidEncoderState {
+            message: "GIF cannot retain ICC or CICP outside sRGB / linear BT.709; convert pixels to sRGB and explicitly drop the source metadata",
+        }
+        .into());
+    }
     let color_policy = policy
         .map(|p| p.resolve_color(zencodec::ColorEmitPolicy::Balanced))
         .unwrap_or(zencodec::ColorEmitPolicy::Balanced);
@@ -97,7 +130,11 @@ fn resolve_gif_color_emit(
         }
     }
 
-    zencodec::resolve_color_emit(&src, &GIF_ENCODE_CAPS, color_policy)
+    Ok(zencodec::resolve_color_emit(
+        &src,
+        &GIF_ENCODE_CAPS,
+        color_policy,
+    ))
 }
 
 fn limits_from_resource(rl: &ResourceLimits) -> Limits {
@@ -195,6 +232,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     zencodec::encode::EncodeCapabilities::new()
         .with_stop(true)
         .with_animation(true)
+        .with_animation_timing(true)
         .with_lossless(true)
         .with_lossy(true)
         .with_native_alpha(true)
@@ -215,6 +253,7 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
     zencodec::encode::EncodeCapabilities::new()
         .with_stop(true)
         .with_animation(true)
+        .with_animation_timing(true)
         .with_lossless(true)
         .with_lossy(true)
         .with_native_alpha(true)
@@ -226,9 +265,11 @@ static GIF_ENCODE_CAPS: zencodec::encode::EncodeCapabilities =
 static GIF_DECODE_CAPS: zencodec::decode::DecodeCapabilities =
     zencodec::decode::DecodeCapabilities::new()
         .with_stop(true)
+        .with_incremental(true)
         .with_animation(true)
         .with_cheap_probe(false)
         .with_native_alpha(true)
+        .with_inventory(cfg!(feature = "inventory"))
         .with_enforces_max_pixels(true)
         .with_enforces_max_memory(true)
         .with_enforces_max_input_bytes(true);
@@ -632,6 +673,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn encoder(self) -> Result<GifEncoder, At<CodecError>> {
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
         Ok(GifEncoder {
             config: self.config,
             stop: self.stop,
@@ -655,8 +697,8 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
                 })?),
             };
         }
-        // Resolve emission policy; actual pixel interpretation is checked per frame.
-        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
+        // Rejects ICC and unrepresentable CICP now; the rest is checked per frame.
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
         // Pre-compute limits so they're ready when the encoder is created
         let base = limits_from_resource(&self.config.limits);
         let gif_limits = match self.limits {
@@ -671,6 +713,10 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             has_frames: false,
             stop: self.stop,
             metadata: self.metadata,
+            begun: false,
+            declared_frames: None,
+            pushed: 0,
+            timing: GIF_TIMING,
         })
     }
 }
@@ -721,7 +767,7 @@ impl GifEncoder {
         }
 
         // Input color was validated before quantization; no extension is written.
-        let _color_plan = resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4);
+        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
 
         let limits = self.build_limits();
         let stop: &dyn enough::Stop = match self.stop {
@@ -904,7 +950,22 @@ pub struct GifAnimationFrameEncoder {
     has_frames: bool,
     stop: Option<zencodec::StopToken>,
     metadata: Option<Metadata>,
+    /// `begin` succeeded.
+    begun: bool,
+    /// The frame count `begin` declared, binding on `finish`.
+    declared_frames: Option<u32>,
+    /// Frames pushed.
+    pushed: u32,
+    /// Rounding phase for [`push_frame_timed`](zencodec::encode::AnimationFrameEncoder::push_frame_timed).
+    timing: zencodec::animation::TimingQuantizer,
 }
+
+/// GIF frame delays are `u16` centiseconds.
+const GIF_TIMING: zencodec::animation::TimingQuantizer =
+    match zencodec::animation::TimingQuantizer::new(100, u16::MAX as u64) {
+        Ok(q) => q,
+        Err(_) => panic!("GIF timing clock is nonzero"),
+    };
 
 impl GifAnimationFrameEncoder {
     /// Ensure the underlying streaming encoder exists, creating it on first call.
@@ -954,7 +1015,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         self.push_frame_centiseconds(pixels, delay_cs, stop)
     }
 
-    fn push_frame_timed(
+    fn push_frame_exact(
         &mut self,
         pixels: PixelSlice<'_>,
         duration: zencodec::animation::FrameDuration,
@@ -966,6 +1027,90 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
             .and_then(|v| u16::try_from(v).ok())
             .ok_or_else(|| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
         self.push_frame_centiseconds(pixels, delay_cs, stop)
+    }
+
+    /// Rounds cumulative frame endpoints to GIF's centisecond clock, so
+    /// fractional durations (1/30 s) do not drift. The rounding phase
+    /// advances only when the frame is accepted.
+    fn push_frame_timed(
+        &mut self,
+        pixels: PixelSlice<'_>,
+        duration: zencodec::animation::FrameDuration,
+        stop: Option<&dyn zencodec::enough::Stop>,
+    ) -> Result<zencodec::animation::FrameDuration, At<CodecError>> {
+        let mut next = self.timing;
+        let encoded = next
+            .quantize(duration)
+            .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
+        self.push_frame_exact(pixels, encoded, stop)?;
+        self.timing = next;
+        Ok(encoded)
+    }
+
+    /// GIF writes each frame when the next one arrives (its disposal depends
+    /// on the next display), so output streams at lag 1. With a shared
+    /// palette, frames wait until the palette is built: the lag is
+    /// `max_buffer_frames - 1` (at least 1), and an animation that fits in
+    /// the lag is written at `finish` (`AT_FINISH`). The header goes out
+    /// with the first frame written.
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        _descriptor: PixelDescriptor,
+        frame_count: Option<u32>,
+    ) -> Result<zencodec::encode::AnimationOutputTiming, At<CodecError>> {
+        use zencodec::encode::AnimationOutputTiming;
+        let refuse = |message: &'static str| -> At<CodecError> {
+            GifError::InvalidEncoderState { message }.into()
+        };
+        if self.begun {
+            return Err(refuse("begin called twice"));
+        }
+        if self.has_frames {
+            return Err(refuse("begin after push_frame"));
+        }
+        if width == 0 || height == 0 || width > u32::from(u16::MAX) || height > u32::from(u16::MAX)
+        {
+            return Err(refuse("GIF canvas must be 1 to 65535 pixels on each side"));
+        }
+        if self.canvas_size.is_some_and(|c| c != (width, height)) {
+            return Err(refuse("begin: canvas differs from with_canvas_size"));
+        }
+        if frame_count == Some(0) {
+            return Err(refuse("GIF needs at least one frame"));
+        }
+        let previous = self.canvas_size.replace((width, height));
+        let held = match self.ensure_encoder(width as u16, height as u16) {
+            Ok(enc) => enc.max_held_frames(),
+            Err(e) => {
+                self.canvas_size = previous;
+                return Err(e);
+            }
+        };
+        self.begun = true;
+        self.declared_frames = frame_count;
+        let lag = u32::try_from(held).unwrap_or(u32::MAX);
+        if frame_count.is_some_and(|n| lag >= n) {
+            return Ok(AnimationOutputTiming::AT_FINISH);
+        }
+        Ok(AnimationOutputTiming::streaming(lag))
+    }
+
+    fn pending_output(&self) -> &[u8] {
+        self.encoder.as_ref().map_or(&[], |e| e.pending_output())
+    }
+
+    fn consume_output(&mut self, n: usize) {
+        if let Some(e) = &mut self.encoder {
+            e.consume_output(n);
+        }
+    }
+
+    fn take_output(&mut self, into: &mut Vec<u8>) {
+        if let Some(e) = &mut self.encoder {
+            e.take_output(into);
+        }
     }
 
     fn finish(
@@ -998,14 +1143,27 @@ impl GifAnimationFrameEncoder {
             .into());
         }
         validate_gif_metadata(&pixels, self.metadata.as_ref())?;
+        if let Some(n) = self.declared_frames
+            && self.pushed >= n
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "more frames than begin declared",
+            }
+            .into());
+        }
         let (rgba, w, h) = pixels_to_gif_rgba(&pixels, &stop, self.gif_limits.max_memory)?;
         let frame = FrameInput::new(w, h, delay_cs, rgba);
 
         let enc = self.ensure_encoder(w, h)?;
         enc.add_frame_with_stop(frame, &stop)
             .map_err(CodecError::of)?;
+        let total = enc.handed_out() + enc.pending_output().len() as u64;
+        self.gif_limits
+            .check_output_bytes(total)
+            .map_err(CodecError::of)?;
         self.has_frames = true;
         self.canvas_size = Some((u32::from(w), u32::from(h)));
+        self.pushed += 1;
         Ok(())
     }
 
@@ -1015,6 +1173,14 @@ impl GifAnimationFrameEncoder {
     ) -> Result<EncodeOutput, At<CodecError>> {
         let stop = crate::stop::AnimationStops(&self.stop, &stop);
         enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
+        if let Some(n) = self.declared_frames
+            && self.pushed != n
+        {
+            return Err(GifError::InvalidEncoderState {
+                message: "finish: a different number of frames than begin declared",
+            }
+            .into());
+        }
         let enc = match self.encoder {
             Some(enc) => enc,
             None => {
@@ -1032,11 +1198,8 @@ impl GifAnimationFrameEncoder {
             .into());
         }
 
-        let mut data = enc.finish_with_stop(&stop).map_err(CodecError::of)?;
-        // Ensure GIF trailer byte is present.
-        if data.last() != Some(&0x3B) {
-            data.push(0x3B);
-        }
+        // `finish_with_stop` writes the trailer and checks the whole file's size.
+        let data = enc.finish_with_stop(&stop).map_err(CodecError::of)?;
         Ok(EncodeOutput::new(data, ImageFormat::Gif))
     }
 }
@@ -1263,7 +1426,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         // Decoder::new takes ownership of `gif_limits`. The probe gets the
         // same limits + stop the decode would, so descriptor floods can't
         // walk past max_frame_count or be made uncancellable.
-        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+        let probe = optional_probe(data, &gif_limits, stop)?;
 
         let decoder = Decoder::new(cursor, gif_limits, stop).map_err(CodecError::of)?;
 
@@ -1307,7 +1470,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             None => &enough::Unstoppable,
         };
         // Bounded probe before Decoder takes ownership of the limits.
-        let probe = crate::detect::probe_with_limits(data, &gif_limits, stop).ok();
+        let probe = optional_probe(data, &gif_limits, stop)?;
 
         let mut decoder = Decoder::new(cursor, gif_limits, stop).map_err(CodecError::of)?;
 
@@ -1346,6 +1509,51 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         }
 
         Ok(info)
+    }
+
+    #[cfg(feature = "inventory")]
+    fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, At<CodecError>> {
+        use crate::inventory::WalkError;
+        self.check_file_size(data)?;
+        let stop: &dyn enough::Stop = match self.stop {
+            Some(ref s) => s,
+            None => &enough::Unstoppable,
+        };
+        // The job's memory limit bounds the inventory too: at most
+        // `max_memory / BYTES_PER_PART` parts (never more than zencodec's default cap).
+        let max_parts = self
+            .build_limits()
+            .max_memory
+            .map_or(zencodec::inventory::DEFAULT_MAX_PARTS, |m| {
+                u32::try_from(m / crate::inventory::BYTES_PER_PART)
+                    .unwrap_or(u32::MAX)
+                    .min(zencodec::inventory::DEFAULT_MAX_PARTS)
+            })
+            .max(64);
+        let limits = self.build_limits();
+        match crate::inventory::walk(data, stop, max_parts, &limits) {
+            Ok(inv) => Ok(inv),
+            Err(WalkError::Cancelled(reason)) => Err(GifError::Cancelled(reason).into()),
+            // A lower configured memory-derived cap is a memory limit. The
+            // global structural cap retains the shared InventoryParts category.
+            Err(WalkError::Parts(zencodec::inventory::InventoryError::TooManyParts { max }))
+                if max < zencodec::inventory::DEFAULT_MAX_PARTS =>
+            {
+                let part = crate::inventory::BYTES_PER_PART;
+                Err(GifError::MemoryLimitExceeded {
+                    current: (u64::from(max) + 1) * part,
+                    limit: u64::from(max) * part,
+                }
+                .into())
+            }
+            Err(WalkError::Parts(error)) => {
+                use zencodec::CategorizedError;
+                Err(
+                    CodecError::from_parts(Some("zengif"), error.category(), Box::new(error))
+                        .into(),
+                )
+            }
+        }
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<CodecError>> {
@@ -1433,7 +1641,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             None => Arc::new(enough::Unstoppable),
         };
         owned_stop.check().map_err(GifError::Cancelled)?;
-        let probe = crate::detect::probe_with_limits(&data, &limits, owned_stop.as_ref()).ok();
+        let probe = optional_probe(&data, &limits, owned_stop.as_ref())?;
         owned_stop.check().map_err(GifError::Cancelled)?;
         let has_alpha = probe.as_ref().is_none_or(|p| p.has_transparency);
         let has_interlacing = probe.as_ref().is_some_and(|p| p.has_interlacing);
@@ -1463,12 +1671,36 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
             decoder,
             failed: false,
             shared_info,
-            loop_count: probe.as_ref().map(|p| gif_total_plays(p.repeat)),
+            // Same reading as `shared_info`: a still plays once, and a NETSCAPE
+            // block in a file probe() classifies as a still is dropped.
+            loop_count: probe.as_ref().map(|p| {
+                if p.is_animated {
+                    gif_total_plays(p.repeat)
+                } else {
+                    1
+                }
+            }),
             current_frame: None,
             frame_index: 0,
             start_frame_index: self.start_frame_index,
             preferred: preferred.to_vec(),
         })
+    }
+
+    /// Incremental (sans-I/O) decode. GIF's LZW stream, compositing and
+    /// limit bookkeeping run through the `Read`-based decoder, so this
+    /// reports the header as soon as it probes and decodes the first frame
+    /// through `push_decoder` once the whole file is offered.
+    fn dyn_incremental_decoder(
+        self,
+        preferred: &[PixelDescriptor],
+    ) -> Result<
+        alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
+        zencodec::decode::BoxedError,
+    > {
+        Ok(zencodec::decode::erase_incremental(
+            zencodec::helpers::WholeFileIncremental::new(self, preferred),
+        ))
     }
 }
 
@@ -1564,7 +1796,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         // follows. Without this, a 100 MB descriptor flood reaches probe()
         // before any limit check applies, since the surrounding Decoder's
         // limits don't gate the probe walk.
-        let source_probe = crate::detect::probe_with_limits(&self.data, &limits, stop).ok();
+        let source_probe = optional_probe(&self.data, &limits, stop)?;
         let cursor = std::io::Cursor::new(self.data);
         let mut decoder = Decoder::new(cursor, limits, stop).map_err(CodecError::of)?;
 
@@ -1838,6 +2070,68 @@ mod tests {
         feature = "color_quant"
     ))]
     use zencodec::encode::{EncodeJob as _, Encoder as _};
+
+    #[test]
+    fn retained_icc_is_rejected_for_still_and_animation_jobs() {
+        use zencodec::encode::EncodeJob as _;
+        let config = GifEncoderConfig::new;
+        let metadata = Metadata::none().with_icc(alloc::vec![0; 256]);
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                .encoder()
+                .is_err()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                .animation_frame_encoder()
+                .is_err()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .encoder()
+                .is_ok()
+        );
+        assert!(
+            config()
+                .job()
+                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .animation_frame_encoder()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn explicit_srgb_cicp_is_admitted_but_other_cicp_is_rejected() {
+        use zencodec::encode::EncodeJob as _;
+        let mut wide_gamut = zencodec::Cicp::SRGB;
+        wide_gamut.color_primaries = 9;
+        for (cicp, accepted) in [(zencodec::Cicp::SRGB, true), (wide_gamut, false)] {
+            let mut metadata = Metadata::none();
+            metadata.cicp = Some(cicp);
+            assert_eq!(
+                GifEncoderConfig::new()
+                    .job()
+                    .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                    .encoder()
+                    .is_ok(),
+                accepted
+            );
+            assert_eq!(
+                GifEncoderConfig::new()
+                    .job()
+                    .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                    .animation_frame_encoder()
+                    .is_ok(),
+                accepted
+            );
+        }
+    }
 
     // Minimal valid GIF89a (1x1 red pixel)
     const MINIMAL_GIF: &[u8] = &[

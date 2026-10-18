@@ -375,6 +375,23 @@ MIT OR Apache-2.0 (dual license)
 
 ## Known Bugs
 
+- On Apple M4 Pro, `just arm-bench-macos decode_bench` currently reaches
+  zenbench 0.1.11 but cannot produce an admitted benchmark: `zenbench cpu-info`
+  reports an asymmetric Performance/Efficiency topology without an enforceable
+  process boundary on macOS. The bench refuses CPU placement before timing.
+  `--cpu-policy=unrestricted` is explicitly exploratory, so do not promote its
+  numbers as a baseline. The recipe no longer requests `--locked` because this
+  repo does not track a root Cargo.lock; that earlier failure is fixed.
+
+- The codec adapter discarded the color-emission plan while accepting retained
+  ICC/CICP. Consumer CI caught silent color-description loss. Still and animation
+  jobs now reject ICC/non-sRGB CICP; explicit sRGB CICP remains readable after
+  conversion. Keep native and zencodecs GIF capability/transcode regressions.
+
+- CI run 38263201869 failed two inventory corpus tests on i686 with PermissionDenied
+  in `Corpus::new`. The workflow now prefetches the corpus on the host, mounts
+  it into cross, and passes `CODEC_CORPUS_CACHE` explicitly. Assertions stay intact.
+
 (none critical)
 
 ### Note: LZW Cancellation Latency (Documented Limitation)
@@ -868,3 +885,11 @@ src/encode/
 - Test module imports updated for relocated functions
 - Maintained backward compatibility - public API unchanged
 
+
+## Known Bugs: unsupported-operation source chain (fixed)
+
+The shared timing-refusal test failed because `GifError::UnsupportedOperation`
+retained its category but omitted its nested cause from `Error::source`.
+`#[source]` restores typed extraction through native and erased errors. Keep the
+shared regression test alongside the category mapping test; they check different
+observations of the same error.

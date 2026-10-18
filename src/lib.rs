@@ -238,6 +238,8 @@ pub use types::{
 
 #[cfg(feature = "std")]
 mod codec;
+#[cfg(feature = "inventory")]
+mod inventory;
 
 /// Sweep-plan construction over the encoder knob space (variant-
 /// generation playbook; see `zenjpeg/docs/VARIANT_GENERATION.md`).
