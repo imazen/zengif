@@ -207,3 +207,8 @@ shared-contract-check:
     cargo clippy --features inventory --test shared_contracts -- -D warnings
     cargo test --features inventory --lib codec::
     cargo clippy --features inventory --lib -- -D warnings
+
+# Poll census: how each zencodec operation polls the job's stop, and which
+# polls end it with the timeout. Compare the output across revisions.
+pulse-census:
+    cargo test --features inventory --test pulse_census -- --nocapture --test-threads 1
