@@ -42,7 +42,9 @@ fn animation_retains_owned_job_cancellation_and_poison_state() {
         let cancelled = Arc::new(AtomicBool::new(false));
         let mut decoder = zengif::GifDecoderConfig::new()
             .job()
-            .with_stop(zencodec::StopToken::new(Toggle(cancelled.clone())))
+            .with_pulse(zencodec::SharedPulse::new(
+                zencodec::how_far::StopOnly::new(Toggle(cancelled.clone())),
+            ))
             .animation_frame_decoder(Cow::Owned(animation()), &[])
             .unwrap();
         cancelled.store(true, Ordering::Relaxed);
@@ -115,7 +117,9 @@ fn borrowed_cancellation_is_polled_inside_skip_loop() {
         .unwrap();
     assert!(
         decoder
-            .render_next_frame(Some(&AfterOne(AtomicUsize::new(0))))
+            .render_next_frame(Some(&zencodec::how_far::StopOnly::borrowed(&AfterOne(
+                AtomicUsize::new(0)
+            ))))
             .is_err()
     );
 }
@@ -160,7 +164,9 @@ fn animation_probe_does_not_swallow_a_one_shot_timeout() {
     // Entry poll succeeds; the probe sees the one-shot timeout.
     let error = match zengif::GifDecoderConfig::new()
         .job()
-        .with_stop(zencodec::StopToken::new(Pulse(AtomicUsize::new(0))))
+        .with_pulse(zencodec::SharedPulse::new(
+            zencodec::how_far::StopOnly::new(Pulse(AtomicUsize::new(0))),
+        ))
         .animation_frame_decoder(Cow::Owned(animation()), &[])
     {
         Ok(_) => panic!("probe discarded timeout"),

@@ -605,7 +605,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
     fn job(self) -> GifEncodeJob {
         GifEncodeJob {
             config: self,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             limits: None,
             policy: None,
             metadata: None,
@@ -620,7 +620,9 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
 /// Per-operation GIF encode job.
 pub struct GifEncodeJob {
     config: GifEncoderConfig,
-    stop: Option<zencodec::StopToken>,
+    /// The operation pulse, kept whole for every encoder made from this job
+    /// (a legacy `with_stop` token arrives wrapped in one).
+    pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     /// Encode policy. Its `ColorEmitPolicy` is consulted in the color decision
     /// via [`resolve_gif_color_emit`]; GIF embeds no ICC/CICP, so it never
@@ -639,8 +641,8 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     type Enc = GifEncoder;
     type AnimationFrameEnc = GifAnimationFrameEncoder;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -676,7 +678,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
         resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
         Ok(GifEncoder {
             config: self.config,
-            stop: self.stop,
+            pulse: self.pulse,
             limits: self.limits,
             policy: self.policy,
             metadata: self.metadata,
@@ -711,7 +713,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             canvas_size: self.canvas_size,
             encoder: None,
             has_frames: false,
-            stop: self.stop,
+            pulse: self.pulse,
             metadata: self.metadata,
             begun: false,
             declared_frames: None,
@@ -726,7 +728,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
 /// Single-image GIF encoder.
 pub struct GifEncoder {
     config: GifEncoderConfig,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     /// Encode policy (color emission). See [`resolve_gif_color_emit`].
     policy: Option<zencodec::encode::EncodePolicy>,
@@ -770,16 +772,11 @@ impl GifEncoder {
         resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
 
         let limits = self.build_limits();
-        let stop: &dyn enough::Stop = match self.stop {
-            Some(ref s) => s,
-            None => &enough::Unstoppable,
-        };
-
         let frame = FrameInput::new(w, h, 0, rgba_pixels);
 
         let data = EncodeRequest::new(&self.config.inner, w, h)
             .limits(&limits)
-            .stop(stop)
+            .stop(&self.pulse)
             .encode(alloc::vec![frame])
             .map_err(CodecError::of)?;
 
@@ -796,8 +793,8 @@ impl zencodec::encode::Encoder for GifEncoder {
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<CodecError>> {
         validate_gif_metadata(&pixels, self.metadata.as_ref())?;
-        let stop: &dyn enough::Stop = self.stop.as_ref().map_or(&enough::Unstoppable, |s| s);
-        let (rgba, w, h) = pixels_to_gif_rgba(&pixels, stop, self.build_limits().max_memory)?;
+        let (rgba, w, h) =
+            pixels_to_gif_rgba(&pixels, &self.pulse, self.build_limits().max_memory)?;
         self.do_encode(rgba, w, h)
     }
 }
@@ -948,7 +945,8 @@ pub struct GifAnimationFrameEncoder {
     encoder: Option<crate::encode::Encoder<'static>>,
     /// Whether at least one frame has been pushed.
     has_frames: bool,
-    stop: Option<zencodec::StopToken>,
+    /// The job's pulse, checked with each call's pulse.
+    pulse: zencodec::SharedPulse,
     metadata: Option<Metadata>,
     /// `begin` succeeded.
     begun: bool,
@@ -982,7 +980,7 @@ impl GifAnimationFrameEncoder {
             let config = std::borrow::Cow::Owned(self.inner_config.clone());
             let limits = std::borrow::Cow::Owned(self.gif_limits.clone());
 
-            // Call-scoped tokens enter through add_frame_with_stop and
+            // The job and call pulses enter through add_frame_with_stop and
             // finish_with_stop; no borrowed token is retained by this owner.
             let stop: &'static dyn enough::Stop = &enough::Unstoppable;
 
@@ -1006,27 +1004,27 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         &mut self,
         pixels: PixelSlice<'_>,
         duration_ms: u32,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
         // GIF uses centiseconds — round to nearest, minimum 1cs (10ms)
         // This is the legacy quantizing API. Do not overflow or wrap the wire field.
         let delay_cs = u16::try_from(((u64::from(duration_ms) + 5) / 10).max(1))
             .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
-        self.push_frame_centiseconds(pixels, delay_cs, stop)
+        self.push_frame_centiseconds(pixels, delay_cs, pulse)
     }
 
     fn push_frame_exact(
         &mut self,
         pixels: PixelSlice<'_>,
         duration: zencodec::animation::FrameDuration,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
         let delay_cs = duration
             .ticks_at(100)
             .ok()
             .and_then(|v| u16::try_from(v).ok())
             .ok_or_else(|| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
-        self.push_frame_centiseconds(pixels, delay_cs, stop)
+        self.push_frame_centiseconds(pixels, delay_cs, pulse)
     }
 
     /// Rounds cumulative frame endpoints to GIF's centisecond clock, so
@@ -1036,13 +1034,13 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         &mut self,
         pixels: PixelSlice<'_>,
         duration: zencodec::animation::FrameDuration,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<zencodec::animation::FrameDuration, At<CodecError>> {
         let mut next = self.timing;
         let encoded = next
             .quantize(duration)
             .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
-        self.push_frame_exact(pixels, encoded, stop)?;
+        self.push_frame_exact(pixels, encoded, pulse)?;
         self.timing = next;
         Ok(encoded)
     }
@@ -1113,11 +1111,8 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         }
     }
 
-    fn finish(
-        self,
-        stop: Option<&dyn zencodec::enough::Stop>,
-    ) -> Result<EncodeOutput, At<CodecError>> {
-        self.finish_inner(stop)
+    fn finish(self, pulse: Option<&dyn zencodec::Pulse>) -> Result<EncodeOutput, At<CodecError>> {
+        self.finish_inner(pulse)
     }
 }
 
@@ -1126,10 +1121,10 @@ impl GifAnimationFrameEncoder {
         &mut self,
         pixels: PixelSlice<'_>,
         delay_cs: u16,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
-        let job_stop = self.stop.clone();
-        let stop = crate::stop::AnimationStops(&job_stop, &stop);
+        let job = self.pulse.clone();
+        let stop = crate::stop::AnimationStops(&job, &pulse);
         enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
         if pixels.width() == 0
             || pixels.rows() == 0
@@ -1169,9 +1164,9 @@ impl GifAnimationFrameEncoder {
 
     fn finish_inner(
         self,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<EncodeOutput, At<CodecError>> {
-        let stop = crate::stop::AnimationStops(&self.stop, &stop);
+        let stop = crate::stop::AnimationStops(&self.pulse, &pulse);
         enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
         if let Some(n) = self.declared_frames
             && self.pushed != n
@@ -1290,7 +1285,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
     fn job<'a>(self) -> Self::Job<'a> {
         GifDecodeJob {
             config: self,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             limits: None,
             policy: None,
             start_frame_index: 0,
@@ -1303,7 +1298,9 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 /// Per-operation GIF decode job.
 pub struct GifDecodeJob {
     config: GifDecoderConfig,
-    stop: Option<zencodec::StopToken>,
+    /// The operation pulse, kept whole for every decoder made from this job
+    /// (a legacy `with_stop` token arrives wrapped in one).
+    pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     policy: Option<zencodec::decode::DecodePolicy>,
     start_frame_index: u32,
@@ -1393,8 +1390,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     type StreamDec = GifStreamingDecoder;
     type AnimationFrameDec = GifAnimationFrameDecoder;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -1418,10 +1415,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
 
         let gif_limits = self.build_limits();
         let cursor = std::io::Cursor::new(data);
-        let stop: &dyn enough::Stop = match self.stop {
-            Some(ref s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn enough::Stop = &self.pulse;
         // Run the bounded probe BEFORE constructing the Decoder, since
         // Decoder::new takes ownership of `gif_limits`. The probe gets the
         // same limits + stop the decode would, so descriptor floods can't
@@ -1465,10 +1459,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
 
         let gif_limits = self.build_limits();
         let cursor = std::io::Cursor::new(data);
-        let stop: &dyn enough::Stop = match self.stop {
-            Some(ref s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn enough::Stop = &self.pulse;
         // Bounded probe before Decoder takes ownership of the limits.
         let probe = optional_probe(data, &gif_limits, stop)?;
 
@@ -1515,10 +1506,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, At<CodecError>> {
         use crate::inventory::WalkError;
         self.check_file_size(data)?;
-        let stop: &dyn enough::Stop = match self.stop {
-            Some(ref s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn enough::Stop = &self.pulse;
         // The job's memory limit bounds the inventory too: at most
         // `max_memory / BYTES_PER_PART` parts (never more than zencodec's default cap).
         let max_parts = self
@@ -1583,7 +1571,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     ) -> Result<GifDecoder<'a>, At<CodecError>> {
         Ok(GifDecoder {
             config: self.config,
-            stop: self.stop,
+            pulse: self.pulse,
             limits: self.limits,
             data,
             preferred: preferred.to_vec(),
@@ -1636,10 +1624,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         }
         self.check_file_size(&data)?;
         let limits = self.build_limits();
-        let owned_stop: Arc<dyn enough::Stop> = match self.stop {
-            Some(stop) => Arc::new(stop),
-            None => Arc::new(enough::Unstoppable),
-        };
+        // The native decoder owns the job's pulse itself, not a stop view of it.
+        let owned_stop: Arc<dyn enough::Stop> = Arc::new(self.pulse);
         owned_stop.check().map_err(GifError::Cancelled)?;
         let probe = optional_probe(&data, &limits, owned_stop.as_ref())?;
         owned_stop.check().map_err(GifError::Cancelled)?;
@@ -1709,7 +1695,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
 /// Single-image GIF decoder (decodes first frame).
 pub struct GifDecoder<'a> {
     config: GifDecoderConfig,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     data: Cow<'a, [u8]>,
     preferred: Vec<PixelDescriptor>,
@@ -1788,10 +1774,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
         }
 
         let limits = self.build_limits();
-        let stop: &dyn enough::Stop = match self.stop {
-            Some(ref s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn enough::Stop = &self.pulse;
         // Bounded probe with the same limits + stop as the decode that
         // follows. Without this, a 100 MB descriptor flood reaches probe()
         // before any limit check applies, since the surrounding Decoder's
@@ -1909,8 +1892,10 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
 
     fn render_next_frame(
         &mut self,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<Option<AnimationFrame<'_>>, At<CodecError>> {
+        // The call's pulse; the job's pulse is owned by the native decoder.
+        let stop = pulse.map(|p| p as &dyn enough::Stop);
         if self.failed {
             return Err(GifError::InvalidEncoderState {
                 message: "animation decoder failed",
@@ -2031,9 +2016,9 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
     /// Move the rendered canvas into the caller without another pixel copy.
     fn render_next_frame_owned(
         &mut self,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<Option<OwnedAnimationFrame>, At<CodecError>> {
-        if self.render_next_frame(stop)?.is_none() {
+        if self.render_next_frame(pulse)?.is_none() {
             return Ok(None);
         }
         Ok(self
@@ -2044,10 +2029,10 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
 
     fn render_next_frame_to_sink(
         &mut self,
-        stop: Option<&dyn zencodec::enough::Stop>,
+        pulse: Option<&dyn zencodec::Pulse>,
         sink: &mut dyn zencodec::decode::DecodeRowSink,
     ) -> Result<Option<OutputInfo>, Self::Error> {
-        zencodec::helpers::copy_frame_to_sink(self, stop, sink)
+        zencodec::helpers::copy_frame_to_sink(self, pulse, sink)
     }
 }
 
@@ -2208,7 +2193,8 @@ mod tests {
     #[test]
     fn envelope_cancelled_category_survives_dyn_erasure() {
         use zencodec::decode::DynDecoderConfig;
-        use zencodec::{CodecError, CodecErrorExt, ErrorCategory, StopToken};
+        use zencodec::how_far::StopOnly;
+        use zencodec::{CodecError, CodecErrorExt, ErrorCategory, SharedPulse};
 
         let cfg = GifDecoderConfig::new();
         let dyn_cfg: &dyn DynDecoderConfig = &cfg;
@@ -2216,7 +2202,7 @@ mod tests {
 
         let stopper = almost_enough::Stopper::new();
         stopper.cancel();
-        job.set_stop(StopToken::new(stopper));
+        job.set_pulse(SharedPulse::new(StopOnly::new(stopper)));
 
         let erased = job
             .probe(MINIMAL_GIF)
