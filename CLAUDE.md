@@ -375,6 +375,16 @@ MIT OR Apache-2.0 (dual license)
 
 ## Known Bugs
 
+- Cancellation gaps that `just pulse-census` measures, unchanged by the zencodec 0.2
+  Pulse migration (main `469a893f` and the migration print the same census):
+  - `DecodeJob::output_info` never polls the job's pulse (0 polls). Its bounded
+    probe walks the file uncancellably.
+  - The shared-palette encode hands the pulse to zenquant, whose palette
+    refinement (median cut, k-means) treats a stop as "return the palette so
+    far". A stop that fires once there (263 of the fixture's 368 polls) ends in
+    `Ok` with a coarser palette. A persistent stop still fails the encode at
+    zengif's next poll.
+
 - On Apple M4 Pro, `just arm-bench-macos decode_bench` currently reaches
   zenbench 0.1.11 but cannot produce an admitted benchmark: `zenbench cpu-info`
   reports an asymmetric Performance/Efficiency topology without an enforceable

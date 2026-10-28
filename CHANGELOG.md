@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+
+- zencodec 0.2 (operation Pulse): the jobs implement `with_pulse`, and the animation methods take
+  `Option<&dyn zencodec::Pulse>` instead of `Option<&dyn Stop>`. zengif requires zencodec `>=0.2.0`
+  (`0b4221c2`, `b3b9463d`).
+
+### Changed
+
+- The zencodec jobs keep the caller's `SharedPulse` (the no-op pulse by default) and hand that value to
+  every encoder, decoder and native session made from them; a call's pulse combines with it as the
+  call's stop did. Every operation polls exactly where it polled the stop token
+  (`tests/pulse_census.rs`). `with_stop` and `set_stop` remain only as zencodec's deprecated adapters,
+  which wrap the token in a `StopOnly` pulse (`b3b9463d`).
+
 ### Added
 
 - Streaming animation output (zencodec `AnimationFrameEncoder::begin`): GIF writes
@@ -36,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Tests
+
+- `tests/pulse.rs`: a job's pulse reaches every decode operation (sink and streaming included) and both
+  encoders; a call's pulse stops each animation call; a stopped timed push leaves the rounding phase and
+  the file unchanged; the legacy setters still cancel. `tests/pulse_census.rs` (`just pulse-census`)
+  prints each operation's polls for comparing revisions (`9077c440`).
 
 - Shared testkit verifies rational-timing refusal without damaging legacy
   animation, policy admission and inventory boundaries with inventory on/off.
