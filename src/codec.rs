@@ -2044,7 +2044,7 @@ mod tests {
     #[test]
     fn negotiate_padded_pixels_preserves_samples_and_context() {
         use alloc::sync::Arc;
-        use zenpixels::{ColorContext, PixelBufferParts};
+        use zenpixels::ColorContext;
         let context = Arc::new(ColorContext::from_icc([1u8, 2, 3]));
         for target in [
             PixelDescriptor::RGBA8_SRGB,
@@ -2054,7 +2054,9 @@ mod tests {
             let mut data = vec![0xEE; 40];
             data[3..11].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
             data[19..27].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
-            let mut parts = PixelBufferParts::new(data, 2, 2, 16, PixelDescriptor::RGBA8_SRGB);
+            let mut parts = PixelBuffer::new(2, 2, PixelDescriptor::RGBA8_SRGB).into_parts();
+            parts.data = data;
+            parts.stride_bytes = 16;
             parts.offset = 3;
             parts.color_context = Some(context.clone());
             let input = PixelBuffer::try_from_parts(parts).unwrap();

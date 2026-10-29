@@ -78,3 +78,4 @@ opt-level = 1
 # revision as the root manifest. Swap for the released zencodec before release.
 [patch.crates-io]
 zencodec = { git = "https://github.com/imazen/zencodec", rev = "e59b3803fc5b212bf4c92648ead4299c4ff0640a" }
+zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "789d69dbc314e748676b7f2f19542c17473ba40b" }

@@ -914,3 +914,13 @@ BGRA swizzling. 45 adapter tests and strict lib Clippy pass in isolated graphs
 with pixels283655c5 (0.2.17) and retirementc6772adb (0.3.1), using the current
 shared core compatibility fix. The original older pixel pin cannot satisfy that
 newer core floor; the initial resolution failure is retained, not waived.
+
+### CI source alignment correction
+
+The first migration used PixelBufferParts::new only in its new fixture, but the
+repo pixel pin predates that convenience constructor. The same fixture now
+obtains editable parts from a buffer; every sample/offset/context assertion is
+unchanged. The independent fuzz root now selects the same pixel git revision
+as the package root. Native adapter45tests, strict libClippy and all fuzz-target
+compilation pass in an isolated export with the actual committed source pins
+(rc0,18s,peakRSS0.30GiB). Fuzz lock changes only zenpixels source identity.
