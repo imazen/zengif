@@ -212,3 +212,8 @@ shared-contract-check:
 # polls end it with the timeout. Compare the output across revisions.
 pulse-census:
     cargo test --features inventory --test pulse_census -- --nocapture --test-threads 1
+
+# Pixel retirement compatibility; run in the selected paired dependency graph.
+pixel-retirement-check:
+    cargo test --no-default-features --features std,quantizr --lib codec::tests
+    cargo clippy --no-default-features --features std,quantizr --lib -- -D warnings

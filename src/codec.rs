@@ -1720,31 +1720,32 @@ fn negotiate_format(pixels: PixelBuffer, preferred: &[PixelDescriptor]) -> Pixel
     if desc != PixelDescriptor::RGBA8_SRGB {
         return pixels;
     }
-    let w = pixels.width();
-    let h = pixels.height();
-    // Check for RGB8 (strip alpha)
-    if preferred.contains(&PixelDescriptor::RGB8_SRGB) {
-        let raw = pixels.into_vec();
-        let rgb: Vec<u8> = raw
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|c| [c[0], c[1], c[2]])
-            .collect();
-        return PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB)
-            .expect("negotiate_format: dimensions unchanged");
+    let target = if preferred.contains(&PixelDescriptor::RGB8_SRGB) {
+        PixelDescriptor::RGB8_SRGB
+    } else if preferred.contains(&PixelDescriptor::BGRA8_SRGB) {
+        PixelDescriptor::BGRA8_SRGB
+    } else {
+        return pixels;
+    };
+    let mut parts = pixels.into_contiguous().into_parts();
+    // Packing preserves an alignment prefix. Move only active pixels to zero
+    // before handing the allocation to packed byte operations.
+    let len = parts.stride_bytes * parts.height as usize;
+    parts.data.copy_within(parts.offset..parts.offset + len, 0);
+    parts.data.truncate(len);
+    parts.offset = 0;
+    if target == PixelDescriptor::RGB8_SRGB {
+        for i in 0..len / 4 {
+            parts.data.copy_within(i * 4..i * 4 + 3, i * 3);
+        }
+        parts.data.truncate(len / 4 * 3);
+        parts.stride_bytes = parts.width as usize * 3;
+    } else {
+        garb::bytes::rgba_to_bgra_inplace(&mut parts.data)
+            .expect("negotiate_format: packed RGBA pixels");
     }
-    // Check for BGRA8 (swizzle) — garb uses SIMD (AVX2/NEON/WASM128)
-    if preferred.contains(&PixelDescriptor::BGRA8_SRGB) {
-        let mut raw = pixels.into_vec();
-        garb::bytes::rgba_to_bgra_inplace(&mut raw)
-            .expect("negotiate_format: buffer is 4-byte aligned");
-        return PixelBuffer::from_vec(raw, w, h, PixelDescriptor::BGRA8_SRGB)
-            .expect("negotiate_format: dimensions unchanged");
-    }
-    // Default: return as-is (RGBA8)
-    PixelBuffer::from_vec(pixels.into_vec(), w, h, PixelDescriptor::RGBA8_SRGB)
-        .expect("negotiate_format: dimensions unchanged")
+    parts.descriptor = target;
+    PixelBuffer::try_from_parts(parts).expect("negotiate_format: dimensions unchanged")
 }
 
 /// Convert owned GIF RGBA pixels to raw bytes, zero-copy.
@@ -1928,7 +1929,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
             let mut reuse_buf = self
                 .current_frame
                 .take()
-                .map(|(pb, _, _)| pb.into_vec())
+                .map(|(pb, _, _)| pb.into_parts().data)
                 .unwrap_or_default();
 
             let result = self
@@ -2040,6 +2041,43 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn negotiate_padded_pixels_preserves_samples_and_context() {
+        use alloc::sync::Arc;
+        use zenpixels::{ColorContext, PixelBufferParts};
+        let context = Arc::new(ColorContext::from_icc([1u8, 2, 3]));
+        for target in [
+            PixelDescriptor::RGBA8_SRGB,
+            PixelDescriptor::RGB8_SRGB,
+            PixelDescriptor::BGRA8_SRGB,
+        ] {
+            let mut data = vec![0xEE; 40];
+            data[3..11].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+            data[19..27].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
+            let mut parts = PixelBufferParts::new(data, 2, 2, 16, PixelDescriptor::RGBA8_SRGB);
+            parts.offset = 3;
+            parts.color_context = Some(context.clone());
+            let input = PixelBuffer::try_from_parts(parts).unwrap();
+            let before = input.as_slice().row(0).as_ptr();
+            let output = negotiate_format(input, &[target]);
+            assert!(Arc::ptr_eq(output.color_context().unwrap(), &context));
+            assert_eq!(output.descriptor(), target);
+            let rows = output.as_slice();
+            if target == PixelDescriptor::RGB8_SRGB {
+                assert_eq!(rows.row(0), &[1, 2, 3, 5, 6, 7]);
+                assert_eq!(rows.row(1), &[9, 10, 11, 13, 14, 15]);
+            } else if target == PixelDescriptor::BGRA8_SRGB {
+                assert_eq!(rows.row(0), &[3, 2, 1, 4, 7, 6, 5, 8]);
+                assert_eq!(rows.row(1), &[11, 10, 9, 12, 15, 14, 13, 16]);
+            } else {
+                assert_eq!(rows.row(0).as_ptr(), before);
+                assert_eq!(rows.row(0), &[1, 2, 3, 4, 5, 6, 7, 8]);
+                assert_eq!(rows.row(1), &[9, 10, 11, 12, 13, 14, 15, 16]);
+                assert_eq!(output.stride(), 16);
+            }
+        }
+    }
+
     use super::*;
     use zencodec::decode::DecodeJob as _;
     use zencodec::encode::EncoderConfig as _;
@@ -2535,7 +2573,8 @@ mod tests {
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
         assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
-        let px = out_buf.into_vec();
+        let px = out_buf.as_slice();
+        let px = px.row(0);
         // First pixel: R=255, G=128, B=0, A=255 (padding byte must not leak)
         assert_eq!(
             &px[0..4],
@@ -2574,7 +2613,8 @@ mod tests {
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
         assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
-        let px = out_buf.into_vec();
+        let px = out_buf.as_slice();
+        let px = px.row(0);
         // BGRX → RGBA: B=0, G=128, R=255 → R=255, G=128, B=0; alpha=255.
         assert_eq!(
             &px[0..4],

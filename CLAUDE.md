@@ -903,3 +903,14 @@ retained its category but omitted its nested cause from `Error::source`.
 `#[source]` restores typed extraction through native and erased errors. Keep the
 shared regression test alongside the category mapping test; they check different
 observations of the same error.
+
+## Pixel owner migration (2026-10-29)
+
+Format negotiation uses active packed pixels, including alignment-prefix removal,
+while retaining color context. `into_parts().data` alone is appropriate only for
+animation allocation reuse because that path overwrites the complete output.
+The padded 2x2/offset3 regression covers RGBA identity, RGB alpha stripping and
+BGRA swizzling. 45 adapter tests and strict lib Clippy pass in isolated graphs
+with pixels283655c5 (0.2.17) and retirementc6772adb (0.3.1), using the current
+shared core compatibility fix. The original older pixel pin cannot satisfy that
+newer core floor; the initial resolution failure is retained, not waived.

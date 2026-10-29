@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Decoded format negotiation packs active rows with explicit offset handling,
+  preserves attached color context, and returns unchanged RGBA owners directly.
+  Animation reuse extracts backing storage only when it will overwrite every
+  output byte. These paths no longer use retired `PixelBuffer::into_vec`.
+
 - The zencodec jobs keep the caller's `SharedPulse` (the no-op pulse by default) and hand that value to
   every encoder, decoder and native session made from them; a call's pulse combines with it as the
   call's stop did. Every operation polls exactly where it polled the stop token
