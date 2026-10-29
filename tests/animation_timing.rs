@@ -263,14 +263,14 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
             let limit = Arc::new(AtomicUsize::new(usize::MAX));
             let mut job = GifEncoderConfig::new().with_shared_palette(shared).job();
             if job_stop {
-                job = job.with_stop(zencodec::StopToken::new(PollLimit(
-                    calls.clone(),
-                    limit.clone(),
-                )));
+                job = job.with_pulse(zencodec::SharedPulse::new(
+                    zencodec::how_far::StopOnly::new(PollLimit(calls.clone(), limit.clone())),
+                ));
             }
             let mut encoder = job.animation_frame_encoder().unwrap();
             let call_token = PollLimit(calls.clone(), limit.clone());
-            let token = (!job_stop).then_some(&call_token as &dyn enough::Stop);
+            let call_pulse = zencodec::how_far::StopOnly::borrowed(&call_token);
+            let token = (!job_stop).then_some(&call_pulse as &dyn zencodec::Pulse);
             // Admit the lookahead frame before arming cancellation.
             encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
             calls.store(0, Ordering::Relaxed);

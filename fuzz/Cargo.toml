@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 
 [dependencies.zencodec]
-version = ">=0.1.26, <0.3.0"
+version = ">=0.2.0, <0.3.0"
 
 [dependencies.zengif]
 path = ".."
@@ -74,7 +74,7 @@ opt-level = 3
 [profile.dev]
 opt-level = 1
 
-# Depends on imazen/zencodec#133 (structural inventories). Swap this patch for the
-# released zencodec before merge.
+# Dependency patch tables do not propagate: the same zencodec 0.2 family
+# revision as the root manifest. Swap for the released zencodec before release.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "5ed2daded81407e7206fd8de6e8f1d93a5447b5b" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "e59b3803fc5b212bf4c92648ead4299c4ff0640a" }
