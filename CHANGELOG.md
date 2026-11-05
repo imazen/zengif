@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Zero-byte buffers use allocator-zeroed storage while preserving allocation policy, memory limits and tracking rollback.
+
 ### QUEUED BREAKING CHANGES
 
 - zencodec 0.2 (operation Pulse): the jobs implement `with_pulse`, and the animation methods take

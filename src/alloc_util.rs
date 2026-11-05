@@ -30,9 +30,13 @@
 //! boundary (see `codec.rs`). The 3-mode semantics are identical.
 
 #[cfg(not(feature = "std"))]
+use alloc::alloc::handle_alloc_error;
+#[cfg(not(feature = "std"))]
 use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::alloc::handle_alloc_error;
 use whereat::at;
 
 use crate::error::{GifError, Result};
@@ -120,7 +124,7 @@ pub(crate) fn alloc_filled<T: Clone>(
 }
 
 /// Allocate `n` zeroed bytes, honoring the per-site fallibility AND zengif's
-/// memory tracking. Thin `u8` wrapper over [`alloc_filled`].
+/// memory tracking. Requests zeroed storage directly; resolves policy only on failure.
 #[inline]
 pub(crate) fn alloc_zeroed(
     pref: AllocPref,
@@ -129,7 +133,17 @@ pub(crate) fn alloc_zeroed(
     stats: &Stats,
     limits: &Limits,
 ) -> Result<Vec<u8>> {
-    alloc_filled(pref, site_default_fallible, n, 0u8, stats, limits)
+    stats.try_alloc(n, limits)?;
+    bytemuck::allocation::try_zeroed_vec(n).map_err(|()| {
+        stats.track_dealloc(n);
+        if !resolve_fallible(pref, site_default_fallible) {
+            let layout = core::alloc::Layout::array::<u8>(n).expect("capacity overflow");
+            handle_alloc_error(layout);
+        }
+        at!(GifError::AllocationFailed {
+            requested: n as u64
+        })
+    })
 }
 
 /// Allocate an empty `Vec<u8>` with reserved capacity for `cap` bytes, honoring
@@ -193,6 +207,41 @@ mod tests {
     fn explicit_infallible_overrides_any_site_default() {
         assert!(!resolve_fallible(AllocPref::Infallible, true));
         assert!(!resolve_fallible(AllocPref::Infallible, false));
+    }
+
+    #[test]
+    fn zeroed_storage_tracks_success_and_rolls_back_failure() {
+        for pref in [
+            AllocPref::CodecDefault,
+            AllocPref::Fallible,
+            AllocPref::Infallible,
+        ] {
+            for site in [false, true] {
+                for n in [0, 1, 4095, 4096, 4097] {
+                    let stats = Stats::new();
+                    let limits = Limits::none();
+                    let v = alloc_zeroed(pref, site, n, &stats, &limits).unwrap();
+                    assert_eq!(v.len(), n);
+                    assert!(v.iter().all(|&b| b == 0));
+                    assert_eq!(stats.current(), n);
+                }
+            }
+        }
+        let stats = Stats::new();
+        assert!(
+            alloc_zeroed(
+                AllocPref::Fallible,
+                true,
+                usize::MAX,
+                &stats,
+                &Limits::none()
+            )
+            .is_err()
+        );
+        assert_eq!(stats.current(), 0);
+        // Arbitrary canvas backgrounds retain their nonzero fill contract.
+        let v = alloc_filled(AllocPref::Fallible, true, 4, 127u8, &stats, &Limits::none()).unwrap();
+        assert_eq!(v, [127; 4]);
     }
 
     #[test]
