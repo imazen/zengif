@@ -98,7 +98,7 @@ jobs:
 
       - name: Test (i686)
         env:
-          CROSS_CONTAINER_OPTS: "-v ${{ github.workspace }}/.corpus-cache:/codec-corpus"
+          CROSS_CONTAINER_OPTS: "--security-opt seccomp=unconfined -v ${{ github.workspace }}/.corpus-cache:/codec-corpus"
           CODEC_CORPUS_CACHE: /codec-corpus
         run: cross test --target i686-unknown-linux-gnu --features inventory
 
