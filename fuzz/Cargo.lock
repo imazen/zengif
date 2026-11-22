@@ -384,7 +384,7 @@ dependencies = [
 [[package]]
 name = "zenquant"
 version = "0.1.4"
-source = "git+https://github.com/imazen/zenquant?rev=1d82c7729031ced93445074b102fa23570520b83#1d82c7729031ced93445074b102fa23570520b83"
+source = "git+https://github.com/imazen/zenquant?rev=54da0ca519690672a545e05ffbbcd808bc0fd8cf#54da0ca519690672a545e05ffbbcd808bc0fd8cf"
 dependencies = [
  "archmage",
  "enough",
