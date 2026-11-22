@@ -20,11 +20,11 @@ features = ["std", "inventory"]
 
 # Re-exported by zengif, but needed directly for fuzz targets
 [dependencies.enough]
-version = "0.4"
+version = "0.4.5"
 features = ["std"]
 
 [dependencies.almost-enough]
-version = "0.4"
+version = "0.4.5"
 
 # Explicit features for fuzzing
 [features]

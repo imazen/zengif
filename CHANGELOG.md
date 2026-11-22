@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update dependency floors (`enough` 0.4.5, `almost-enough` 0.4.5, `garb` 0.2.8, `linear-srgb` 0.6.12, `bytemuck` 1.25.2, `imgref` 1.12.3, `rgb` 0.8.53, `thiserror` 2.0.21, `zenbench` 0.1.11, `zenutils-apidoc` 0.1.1) and advance the `zenquant` git pin to `1d82c772`.
+
 - Decoded format negotiation packs active rows with explicit offset handling,
   preserves attached color context, and returns unchanged RGBA owners directly.
   Animation reuse extracts backing storage only when it will overwrite every
