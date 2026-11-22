@@ -28,11 +28,10 @@ use enough::Stop;
 
 /// Maximum block-walk iterations even when no [`Limits`] is supplied.
 ///
-/// Each loop iteration consumes at least one byte of input (the unknown-block
-/// fallback advances by 1, every other branch advances by ≥ 1), so capping at
-/// `data.len() + 1` guarantees `O(input)` work without introducing artificial
-/// truncation on legitimate inputs. The `+ 1` lets the trailer byte be visited
-/// before the loop exits.
+/// Each loop iteration consumes at least one byte of input (every branch
+/// advances by ≥ 1 byte), so capping at `data.len() + 1` guarantees `O(input)`
+/// work without introducing artificial truncation on legitimate inputs. The
+/// `+ 1` lets the trailer byte be visited before the loop exits.
 const PROBE_MAX_ITERATIONS_FACTOR: usize = 1;
 
 /// Hard cap on frames discovered during a probe, independent of [`Limits`].
@@ -214,6 +213,19 @@ pub(crate) fn probe_located(
     probe_located_with_stop_reason(data, limits, stop, &mut None)
 }
 
+/// Advance past a GIF sub-block chain (`len data... 00`) starting at `pos`.
+fn skip_sub_blocks(data: &[u8], mut pos: usize) -> usize {
+    while pos < data.len() {
+        let block_size = data[pos] as usize;
+        pos += 1;
+        if block_size == 0 {
+            break;
+        }
+        pos = pos.saturating_add(block_size);
+    }
+    pos
+}
+
 fn probe_located_with_stop_reason(
     data: &[u8],
     limits: &Limits,
@@ -280,6 +292,9 @@ fn probe_located_with_stop_reason(
     let mut pending_gce_transparent = false;
     let mut pending_gce_delay = 0u16;
     let mut pending_gce_disposal = 0u8;
+    // The `gif` crate stops parsing header-phase application extensions at the
+    // first block whose introducer is not 0x21 (image, trailer, or unknown).
+    let mut header_over = false;
 
     let mut iters: usize = 0;
 
@@ -299,6 +314,10 @@ fn probe_located_with_stop_reason(
             return Err(ProbeError::Cancelled);
         }
 
+        if data[pos] != 0x21 {
+            header_over = true;
+        }
+
         match data[pos] {
             0x3B => break, // Trailer
             0x21 => {
@@ -306,44 +325,68 @@ fn probe_located_with_stop_reason(
                 if pos + 2 >= data.len() {
                     break;
                 }
+                let ext_start = pos;
                 let label = data[pos + 1];
                 pos += 2;
 
-                if label == 0xF9 {
-                    // Graphics Control Extension
-                    if pos + 5 <= data.len() && data[pos] == 4 {
-                        let gce_packed = data[pos + 1];
-                        pending_gce_delay = u16::from_le_bytes([data[pos + 2], data[pos + 3]]);
-                        pending_gce_transparent = (gce_packed & 0x01) != 0;
-                        pending_gce_disposal = (gce_packed >> 2) & 0x07;
-                    }
-                }
-
-                if label == 0xFF {
-                    // Application Extension — check for NETSCAPE2.0 loop count.
-                    // Layout: block_size(1)=11, "NETSCAPE2.0"(11), sub-block_size(1)=3,
-                    //         sub-block_id(1)=1, loop_count(2 LE), terminator(1)=0.
-                    if pos + 14 <= data.len()
-                        && data[pos] == 11
-                        && &data[pos + 1..pos + 12] == b"NETSCAPE2.0"
-                        && pos + 17 <= data.len()
-                        && data[pos + 12] == 3
-                        && data[pos + 13] == 1
-                    {
-                        repeat = Some(u16::from_le_bytes([data[pos + 14], data[pos + 15]]));
-                        // `pos` is past the introducer and label here.
-                        repeat_at = Some(pos - 2);
-                    }
-                }
-
-                // Skip sub-blocks
+                // Walk sub-blocks to the 0x00 terminator. Capture the first two
+                // sub-blocks (NETSCAPE2.0) and the last non-empty sub-block (the
+                // `gif` crate applies only the last sub-block of a GCE).
+                let mut first_sub: Option<&[u8]> = None;
+                let mut second_sub: Option<&[u8]> = None;
+                let mut last_sub: Option<&[u8]> = None;
+                let mut sub_count = 0usize;
+                let mut terminated = false;
                 while pos < data.len() {
                     let block_size = data[pos] as usize;
                     pos += 1;
                     if block_size == 0 {
+                        terminated = true;
                         break;
                     }
-                    pos = pos.saturating_add(block_size);
+                    let Some(end) = pos.checked_add(block_size).filter(|&e| e <= data.len()) else {
+                        last_sub = None;
+                        pos = pos.saturating_add(block_size);
+                        break;
+                    };
+                    let sub = &data[pos..end];
+                    if sub_count == 0 {
+                        first_sub = Some(sub);
+                    } else if sub_count == 1 {
+                        second_sub = Some(sub);
+                    }
+                    last_sub = Some(sub);
+                    sub_count += 1;
+                    pos = end;
+                }
+
+                if label == 0xF9 {
+                    // Graphics Control Extension: the `gif` crate parses only
+                    // the last sub-block at the 0x00 terminator and requires
+                    // exactly 4 bytes.
+                    pending_gce_transparent = false;
+                    pending_gce_delay = 0;
+                    pending_gce_disposal = 0;
+                    if terminated
+                        && let Some(gce) = last_sub
+                        && gce.len() == 4
+                    {
+                        let gce_packed = gce[0];
+                        pending_gce_delay = u16::from_le_bytes([gce[1], gce[2]]);
+                        pending_gce_transparent = (gce_packed & 0x01) != 0;
+                        pending_gce_disposal = (gce_packed >> 2) & 0x07;
+                    }
+                } else if label == 0xFF
+                    && !header_over
+                    && terminated
+                    && let Some(ident) = first_sub
+                    && ident == b"NETSCAPE2.0"
+                    && let Some([1, lo, hi]) = second_sub
+                {
+                    // Application Extension — NETSCAPE2.0 loop count (only
+                    // read before the first non-extension block).
+                    repeat = Some(u16::from_le_bytes([*lo, *hi]));
+                    repeat_at = Some(ext_start);
                 }
             }
             0x2C => {
@@ -432,22 +475,18 @@ fn probe_located_with_stop_reason(
                 pos += 1; // LZW min code size
 
                 // Skip sub-blocks (image data)
-                while pos < data.len() {
-                    let block_size = data[pos] as usize;
-                    pos += 1;
-                    if block_size == 0 {
-                        break;
-                    }
-                    pos = pos.saturating_add(block_size);
-                }
+                pos = skip_sub_blocks(data, pos);
 
                 // Reset GCE state
                 pending_gce_transparent = false;
                 pending_gce_delay = 0;
+                pending_gce_disposal = 0;
             }
             _ => {
-                // Unknown block — skip
-                pos += 1;
+                // Unknown block introducer: with `allow_unknown_blocks(true)` the
+                // `gif` crate consumes this introducer byte and reads the
+                // following bytes as a label-less sub-block chain (`len data... 00`).
+                pos = skip_sub_blocks(data, pos + 1);
             }
         }
     }
@@ -589,12 +628,12 @@ mod tests {
         data.push(0); // aspect
 
         // Flood: each iteration writes a degenerate Image Descriptor consuming
-        // 12 bytes (1 marker + 10 ID body + 1 LZW min code size + 0 terminator).
+        // 12 bytes (1 marker + 9 ID body + 1 LZW min code size + 1 terminator).
         // For test speed, write 200 K descriptors instead of 9 M but still
         // far above any realistic frame count.
         for _ in 0..200_000 {
             data.push(0x2C); // image descriptor marker
-            data.extend_from_slice(&[0u8; 10]); // image descriptor body (no local CT, not interlaced)
+            data.extend_from_slice(&[0u8; 9]); // image descriptor body (no local CT, not interlaced)
             data.push(0x02); // LZW min code size
             data.push(0x00); // sub-block terminator
         }
@@ -638,7 +677,7 @@ mod tests {
         data.push(0);
         for _ in 0..50_000 {
             data.push(0x2C);
-            data.extend_from_slice(&[0u8; 10]);
+            data.extend_from_slice(&[0u8; 9]);
             data.push(0x02);
             data.push(0x00);
         }
@@ -705,5 +744,144 @@ mod tests {
             ProbeError::Cancelled.category(),
             C::Stopped(enough::StopReason::Cancelled)
         );
+    }
+
+    fn test_gif_header_1x1() -> Vec<u8> {
+        let mut g = Vec::new();
+        g.extend_from_slice(b"GIF89a");
+        g.extend_from_slice(&1u16.to_le_bytes());
+        g.extend_from_slice(&1u16.to_le_bytes());
+        g.extend_from_slice(&[0x80, 0x00, 0x00]); // 2-entry GCT
+        g.extend_from_slice(&[255, 0, 0, 0, 0, 255]);
+        g
+    }
+
+    fn push_1x1_frame(g: &mut Vec<u8>) {
+        g.extend_from_slice(&[0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0x00]);
+        g.extend_from_slice(&[0x02, 0x02, 0x44, 0x01, 0x00]);
+    }
+
+    fn push_netscape(g: &mut Vec<u8>, loops: u16) {
+        g.extend_from_slice(&[0x21, 0xFF, 0x0B]);
+        g.extend_from_slice(b"NETSCAPE2.0");
+        let l = loops.to_le_bytes();
+        g.extend_from_slice(&[0x03, 0x01, l[0], l[1], 0x00]);
+    }
+
+    /// Issue #24: GCE uses the last 4-byte sub-block up to the 0x00 terminator.
+    #[test]
+    fn test_probe_gce_multi_subblock_uses_last() {
+        // Exact GCE bytes from #24: 3-byte sub-block followed by 4-byte transparent sub-block.
+        let mut g = test_gif_header_1x1();
+        g.extend_from_slice(&[
+            0x21, 0xF9, 0x03, 0x00, 0x00, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        push_1x1_frame(&mut g);
+        g.push(0x3B);
+        let p = probe(&g).unwrap();
+        assert!(p.has_transparency);
+        assert_eq!(p.total_duration_cs, 0);
+
+        // Non-zero delay in the later 4-byte sub-block is also honoured.
+        let mut g_delay = test_gif_header_1x1();
+        g_delay.extend_from_slice(&[
+            0x21, 0xF9, 0x03, 0x00, 0x05, 0x00, 0x04, 0x01, 0x19, 0x00, 0x00, 0x00,
+        ]);
+        push_1x1_frame(&mut g_delay);
+        g_delay.push(0x3B);
+        let p_delay = probe(&g_delay).unwrap();
+        assert!(p_delay.has_transparency);
+        assert_eq!(p_delay.total_duration_cs, 25);
+
+        // Transparent first 4-byte sub-block overridden by opaque last 4-byte sub-block.
+        let mut g_opaque = test_gif_header_1x1();
+        g_opaque.extend_from_slice(&[
+            0x21, 0xF9, 0x04, 0x01, 0x32, 0x00, 0x00, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00,
+        ]);
+        push_1x1_frame(&mut g_opaque);
+        g_opaque.push(0x3B);
+        let p_opaque = probe(&g_opaque).unwrap();
+        assert!(!p_opaque.has_transparency);
+        assert_eq!(p_opaque.total_duration_cs, 10);
+
+        // 4-byte first sub-block followed by non-4-byte last sub-block must not apply first.
+        let mut g_bad_last = test_gif_header_1x1();
+        g_bad_last.extend_from_slice(&[
+            0x21, 0xF9, 0x04, 0x01, 0x32, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+        ]);
+        push_1x1_frame(&mut g_bad_last);
+        g_bad_last.push(0x3B);
+        let p_bad = probe(&g_bad_last).unwrap();
+        assert!(!p_bad.has_transparency);
+        assert_eq!(p_bad.total_duration_cs, 0);
+    }
+
+    /// Issue #25: NETSCAPE2.0 is only read before the first non-extension block.
+    #[test]
+    fn test_probe_netscape_only_before_first_non_extension() {
+        // NETSCAPE2.0 after the first image descriptor is ignored.
+        let mut after_frame = test_gif_header_1x1();
+        push_1x1_frame(&mut after_frame);
+        push_netscape(&mut after_frame, 5);
+        push_1x1_frame(&mut after_frame);
+        after_frame.push(0x3B);
+        let p = probe(&after_frame).unwrap();
+        assert_eq!(p.frame_count, 2);
+        assert_eq!(p.repeat, None);
+
+        // NETSCAPE2.0 after an unknown block introducer before the first image is also ignored.
+        let mut after_unknown = test_gif_header_1x1();
+        after_unknown.extend_from_slice(&[0x05, 0x00]);
+        push_netscape(&mut after_unknown, 4);
+        push_1x1_frame(&mut after_unknown);
+        push_1x1_frame(&mut after_unknown);
+        after_unknown.push(0x3B);
+        let p_unk = probe(&after_unknown).unwrap();
+        assert_eq!(p_unk.frame_count, 2);
+        assert_eq!(p_unk.repeat, None);
+
+        // NETSCAPE2.0 after another 0x21 extension before the first image IS read.
+        let mut after_comment = test_gif_header_1x1();
+        after_comment.extend_from_slice(&[0x21, 0xFE, 0x02, b'h', b'i', 0x00]);
+        push_netscape(&mut after_comment, 4);
+        push_1x1_frame(&mut after_comment);
+        push_1x1_frame(&mut after_comment);
+        after_comment.push(0x3B);
+        let p_ok = probe(&after_comment).unwrap();
+        assert_eq!(p_ok.frame_count, 2);
+        assert_eq!(p_ok.repeat, Some(4));
+    }
+
+    /// Issue #21: unknown block introducer consumes its sub-block chain like `gif` crate.
+    #[test]
+    fn test_probe_stray_zero_and_unknown_blocks() {
+        // Stray 0x00 between two frames swallows frame 2 as a sub-block length (0x2C = 44).
+        let mut stray = test_gif_header_1x1();
+        push_1x1_frame(&mut stray);
+        stray.push(0x00);
+        push_1x1_frame(&mut stray);
+        stray.push(0x3B);
+        let p = probe(&stray).unwrap();
+        assert_eq!(p.frame_count, 1);
+        assert!(!p.is_animated);
+
+        // Double 0x00 acts as unknown introducer + immediate 0-length terminator, reaching frame 2.
+        let mut double_zero = test_gif_header_1x1();
+        push_1x1_frame(&mut double_zero);
+        double_zero.extend_from_slice(&[0x00, 0x00]);
+        push_1x1_frame(&mut double_zero);
+        double_zero.push(0x3B);
+        let p_double = probe(&double_zero).unwrap();
+        assert_eq!(p_double.frame_count, 2);
+        assert!(p_double.is_animated);
+
+        // Unknown introducer with 0x2C inside its sub-block skips past it to the real frame 2.
+        let mut wrapped = test_gif_header_1x1();
+        push_1x1_frame(&mut wrapped);
+        wrapped.extend_from_slice(&[0x05, 0x03, 0x2C, 0xAA, 0xBB, 0x00]);
+        push_1x1_frame(&mut wrapped);
+        wrapped.push(0x3B);
+        let p_wrapped = probe(&wrapped).unwrap();
+        assert_eq!(p_wrapped.frame_count, 2);
     }
 }

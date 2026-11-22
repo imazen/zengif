@@ -263,8 +263,8 @@ fn overwritten_netscape_is_dropped() {
     assert_eq!(part_at(&i, 19 + 19).disposition(), ANIM, "{i}");
 }
 
-/// NETSCAPE2.0 after the first image: `probe()` reads it, the gif crate does
-/// not. The part stays consumed and says which path reads it.
+/// NETSCAPE2.0 after the first image: neither `probe()` nor the gif crate
+/// reads it (#25), so the part is dropped.
 #[test]
 fn netscape_after_the_first_frame_names_its_reader() {
     let mut g = header(2);
@@ -275,8 +275,8 @@ fn netscape_after_the_first_frame_names_its_reader() {
     g.push(0x3B);
     let i = inv(&g);
     let p = part_at(&i, at);
-    assert_eq!(p.disposition(), ANIM);
-    assert!(p.detail().unwrap().contains("probe()"));
+    assert_eq!(p.disposition(), D::Dropped, "{i}");
+    assert!(!p.disposition().is_consumed(), "{i}");
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn gce_alpha_in_a_later_subblock_is_the_used_one() {
     assert_eq!(leaf_at(&i, 19 + 6).disposition(), ANIM, "{i}");
 }
 
-// ── finding 3: probe() and the decoder disagree inside unknown blocks ──
+// ── finding 3 fixed: probe() and the decoder agree inside unknown blocks (#21) ──
 
 #[test]
 fn bytes_probe_reads_differently_are_malformed_not_unknown() {
@@ -307,14 +307,15 @@ fn bytes_probe_reads_differently_are_malformed_not_unknown() {
     frame(&mut g, 1);
     g.push(0x3B);
     assert_eq!(native(&g).1.len(), 2);
+    assert_eq!(zengif::detect::probe(&g).unwrap().frame_count, 2);
+    assert_eq!(zengif::detect::probe(&g).unwrap().repeat, None);
     let i = inv(&g);
     let p = part_at(&i, stray as u64);
     assert_eq!(*p.tag(), PartTag::Code(0));
-    assert_eq!(p.disposition(), D::Malformed, "{i}");
+    assert_eq!(p.disposition(), D::Unknown, "{i}");
     assert!(p.range().end >= (stray + 20) as u64);
-    assert!(p.detail().unwrap().contains("probe()"));
 
-    // Transparency hidden behind a stray byte.
+    // Transparency inside an unknown block's sub-block is skipped by both decoder and probe().
     let mut g = header(1);
     g.push(0x07);
     g.extend(gce(0, true));
@@ -323,8 +324,8 @@ fn bytes_probe_reads_differently_are_malformed_not_unknown() {
     g.push(0x00);
     frame(&mut g, 0);
     g.push(0x3B);
-    assert!(GifDecoderConfig::new().job().probe(&g).unwrap().has_alpha);
-    assert_eq!(part_at(&inv(&g), 19).disposition(), D::Malformed);
+    assert!(!GifDecoderConfig::new().job().probe(&g).unwrap().has_alpha);
+    assert_eq!(part_at(&inv(&g), 19).disposition(), D::Unknown);
 }
 
 // ── findings 5 and 6: unused table, rejected frames ──────────────────

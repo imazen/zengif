@@ -410,13 +410,8 @@ impl<'a, R: Read> Decoder<'a, R> {
             }));
         }
 
-        // Validate frame bounds
-        if frame_info.left as u32 + frame_info.width as u32 > self.screen.width() as u32
-            || frame_info.top as u32 + frame_info.height as u32 > self.screen.height() as u32
-        {
-            // Frame extends beyond canvas - this is technically invalid but common
-            // We'll clip it during compositing
-        }
+        // Frame bounds against the canvas are enforced upstream by
+        // `gif::DecodeOptions::check_frame_consistency(true)`.
 
         // Read frame pixels - ensure buffer is large enough for this frame
         let frame_size = frame_info.width as usize * frame_info.height as usize;

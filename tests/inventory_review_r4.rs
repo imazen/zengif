@@ -85,8 +85,8 @@ fn anim_loop(g: &[u8]) -> Result<Option<u32>, String> {
     Ok(d.loop_count())
 }
 
-/// "last overall" counts the walker's descriptors; detect.rs resynchronises
-/// one byte at a time and can swallow the second frame and the NETSCAPE.
+/// With #21 and #25 fixed, `detect.rs` skips unknown blocks via sub-blocks
+/// like the decoder, counts both frames, and ignores the late NETSCAPE2.0.
 #[test]
 fn n1_detect_rs_counts_fewer_frames_netscape_overclaimed() {
     let mut g = screen(2, 1);
@@ -100,32 +100,34 @@ fn n1_detect_rs_counts_fewer_frames_netscape_overclaimed() {
     println!("probe sequence {:?}", p.sequence);
     let a = anim_loop(&g);
     println!("animation decoder loop_count {a:?}");
-    assert_eq!(probe_loop(&g).unwrap(), None, "probe reports no loop count");
-    assert_ne!(a.clone().unwrap(), Some(5));
+    assert_eq!(
+        probe_loop(&g).unwrap(),
+        Some(1),
+        "probe counts both frames and ignores late NETSCAPE"
+    );
+    assert_eq!(a.unwrap(), Some(1));
     let i = inv(&g);
     println!("{i}");
     assert_eq!(part_at(&i, ns as u64).disposition(), D::Dropped, "{i}");
 }
 
-/// The other direction: detect.rs counts a bogus frame inside an unknown
-/// block, so probe() reports the loop count of a NETSCAPE: the inventory asks
-/// detect.rs itself and keeps it as metadata.
+/// With #21 and #25 fixed, `detect.rs` ignores the bogus 0x2C inside `0x05`,
+/// reports Single (no loop count), and ignores the late NETSCAPE2.0.
 #[test]
 fn n1b_detect_rs_counts_more_frames_netscape_underclaimed() {
     let mut g = screen(1, 1);
     frame_at(&mut g, 0);
     let ns = g.len();
     g.extend(netscape(5)); // after the header phase, single real frame
-    // gif crate: unknown 05, sub-block of 10 bytes that look like a descriptor to detect.rs
+    // gif crate: unknown 05, sub-block of 10 bytes that look like a descriptor
     g.extend_from_slice(&[0x05, 0x0A, 0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0x00]);
     g.push(0x3B);
     let pl = probe_loop(&g);
     println!("probe loop {pl:?}");
     let i = inv(&g);
     println!("{i}");
-    // Native repeats 5 = 6 plays.
-    assert_eq!(pl.unwrap(), Some(6), "probe() reports 6 plays");
-    assert_eq!(part_at(&i, ns as u64).disposition(), ANIM, "{i}");
+    assert_eq!(pl.unwrap(), None, "probe counts 1 real frame (Single)");
+    assert_eq!(part_at(&i, ns as u64).disposition(), D::Dropped, "{i}");
 }
 
 /// A zero-sized logical screen: Decoder::new rejects it (check_dimensions), so

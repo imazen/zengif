@@ -4,9 +4,8 @@
 //! decode path consumes it. No LZW decoding happens here.
 //!
 //! The block grammar follows the `gif` crate's `StreamingDecoder` (0.14, with
-//! `allow_unknown_blocks(true)`), because that is what the decode path runs on,
-//! not `detect::probe_with_limits`, which resynchronises differently (it steps
-//! over an unknown byte one byte at a time):
+//! `allow_unknown_blocks(true)`), which `detect::probe_with_limits` also
+//! follows:
 //!
 //! - `0x21 label sub-blocks…` is an extension; the label is not interpreted
 //!   beyond choosing a disposition.
@@ -312,11 +311,10 @@ pub(crate) fn walk(
     };
     // Which loop count reaches the caller, and only if `Decoder::new`
     // succeeds (otherwise `probe()`, `decode()` and the animation decoder all
-    // fail):
-    // - the animation decoder reports the last one before the header phase
-    //   ends, once a frame decodes;
-    // - `probe()` reports what detect.rs kept, the same call `probe()` makes,
-    //   and only for an animation.
+    // fail). Both `probe()` and the `gif` crate read only the last
+    // NETSCAPE2.0 before the first non-extension block:
+    // - the animation decoder reports it once a frame decodes;
+    // - `probe()` reports what `detect.rs` kept, only for an animation.
     if !facts.header_fatal {
         if facts.good_frames > 0 {
             facts.netscape_used.extend(
@@ -990,23 +988,12 @@ fn image(
 /// An introducer byte the `gif` crate does not know. It consumes the byte,
 /// then reads the next byte as the first sub-block length.
 ///
-/// `detect.rs` (which feeds `probe()`) instead steps over the byte and goes on
-/// looking for blocks, so when the swallowed bytes contain a block introducer
-/// or trailer byte the two walkers can read different things there: such a
-/// block is `Malformed`, not `Unknown`.
+/// `detect.rs` (which feeds `probe()`) follows the same sub-block grammar, so a
+/// terminated unknown block is `Unknown` and a truncated one is `Malformed`.
 fn unknown_block(w: &mut Walker<'_>, pos: usize, introducer: u8) -> Result<usize, WalkError> {
     let sb = sub_blocks(w.data, pos + 1);
-    let probe_reads = w.data[pos + 1..sb.end]
-        .iter()
-        .any(|b| matches!(*b, EXT_INTRODUCER | IMAGE_SEPARATOR | TRAILER));
     let (disposition, note) = if !sb.terminated {
         (Disposition::Malformed, "; truncated")
-    } else if probe_reads {
-        (
-            Disposition::Malformed,
-            "; probe() (detect.rs) steps one byte and may read blocks (loop count, transparency, \
-             frames) from these bytes that the decoder skips",
-        )
     } else {
         (Disposition::Unknown, "")
     };
@@ -1094,8 +1081,7 @@ fn split_extension(w: &mut Walker<'_>, sp: Split<'_>) -> Result<(), WalkError> {
                 Disposition::Dropped,
                 "unread sub-blocks",
                 alloc::format!(
-                    "{} bytes before the sub-block the decoder reads; probe() (detect.rs) reads the first \
-                     Graphic Control sub-block, so it can take a transparency flag or delay from here",
+                    "{} bytes before the sub-block the decoder reads",
                     used.start - body.start
                 ),
             ),
@@ -1362,9 +1348,9 @@ fn application(w: &mut Walker<'_>, pos: usize, sb: SubBlocks) -> Result<usize, W
     Ok(end)
 }
 
-/// NETSCAPE2.0 with a loop count. `probe()` reads the last one in the file;
-/// the gif crate (animation decoder, native API) the last one before the first
-/// image. Any other one, and any extra sub-block, reaches nothing.
+/// NETSCAPE2.0 with a loop count. Both `probe()` and the `gif` crate
+/// (animation decoder, native API) read only the last one before the first
+/// non-extension block. Any other one, and any extra sub-block, reaches nothing.
 fn netscape(
     w: &mut Walker<'_>,
     pos: usize,
@@ -1384,16 +1370,15 @@ fn netscape(
             Disposition::Dropped,
             Some(label),
             Some(alloc::format!(
-                "loop count {n}; nothing reports it (overwritten by a later NETSCAPE2.0, the decoder \
-                 fails before it applies, or no frame decodes, or probe() sees a single frame)"
+                "loop count {n}; nothing reports it (overwritten by a later NETSCAPE2.0, after the \
+                 first non-extension block, the decoder fails before it applies, no frame decodes, \
+                 or probe() sees a single frame)"
             )),
         )?;
         return Ok(end);
     }
-    let detail = alloc::format!(
-        "loop count {n} (0 = forever); probe() reports the last one in the file, the animation \
-         decoder only one before the first non-extension block"
-    );
+    let detail =
+        alloc::format!("loop count {n} (0 = forever); read before the first non-extension block");
     let anim = Disposition::Metadata(MetadataKind::Animation);
     if second.end + 1 == end {
         w.block(pos..end, tag, anim, Some(label), Some(detail))?;

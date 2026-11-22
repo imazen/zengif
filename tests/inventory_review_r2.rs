@@ -8,11 +8,10 @@ use std::collections::HashMap;
 use enough::Unstoppable;
 use zencodec::ImageSequence;
 use zencodec::decode::{AnimationFrameDecoder, DecodeJob, DecoderConfig};
-use zencodec::inventory::{Disposition as D, Inventory, MetadataKind, Part};
+use zencodec::inventory::{Disposition as D, Inventory, Part};
 use zengif::GifDecoderConfig;
 
 const LZW_1X1: &[u8] = &[0x02, 0x02, 0x44, 0x01, 0x00];
-const ANIM: D = D::Metadata(MetadataKind::Animation);
 
 fn inv(data: &[u8]) -> Inventory {
     let i = GifDecoderConfig::new()
@@ -419,8 +418,9 @@ fn q2_eoi_before_pixel_count_is_fatal_but_consumed() {
     );
 }
 
-/// NETSCAPE2.0 after an unknown introducer byte but before the first image:
-/// the gif crate's header phase already ended, probe() reads the later one.
+/// NETSCAPE2.0 after an unknown introducer byte before the first image (#25):
+/// both the gif crate and `probe()` stop reading header application extensions
+/// once `0x05` ends the header phase, so both report 1 play and drop both NETSCAPE blocks.
 #[test]
 fn q3_netscape_after_unknown_block_before_first_image() {
     let mut g = header(2);
@@ -445,11 +445,9 @@ fn q3_netscape_after_unknown_block_before_first_image() {
     while d.render_next_frame(None).unwrap().is_some() {}
     let anim = d.loop_count();
     println!("probe {probe:?}, animation decoder {anim:?}");
-    // Native repeats 7 = 8 plays.
-    assert_eq!(probe, Some(8));
-    // The first NETSCAPE (3 repeats = 4 plays) must not win, in either reading.
-    assert!(!matches!(anim, Some(3 | 4)), "{anim:?}");
-    assert_ne!(m.repeat, zengif::Repeat::Count(3));
+    assert_eq!(probe, Some(1));
+    assert_eq!(anim, Some(1));
+    assert_eq!(m.repeat, zengif::Repeat::Once);
     let i = inv(&g);
     println!("{i}");
     assert_eq!(
@@ -457,12 +455,16 @@ fn q3_netscape_after_unknown_block_before_first_image() {
         D::Dropped,
         "loop 3 reaches nobody\n{i}"
     );
-    assert_eq!(part_at(&i, ns3 as u64 + 19 + 15).disposition(), ANIM, "{i}");
+    assert_eq!(
+        part_at(&i, ns3 as u64 + 19 + 15).disposition(),
+        D::Dropped,
+        "loop 7 after frame 1 reaches nobody\n{i}"
+    );
 }
 
 /// A GCE whose first 4-byte sub-block says "transparent" and whose last says
-/// opaque: probe() (detect.rs, first sub-block) reports has_alpha from the
-/// bytes the inventory calls "unread sub-blocks".
+/// opaque (#24): both decoder and `probe()` apply only the last sub-block
+/// (opaque), and the inventory calls the earlier sub-block `Dropped`.
 #[test]
 fn q4_probe_reads_the_first_gce_subblock() {
     let mut g = header(1);
@@ -478,12 +480,18 @@ fn q4_probe_reads_the_first_gce_subblock() {
     );
     let info = GifDecoderConfig::new().job().probe(&g).unwrap();
     println!("probe has_alpha {}", info.has_alpha);
-    assert!(info.has_alpha, "probe() read the first sub-block");
+    assert!(
+        !info.has_alpha,
+        "probe() applies the last sub-block: opaque"
+    );
     let i = inv(&g);
     println!("{i}");
     let first = leaf_at(&i, (at + 3) as u64);
     assert_eq!(first.disposition(), D::Dropped, "{i}");
-    assert!(first.detail().unwrap().contains("probe()"), "{i}");
+    assert!(
+        first.detail().unwrap().contains("before the sub-block"),
+        "{i}"
+    );
 }
 
 /// Frames after a rejected frame: probe() still counts them and reads their

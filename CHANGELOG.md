@@ -48,6 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Align `detect::probe` Graphic Control Extension parsing with the `gif` crate by walking all
+  sub-blocks to the `0x00` terminator and applying the last 4-byte sub-block for `has_transparency`
+  and `total_duration_cs` (`#24`).
+
+- Align `detect::probe` `NETSCAPE2.0` parsing with the `gif` crate so loop counts are only applied
+  before the first non-extension block (matching `AnimationFrameDecoder::loop_count()` and native
+  `decode_gif()`), and remove the stale compositing-clip comment in `Decoder::next_frame` (`#25`).
+
+- Align `detect::probe` unknown-block handling with `gif` crate `allow_unknown_blocks(true)` by
+  consuming the introducer byte and skipping the following sub-block chain (`#21`).
+
+- Add `CROSS_CONTAINER_OPTS: --security-opt seccomp=unconfined` to the CI `i686` cross test job.
+
 - Reject unsupported or conflicting color/range/alpha interpretation before GIF frame admission. Supported F32 input is explicitly linear BT.709 in finite 0..1; unsupported ICC, HDR, premultiplied input and encoded F32 need prior conversion. Packing now checks cancellation per row, reserves fallibly, and checks its allocation against the configured memory bound.
 
 - Decode accepts a clean EOF at the exact frame limit in all three native frame APIs; an additional frame still fails before pixel allocation.

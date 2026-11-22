@@ -261,9 +261,9 @@ fn unknown_introducer_between_frames_matches_the_decoder() {
         g.extend_from_slice(LZW_1X1);
     };
     frame(&mut g, 0);
-    // Malformed, not Unknown: probe() steps one byte and would read `2C` as an image.
-    // The unknown byte is consumed alone; `03 2C AA BB 00` is then read as one
-    // sub-block of 3 bytes plus the terminator, so the `2C` is not an image.
+    // Terminated unknown block: both the decoder and `probe()` consume the
+    // unknown byte and skip `03 2C AA BB 00` as one 3-byte sub-block plus
+    // terminator, so the `2C` is not an image.
     g.extend_from_slice(&[0x05, 0x03, 0x2C, 0xAA, 0xBB, 0x00]);
     frame(&mut g, 1);
     g.push(0x3B);
@@ -273,7 +273,7 @@ fn unknown_introducer_between_frames_matches_the_decoder() {
     let r = rows(&inv);
     assert!(
         r.iter()
-            .any(|x| x.2 == PartTag::Code(0x05) && x.3 == 34 && x.4 == 40 && x.5 == D::Malformed),
+            .any(|x| x.2 == PartTag::Code(0x05) && x.3 == 34 && x.4 == 40 && x.5 == D::Unknown),
         "{inv}"
     );
     assert_eq!(
@@ -307,10 +307,10 @@ fn stray_zero_byte_swallows_the_rest_like_the_decoder() {
     assert_eq!(last.range(), 34..g.len() as u64);
 }
 
-// ── suspected bugs (see the inventory lane report) ───────────────────
+// ── probe/decoder parity (#21) ────────────────────────────────────────
 
-/// `detect::probe` and the decoder disagree about a stray `00` between frames:
-/// the probe reports 2 frames, the decoder yields 1.
+/// `detect::probe` and the decoder agree about a stray `00` between frames:
+/// both swallow the second frame as a 0x2C-length sub-block and report 1 frame.
 #[test]
 fn probe_and_decoder_disagree_about_a_stray_zero_byte() {
     let mut g = Vec::new();
@@ -324,7 +324,7 @@ fn probe_and_decoder_disagree_about_a_stray_zero_byte() {
         }
     }
     g.push(0x3B);
-    assert_eq!(zengif::detect::probe(&g).unwrap().frame_count, 2);
+    assert_eq!(zengif::detect::probe(&g).unwrap().frame_count, 1);
     assert_eq!(decode_frames(&g), Ok(1));
 }
 
