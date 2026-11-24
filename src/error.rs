@@ -508,7 +508,7 @@ impl zencodec::CategorizedError for GifError {
             // this strictly, since the first violated check returns early), so
             // the *real* offending dimension survives instead of always
             // reading Width. The tie-break arms below cover the pathological
-            // `PixelSlice`→u16 overflow-clamp construction in `codec.rs`, where
+            // `PixelView`→u16 overflow-clamp construction in `codec.rs`, where
             // both `max_width`/`max_height` are clamped to the same `u16::MAX`
             // sentinel regardless of which axis actually overflowed: there the
             // offending axis is pinned exactly at that ceiling while the other
@@ -729,7 +729,7 @@ mod tests {
             .category(),
             C::Resource(Res::Limits(L::Height))
         );
-        // Tie at the same ceiling (mirrors the PixelSlice->u16 overflow-clamp
+        // Tie at the same ceiling (mirrors the PixelView->u16 overflow-clamp
         // construction in codec.rs): the pinned axis with the other
         // comfortably under its own max is attributed.
         assert_eq!(

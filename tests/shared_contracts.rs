@@ -1,6 +1,6 @@
 #![cfg(feature = "std")]
 
-// PixelSlice encoding requires one of the configured palette quantizers.
+// PixelView encoding requires one of the configured palette quantizers.
 #[cfg(any(
     feature = "zenquant",
     feature = "quantette",

@@ -24,7 +24,7 @@ use zencodec::encode::{AnimationFrameEncoder, EncodeJob, Encoder, EncoderConfig}
 use zencodec::how_far::StopOnly;
 use zencodec::{At, CodecError, ErrorCategory, SharedPulse};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
-use zenpixels::{PixelBuffer, PixelDescriptor, PixelSliceMut};
+use zenpixels::{ImageSpec, PixelBuf, PixelViewMut};
 
 /// Three 17x13 frames.
 fn animation() -> Vec<u8> {
@@ -46,11 +46,11 @@ fn animation() -> Vec<u8> {
 }
 
 /// Opaque 16x16 RGBA with enough colors to quantize.
-fn frame() -> PixelBuffer {
+fn frame() -> PixelBuf {
     let bytes = (0..16 * 16u32)
         .flat_map(|i| [(i * 37) as u8, (i * 113 + i / 5) as u8, (i * 67) as u8, 255])
         .collect();
-    PixelBuffer::from_vec(bytes, 16, 16, PixelDescriptor::RGBA8_SRGB).unwrap()
+    PixelBuf::from_bytes(bytes, 16, 16, ImageSpec::rgba8_srgb()).unwrap()
 }
 
 /// Counts its polls; poll number `at` reports a timeout, once.
@@ -110,12 +110,12 @@ impl DecodeRowSink for Rows {
         _y: u32,
         height: u32,
         width: u32,
-        descriptor: PixelDescriptor,
-    ) -> Result<PixelSliceMut<'_>, zencodec::decode::SinkError> {
-        let stride = width as usize * descriptor.bytes_per_pixel();
+        descriptor: ImageSpec,
+    ) -> Result<PixelViewMut<'_>, zencodec::decode::SinkError> {
+        let stride = width as usize * descriptor.layout.bytes_per_pixel();
         self.buf.resize(height as usize * stride, 0);
         self.rows += height;
-        Ok(PixelSliceMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
+        Ok(PixelViewMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
     }
 }
 
@@ -184,14 +184,14 @@ fn a_job_pulse_reaches_both_encoders() {
     };
     let animate = |pulse, shared| -> Result<(), At<CodecError>> {
         let mut encoder = job(pulse, shared).animation_frame_encoder()?;
-        encoder.push_frame(frame.as_slice(), 10, None)?;
-        encoder.push_frame_exact(frame.as_slice(), FrameDuration::new(2, 100).unwrap(), None)?;
-        encoder.push_frame_timed(frame.as_slice(), FrameDuration::new(1, 30).unwrap(), None)?;
+        encoder.push_frame(frame.as_view(), 10, None)?;
+        encoder.push_frame_exact(frame.as_view(), FrameDuration::new(2, 100).unwrap(), None)?;
+        encoder.push_frame_timed(frame.as_view(), FrameDuration::new(1, 30).unwrap(), None)?;
         encoder.finish(None).map(drop)
     };
     check_job_pulse(&[
         ("still encode", &|p| {
-            job(p, false).encoder()?.encode(frame.as_slice()).map(drop)
+            job(p, false).encoder()?.encode(frame.as_view()).map(drop)
         }),
         ("animation", &|p| animate(p, false)),
         ("shared-palette animation", &|p| animate(p, true)),
@@ -209,19 +209,19 @@ fn a_call_pulse_stops_each_animation_call() {
             .animation_frame_encoder()
             .unwrap()
     };
-    let pixels = frame.as_slice();
+    let pixels = frame.as_view();
     let duration = FrameDuration::new(2, 100).unwrap();
     assert_timed_out("push_frame", encoder().push_frame(pixels, 20, stopped));
     assert_timed_out(
         "push_frame_exact",
-        encoder().push_frame_exact(frame.as_slice(), duration, stopped),
+        encoder().push_frame_exact(frame.as_view(), duration, stopped),
     );
     assert_timed_out(
         "push_frame_timed",
-        encoder().push_frame_timed(frame.as_slice(), duration, stopped),
+        encoder().push_frame_timed(frame.as_view(), duration, stopped),
     );
     let mut finishing = encoder();
-    finishing.push_frame(frame.as_slice(), 20, None).unwrap();
+    finishing.push_frame(frame.as_view(), 20, None).unwrap();
     assert_timed_out("finish", finishing.finish(stopped));
 
     let data = animation();
@@ -261,12 +261,12 @@ fn a_stopped_timed_push_keeps_the_timing_phase() {
             if stop_second && index == 1 {
                 assert_timed_out(
                     "timed push",
-                    encoder.push_frame_timed(frame.as_slice(), third, Some(&expired)),
+                    encoder.push_frame_timed(frame.as_view(), third, Some(&expired)),
                 );
             }
             durations.push(
                 encoder
-                    .push_frame_timed(frame.as_slice(), third, None)
+                    .push_frame_timed(frame.as_view(), third, None)
                     .unwrap(),
             );
         }
@@ -307,10 +307,10 @@ fn the_legacy_stop_setter_still_cancels() {
         "still encode",
         encode()
             .encoder()
-            .and_then(|encoder| encoder.encode(frame.as_slice())),
+            .and_then(|encoder| encoder.encode(frame.as_view())),
     );
     let mut encoder = encode().animation_frame_encoder().unwrap();
-    assert_timed_out("push_frame", encoder.push_frame(frame.as_slice(), 20, None));
+    assert_timed_out("push_frame", encoder.push_frame(frame.as_view(), 20, None));
 
     let config = GifDecoderConfig::new();
     let dynamic: &dyn DynDecoderConfig = &config;

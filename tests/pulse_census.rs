@@ -26,7 +26,7 @@ use zencodec::decode::{AnimationFrameDecoder, Decode, DecodeJob, DecodeRowSink, 
 use zencodec::encode::{AnimationFrameEncoder, EncodeJob, Encoder, EncoderConfig};
 use zencodec::{At, CodecError, ErrorCategory};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
-use zenpixels::{PixelBuffer, PixelDescriptor, PixelSliceMut};
+use zenpixels::{ImageSpec, PixelBuf, PixelViewMut};
 
 /// Three 17x13 frames.
 fn animation() -> Vec<u8> {
@@ -48,11 +48,11 @@ fn animation() -> Vec<u8> {
 }
 
 /// Opaque 16x16 RGBA with enough colors to quantize.
-fn frame() -> PixelBuffer {
+fn frame() -> PixelBuf {
     let bytes = (0..16 * 16u32)
         .flat_map(|i| [(i * 37) as u8, (i * 113 + i / 5) as u8, (i * 67) as u8, 255])
         .collect();
-    PixelBuffer::from_vec(bytes, 16, 16, PixelDescriptor::RGBA8_SRGB).unwrap()
+    PixelBuf::from_bytes(bytes, 16, 16, ImageSpec::rgba8_srgb()).unwrap()
 }
 
 /// Counts its polls; poll number `at` reports a timeout, once.
@@ -83,11 +83,11 @@ impl DecodeRowSink for Rows {
         _y: u32,
         height: u32,
         width: u32,
-        descriptor: PixelDescriptor,
-    ) -> Result<PixelSliceMut<'_>, zencodec::decode::SinkError> {
-        let stride = width as usize * descriptor.bytes_per_pixel();
+        descriptor: ImageSpec,
+    ) -> Result<PixelViewMut<'_>, zencodec::decode::SinkError> {
+        let stride = width as usize * descriptor.layout.bytes_per_pixel();
         self.buf.resize(height as usize * stride, 0);
-        Ok(PixelSliceMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
+        Ok(PixelViewMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
     }
 }
 
@@ -186,14 +186,14 @@ fn encode_poll_census() {
     };
     let animate = |token, shared| -> Result<(), At<CodecError>> {
         let mut encoder = job(token, shared).animation_frame_encoder()?;
-        encoder.push_frame(frame.as_slice(), 10, None)?;
-        encoder.push_frame_exact(frame.as_slice(), FrameDuration::new(2, 100).unwrap(), None)?;
-        encoder.push_frame_timed(frame.as_slice(), FrameDuration::new(1, 30).unwrap(), None)?;
+        encoder.push_frame(frame.as_view(), 10, None)?;
+        encoder.push_frame_exact(frame.as_view(), FrameDuration::new(2, 100).unwrap(), None)?;
+        encoder.push_frame_timed(frame.as_view(), FrameDuration::new(1, 30).unwrap(), None)?;
         encoder.finish(None).map(drop)
     };
     census(&[
         ("still encode", true, &|t| {
-            job(t, false).encoder()?.encode(frame.as_slice()).map(drop)
+            job(t, false).encoder()?.encode(frame.as_view()).map(drop)
         }),
         ("animation", true, &|t| animate(t, false)),
         ("shared-palette animation", true, &|t| animate(t, true)),

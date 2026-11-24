@@ -27,7 +27,7 @@ default = ["std", "zenquant"]
 # zencodec/std: lets `ErrorCategory::Io`'s `CodecIoKind` carry the real
 # `std::io::ErrorKind` (via `CodecIoKind::from`) instead of only the opaque
 # no_std-safe form — used by `GifError`'s `CategorizedError` impl below.
-std = ["gif/std", "enough/std", "whereat/std", "zencodec/std"]
+std = ["gif/std", "enough/std", "whereat/std", "zencodec/std", "dep:linear-srgb", "dep:garb"]
 # zencodec is now a REQUIRED, always-on dependency (no cargo feature). The
 # std-only codec glue (GifEncoderConfig/GifDecoderConfig + the CategorizedError /
 # SourceEncodingDetails impls) is gated on the existing `std` feature — which the
@@ -73,13 +73,13 @@ bytemuck = { version = "1.25.2", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.21", default-features = false }
 
 # Shared codec traits (required, always-on; std-only glue gated on `std`)
-zencodec = { version = ">=0.2.0, <0.3.0" }
+zencodec = { version = ">=0.2.0, <0.3.0", default-features = false }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
-zenpixels = { version = ">=0.2.10, <0.4.0", default-features = false }
-linear-srgb = { version = "0.6.12" }
-garb = { version = "0.2.8", default-features = false }
+zenpixels = { version = ">=0.5.0, <0.6.0", default-features = false }
+linear-srgb = { version = "0.6.12", optional = true }
+garb = { version = "0.2.8", default-features = false, optional = true }
 
 # Color quantization backends (optional)
 imagequant = { version = "4.4.1", optional = true }
@@ -184,9 +184,11 @@ name = "expand_palette"
 harness = false
 
 [patch.crates-io]
-# The zencodec 0.2 family (Pulse contract) from one core revision, e59b3803;
-# the testkit's zencodec-io comes from the same checkout. zencodec 0.2 is not
-# on crates.io: releases stay gated on publishing the family.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "e59b3803fc5b212bf4c92648ead4299c4ff0640a" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "e59b3803fc5b212bf4c92648ead4299c4ff0640a" }
-zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "789d69dbc314e748676b7f2f19542c17473ba40b" }
+# Keep the unpublished pixel and codec families on the same integration cohort.
+zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "42a0c5c83c5c418950eb528d92d57788f6700bcf" }
+zenpixels-convert = { git = "https://github.com/imazen/zenpixels", rev = "42a0c5c83c5c418950eb528d92d57788f6700bcf" }
+garb = { git = "https://github.com/imazen/garb", rev = "457ff8b9153e9d675a39dc098052b2ffeb6206fa" }
+linear-srgb = { git = "https://github.com/imazen/linear-srgb", rev = "ae83f19426737635fee3dd16f228681019f52585" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
+zenmeta = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
