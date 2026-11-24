@@ -27,7 +27,7 @@ default = ["std", "zenquant"]
 # zencodec/std: lets `ErrorCategory::Io`'s `CodecIoKind` carry the real
 # `std::io::ErrorKind` (via `CodecIoKind::from`) instead of only the opaque
 # no_std-safe form — used by `GifError`'s `CategorizedError` impl below.
-std = ["gif/std", "enough/std", "whereat/std", "zencodec/std", "dep:linear-srgb", "dep:garb"]
+std = ["gif/std", "enough/std", "whereat/std", "zencodec/std", "dep:linear-srgb", "dep:garb", "dep:zenmeta"]
 # zencodec is now a REQUIRED, always-on dependency (no cargo feature). The
 # std-only codec glue (GifEncoderConfig/GifDecoderConfig + the CategorizedError /
 # SourceEncodingDetails impls) is gated on the existing `std` feature — which the
@@ -73,7 +73,8 @@ bytemuck = { version = "1.25.2", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.21", default-features = false }
 
 # Shared codec traits (required, always-on; std-only glue gated on `std`)
-zencodec = { version = ">=0.2.0, <0.3.0", default-features = false }
+zencodec = { version = ">=0.3.0, <0.5.0", default-features = false }
+zenmeta = { version = ">=0.2.0, <0.3.0", default-features = false, optional = true }
 
 # Node definitions (optional)
 # zennode = { path = "../zennode/zennode", optional = true, default-features = false, features = ["derive"] }
@@ -99,7 +100,9 @@ imgref = { version = "1.12.3", optional = true }
 # zencodec-testkit: companion crate providing conformance checks
 # (e.g. `check_decode_truncation_series`). The root patch keeps it and the
 # codec on one zencodec, so they share one set of traits.
-zencodec-testkit = ">=0.2.0, <0.3.0"
+zencodec-testkit = ">=0.3.0, <0.5.0"
+# Build and parse standards-compliant ICC fixtures without a binary test asset.
+moxcms = { version = "0.9.2", default-features = false }
 almost-enough = "0.4.5"
 zenutils-fuzz = "0.1.0"
 imgref = "1.12.3"
@@ -185,10 +188,10 @@ harness = false
 
 [patch.crates-io]
 # Keep the unpublished pixel and codec families on the same integration cohort.
-zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "42a0c5c83c5c418950eb528d92d57788f6700bcf" }
-zenpixels-convert = { git = "https://github.com/imazen/zenpixels", rev = "42a0c5c83c5c418950eb528d92d57788f6700bcf" }
+zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "e0dba0052a839ecfe17e4c911a3761e793605adf" }
+zenpixels-convert = { git = "https://github.com/imazen/zenpixels", rev = "e0dba0052a839ecfe17e4c911a3761e793605adf" }
 garb = { git = "https://github.com/imazen/garb", rev = "457ff8b9153e9d675a39dc098052b2ffeb6206fa" }
 linear-srgb = { git = "https://github.com/imazen/linear-srgb", rev = "ae83f19426737635fee3dd16f228681019f52585" }
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
-zenmeta = { git = "https://github.com/imazen/zencodec", rev = "037ef59b57ae003f853a5b6624b173edfee22d6a" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "093211c276fbb1781bec1601d7cb6b0fb92f245a" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "093211c276fbb1781bec1601d7cb6b0fb92f245a" }
+zenmeta = { git = "https://github.com/imazen/zencodec", rev = "093211c276fbb1781bec1601d7cb6b0fb92f245a" }

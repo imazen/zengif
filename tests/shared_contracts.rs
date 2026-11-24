@@ -54,6 +54,59 @@ mod encode_checks {
     }
 
     #[test]
+    fn animation_begin_rejects_and_binds_declared_spec() {
+        use zencodec::decode::AnimationFrameDecoder as _;
+        use zencodec::encode::AnimationFrameEncoder as _;
+        use zencodec::{CodecErrorExt, UnsupportedOperation, animation::FrameDuration};
+        use zenpixels::{ImageSpec, PixelView, Primaries};
+
+        let spec = ImageSpec::rgba8_srgb();
+        let pixels = [11, 22, 33, 255];
+        let srgb = PixelView::from_packed(&pixels, 1, 1, spec.clone()).unwrap();
+        let p3 = PixelView::from_packed(
+            &pixels,
+            1,
+            1,
+            spec.clone().with_primaries(Primaries::DisplayP3),
+        )
+        .unwrap();
+        let bgra =
+            PixelView::from_packed(&[33, 22, 11, 255], 1, 1, ImageSpec::bgra8_srgb()).unwrap();
+        let expected = tk::ExpectedError::Unsupported(UnsupportedOperation::PixelFormat);
+        tk::check_animation_begin_refusal(E::new(), srgb.clone(), p3.clone(), expected).unwrap();
+
+        let mut encoder = E::new().job().animation_frame_encoder().unwrap();
+        let rejected = encoder.begin(1, 1, p3.spec().clone(), Some(2)).unwrap_err();
+        assert_eq!(
+            rejected.unsupported_operation(),
+            Some(&UnsupportedOperation::PixelFormat)
+        );
+        assert!(encoder.pending_output().is_empty());
+        encoder.begin(1, 1, spec, Some(1)).unwrap();
+        let delay = FrameDuration::new(7, 100).unwrap();
+        for wrong in [p3, bgra] {
+            let rejected = encoder.push_frame_exact(wrong, delay, None).unwrap_err();
+            assert_eq!(
+                rejected.unsupported_operation(),
+                Some(&UnsupportedOperation::PixelFormat)
+            );
+            assert!(encoder.pending_output().is_empty());
+        }
+        encoder.push_frame_exact(srgb, delay, None).unwrap();
+        let output = encoder.finish(None).unwrap();
+        let mut decoder = D::new()
+            .job()
+            .animation_frame_decoder(Cow::Borrowed(output.data()), &[])
+            .unwrap();
+        let frame = decoder.render_next_frame(None).unwrap().unwrap();
+        assert_eq!(frame.pixels().row(0), pixels);
+        assert_eq!(frame.duration(), delay);
+        assert_eq!(frame.frame_index(), 0);
+        assert_eq!(frame.pts(), None);
+        assert!(decoder.render_next_frame(None).unwrap().is_none());
+    }
+
+    #[test]
     fn policy_and_inventory_contracts() {
         let img = tk::TestImage::rgb8_gradient(4, 3);
         let enc = E::new();
@@ -126,4 +179,94 @@ fn decoder_contracts_without_requiring_a_quantizer() {
     zencodec_testkit::check_inventory_dispatch(dec.clone(), bytes).unwrap();
     #[cfg(feature = "inventory")]
     zencodec_testkit::check_inventory_input_limit(dec, bytes).unwrap();
+}
+
+/// Write one-pixel patches without GCE transparency or canvas clearing.
+fn preference_fixture(width: u16, patches: &[(u16, u16)]) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut encoder = gif::Encoder::new(&mut data, width, 1, &[11, 22, 33, 44, 55, 66]).unwrap();
+    for &(left, duration) in patches {
+        encoder
+            .write_frame(&gif::Frame {
+                left,
+                width: 1,
+                height: 1,
+                delay: duration,
+                dispose: gif::DisposalMethod::Keep,
+                buffer: std::borrow::Cow::Owned(vec![left as u8]),
+                ..gif::Frame::default()
+            })
+            .unwrap();
+    }
+    encoder.into_inner().unwrap();
+    data
+}
+
+#[test]
+fn ranked_preferences_preserve_alpha_and_deliver_exact_animation_timing() {
+    use zencodec::{OrientationHint, animation::FrameDuration, decode::FrameCompletion};
+    use zencodec_testkit::{DisplayFrameCase, check_animation_delivery, check_decode_preferences};
+    use zengif::GifDecoderConfig;
+    use zenpixels::{ImageSpec, PixelView};
+
+    // The first patch leaves a clear pixel and the second makes the display
+    // fully opaque, without any transparent index on either frame.
+    let data = preference_fixture(2, &[(0, 0), (1, u16::MAX)]);
+    let rgba = ImageSpec::rgba8_srgb();
+    let rgb = ImageSpec::rgb8_srgb();
+    let bgra = ImageSpec::bgra8_srgb();
+    let partial = [11, 22, 33, 255, 0, 0, 0, 0];
+    let opaque = [11, 22, 33, 255, 44, 55, 66, 255];
+    for (preferred, opaque_bytes, opaque_spec) in [
+        (
+            vec![rgba.clone(), rgb.clone(), bgra],
+            opaque.as_slice(),
+            rgba.clone(),
+        ),
+        (vec![rgb.clone()], &[11, 22, 33, 44, 55, 66][..], rgb),
+    ] {
+        let first = PixelView::from_packed(&partial, 2, 1, rgba.clone()).unwrap();
+        check_decode_preferences(GifDecoderConfig::new(), &data, &preferred, first.clone())
+            .unwrap();
+        check_animation_delivery(
+            GifDecoderConfig::new(),
+            &data,
+            &preferred,
+            OrientationHint::Preserve,
+            Some(1),
+            &[
+                DisplayFrameCase {
+                    pixels: first,
+                    timing: FrameCompletion {
+                        duration: FrameDuration::new(0, 100).unwrap(),
+                        frame_index: 0,
+                        pts: None,
+                    },
+                },
+                DisplayFrameCase {
+                    pixels: PixelView::from_packed(opaque_bytes, 2, 1, opaque_spec).unwrap(),
+                    timing: FrameCompletion {
+                        duration: FrameDuration::new(u64::from(u16::MAX), 100).unwrap(),
+                        frame_index: 1,
+                        pts: None,
+                    },
+                },
+            ],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn verified_opaque_still_prefers_rgb_when_ranked_first() {
+    let data = preference_fixture(1, &[(0, 7)]);
+    let rgb = zenpixels::ImageSpec::rgb8_srgb();
+    let expected = zenpixels::PixelView::from_packed(&[11, 22, 33], 1, 1, rgb.clone()).unwrap();
+    zencodec_testkit::check_decode_preferences(
+        zengif::GifDecoderConfig::new(),
+        &data,
+        &[rgb, zenpixels::ImageSpec::rgba8_srgb()],
+        expected,
+    )
+    .unwrap();
 }
