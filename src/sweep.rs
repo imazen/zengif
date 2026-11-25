@@ -11,7 +11,7 @@
 //! **Backend liveness is build-feature-conditional** (playbook
 //! pattern 10's build-feature-dead knob, made structural): the axes
 //! only contain backends the cargo-feature set compiled in, and
-//! [`variant_from_cell_id`] rejects ids naming backends this build
+//! [`variant_from_cell_id`](crate::sweep::variant_from_cell_id) rejects ids naming backends this build
 //! does not carry — a curated probe can never be a guaranteed inert
 //! step.
 //!
@@ -303,7 +303,7 @@ impl SweepAxes {
     /// starve the head, and ladder the continuous knobs densely.
     ///
     /// - **Dithering** is laddered `0.0, 0.1, … 1.0` (11 points — finer
-    ///   than [`modes_full`]'s `{0.0, 0.5, 1.0}`), the continuous knob a
+    ///   than [`Self::modes_full`]'s `{0.0, 0.5, 1.0}`), the continuous knob a
     ///   scalar-output head regresses.
     /// - **Backends** are kept dense (every compiled backend, default
     ///   first), so a **compute-tier** head sees each

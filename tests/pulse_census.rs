@@ -52,7 +52,7 @@ fn frame() -> PixelBuf {
     let bytes = (0..16 * 16u32)
         .flat_map(|i| [(i * 37) as u8, (i * 113 + i / 5) as u8, (i * 67) as u8, 255])
         .collect();
-    PixelBuf::from_bytes(bytes, 16, 16, ImageSpec::rgba8_srgb()).unwrap()
+    PixelBuf::from_bytes(bytes, 16, 16, ImageSpec::RGBA8_SRGB).unwrap()
 }
 
 /// Counts its polls; poll number `at` reports a timeout, once.
@@ -87,7 +87,14 @@ impl DecodeRowSink for Rows {
     ) -> Result<PixelViewMut<'_>, zencodec::decode::SinkError> {
         let stride = width as usize * descriptor.layout.bytes_per_pixel();
         self.buf.resize(height as usize * stride, 0);
-        Ok(PixelViewMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
+        Ok(PixelViewMut::new_with_spec_cow(
+            &mut self.buf,
+            width,
+            height,
+            stride,
+            zenpixels::SpecCow::from_owned(descriptor),
+        )
+        .unwrap())
     }
 }
 

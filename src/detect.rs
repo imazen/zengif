@@ -162,7 +162,7 @@ impl std::error::Error for ProbeError {}
 /// Scans the GIF block structure to extract animation properties, palette
 /// usage, and transparency info. No LZW decompression is performed.
 ///
-/// This wrapper enforces a built-in [`PROBE_HARD_FRAME_CAP`] (1 M frames)
+/// This wrapper enforces a built-in `PROBE_HARD_FRAME_CAP` (1 M frames)
 /// and an iteration ceiling proportional to `data.len()`, so it cannot be
 /// made to spend unbounded CPU on a hostile body of trivial Image Descriptors.
 /// It does not support cancellation; use [`probe_with_limits`] if you need
@@ -176,7 +176,7 @@ pub fn probe(data: &[u8]) -> Result<GifProbe, ProbeError> {
 /// Like [`probe()`] but additionally:
 ///
 /// - Rejects with [`ProbeError::TooManyFrames`] once `limits.max_frame_count`
-///   (or the built-in [`PROBE_HARD_FRAME_CAP`], whichever is smaller) is hit.
+///   (or the built-in `PROBE_HARD_FRAME_CAP`, whichever is smaller) is hit.
 /// - Polls `stop` periodically and returns [`ProbeError::Cancelled`] if asked.
 /// - Always bounds total work at `O(data.len())` regardless of the supplied
 ///   limits, so callers cannot accidentally disable the DoS protection by

@@ -188,21 +188,21 @@ fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
 // ── Supported descriptors ────────────────────────────────────────────
 
 static ENCODE_DESCRIPTORS: &[ImageSpec] = &[
-    ImageSpec::rgba8_srgb(),
-    ImageSpec::rgb8_srgb(),
-    ImageSpec::gray8_srgb(),
-    ImageSpec::bgra8_srgb(),
-    ImageSpec::rgbx8_srgb(),
-    ImageSpec::bgrx8_srgb(),
-    ImageSpec::rgbf32_linear(),
-    ImageSpec::rgbaf32_linear(),
-    ImageSpec::grayf32_linear(),
+    ImageSpec::RGBA8_SRGB,
+    ImageSpec::RGB8_SRGB,
+    ImageSpec::GRAY8_SRGB,
+    ImageSpec::BGRA8_SRGB,
+    ImageSpec::RGBX8_SRGB,
+    ImageSpec::BGRX8_SRGB,
+    ImageSpec::RGBF32_LINEAR,
+    ImageSpec::RGBAF32_LINEAR,
+    ImageSpec::GRAYF32_LINEAR,
 ];
 
 static DECODE_DESCRIPTORS: &[ImageSpec] = &[
-    ImageSpec::rgba8_srgb(),
-    ImageSpec::rgb8_srgb(),
-    ImageSpec::bgra8_srgb(),
+    ImageSpec::RGBA8_SRGB,
+    ImageSpec::RGB8_SRGB,
+    ImageSpec::BGRA8_SRGB,
 ];
 
 // ── Capabilities ─────────────────────────────────────────────────────
@@ -908,7 +908,7 @@ fn gif_input_cicp(spec: &ImageSpec) -> Option<zenpixels::Cicp> {
             0,
             range == zenpixels::SignalRange::Full,
         )),
-        _ => spec.color.try_cicp().ok(),
+        _ => spec.color.project_cicp().ok(),
     }
 }
 
@@ -931,8 +931,8 @@ fn validate_gif_metadata(
 
 /// Animation GIF encoder — streams frames to the underlying encoder.
 ///
-/// Frames are encoded immediately on [`push_frame`](Self::push_frame)
-/// rather than buffering all source pixels until [`finish`](Self::finish).
+/// Frames are encoded immediately on [`push_frame`](zencodec::encode::AnimationFrameEncoder::push_frame)
+/// rather than buffering all source pixels until [`finish`](zencodec::encode::AnimationFrameEncoder::finish).
 /// Shared-palette mode can retain its configured frame window. The native
 /// writer retains compressed output bytes until finish.
 ///
@@ -1563,7 +1563,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         Ok(OutputInfo::full_decode(
             metadata.width as u32,
             metadata.height as u32,
-            ImageSpec::rgba8_srgb(),
+            ImageSpec::RGBA8_SRGB,
         )
         .with_alpha(has_alpha))
     }
@@ -1719,9 +1719,17 @@ enum GifOutput {
 impl GifOutput {
     const fn spec(self) -> ImageSpec {
         match self {
-            Self::Rgba => ImageSpec::rgba8_srgb(),
-            Self::Rgb => ImageSpec::rgb8_srgb(),
-            Self::Bgra => ImageSpec::bgra8_srgb(),
+            Self::Rgba => ImageSpec::RGBA8_SRGB,
+            Self::Rgb => ImageSpec::RGB8_SRGB,
+            Self::Bgra => ImageSpec::BGRA8_SRGB,
+        }
+    }
+
+    const fn spec_ref(self) -> &'static ImageSpec {
+        match self {
+            Self::Rgba => &zenpixels::specs::RGBA8_SRGB,
+            Self::Rgb => &zenpixels::specs::RGB8_SRGB,
+            Self::Bgra => &zenpixels::specs::BGRA8_SRGB,
         }
     }
 }
@@ -1766,13 +1774,16 @@ impl GifPreferences {
 }
 
 fn convert_decoded_format(pixels: PixelBuf, target: GifOutput) -> PixelBuf {
-    if target == GifOutput::Rgba || pixels.spec() != &ImageSpec::rgba8_srgb() {
+    if target == GifOutput::Rgba || pixels.spec() != &ImageSpec::RGBA8_SRGB {
         return pixels;
     }
 
     // The decoder's byte backing is reusable. Compact active rows and drop the
     // alignment prefix before running packed pixel operations.
-    let parts = pixels.into_contiguous().into_parts();
+    let mut parts = pixels
+        .into_tight_buf()
+        .expect("owned GIF RGBA backing")
+        .into_parts();
     let zenpixels::PixelStorage::U8(mut bytes) = parts.storage else {
         unreachable!("GIF RGBA is backed by bytes");
     };
@@ -1788,10 +1799,11 @@ fn convert_decoded_format(pixels: PixelBuf, target: GifOutput) -> PixelBuf {
         }
         GifOutput::Rgba => unreachable!(),
     }
-    let mut output = PixelBuf::from_bytes(bytes, parts.width, parts.height, target.spec())
-        .expect("packed GIF output dimensions");
-    output.set_facts(parts.facts);
-    output.with_hdr(parts.hdr).with_origin(parts.origin)
+    let spec = target.spec();
+    parts.storage = zenpixels::PixelStorage::U8(bytes);
+    parts.stride = parts.width as usize * spec.layout.bytes_per_pixel();
+    parts.spec = spec;
+    PixelBuf::from_parts(parts).expect("packed GIF output dimensions")
 }
 
 impl zencodec::decode::Decode for GifDecoder<'_> {
@@ -1834,7 +1846,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             frame.pixels,
             metadata.width as u32,
             metadata.height as u32,
-            ImageSpec::rgba8_srgb(),
+            ImageSpec::RGBA8_SRGB,
         )
         .map_err(|_| GifError::InvalidEncoderState {
             message: "frame size mismatch",
@@ -2002,7 +2014,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
             }
             &self.converted
         };
-        let view = PixelView::from_packed(bytes, width, height, format.spec())
+        let view = PixelView::from_bytes(bytes, width, height, format.spec_ref())
             .expect("GIF canvas or staging has matching dimensions");
         Ok(Some(AnimationFrame::with_duration(view, duration, index)))
     }
@@ -2065,10 +2077,16 @@ mod tests {
             let mut data = vec![0xEE; 40];
             data[3..11].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
             data[19..27].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
-            let input =
-                PixelBuf::from_parts(PixelStorage::U8(data), 3, 2, 2, 16, ImageSpec::rgba8_srgb())
-                    .unwrap()
-                    .with_origin(ColorOrigin::from_icc(profile.clone()));
+            let input = PixelBuf::from_storage_parts(
+                PixelStorage::U8(data),
+                3,
+                2,
+                2,
+                16,
+                ImageSpec::RGBA8_SRGB,
+            )
+            .unwrap()
+            .with_origin(ColorOrigin::from_icc(profile.clone()));
             let before = input.as_view().row(0).as_ptr();
             let target = GifPreferences::new(&[preferred.spec()]).select(|| {
                 let view = input.as_view();
@@ -2084,11 +2102,11 @@ mod tests {
             assert!(Arc::ptr_eq(output.origin().icc.as_ref().unwrap(), &profile));
             let rows = output.as_view();
             if preferred == GifOutput::Bgra {
-                assert_eq!(output.spec(), &ImageSpec::bgra8_srgb());
+                assert_eq!(output.spec(), &ImageSpec::BGRA8_SRGB);
                 assert_eq!(rows.row(0), &[3, 2, 1, 4, 7, 6, 5, 8]);
                 assert_eq!(rows.row(1), &[11, 10, 9, 12, 15, 14, 13, 16]);
             } else {
-                assert_eq!(output.spec(), &ImageSpec::rgba8_srgb());
+                assert_eq!(output.spec(), &ImageSpec::RGBA8_SRGB);
                 assert_eq!(rows.row(0).as_ptr(), before);
                 assert_eq!(rows.row(0), &[1, 2, 3, 4, 5, 6, 7, 8]);
                 assert_eq!(rows.row(1), &[9, 10, 11, 12, 13, 14, 15, 16]);
@@ -2188,12 +2206,12 @@ mod tests {
                 .color_space,
             moxcms::DataColorSpace::Rgb,
         );
-        let input = PixelBuf::from_bytes(vec![11, 22, 33, 255], 1, 1, ImageSpec::rgba8_srgb())
+        let input = PixelBuf::from_bytes(vec![11, 22, 33, 255], 1, 1, ImageSpec::RGBA8_SRGB)
             .unwrap()
             .with_origin(ColorOrigin::from_icc(profile.clone()));
         let output = convert_decoded_format(input, GifOutput::Bgra);
         let view = output.as_view();
-        assert_eq!(view.spec(), &ImageSpec::bgra8_srgb());
+        assert_eq!(view.spec(), &ImageSpec::BGRA8_SRGB);
         assert_eq!(view.row(0), &[33, 22, 11, 255]);
         assert!(Arc::ptr_eq(
             view.origin().unwrap().icc.as_ref().unwrap(),
@@ -2407,7 +2425,7 @@ mod tests {
         for _ in 0..16 * 16 {
             rgba_bytes.extend_from_slice(&[255, 0, 0, 255]);
         }
-        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, ImageSpec::rgba8_srgb()).unwrap();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, ImageSpec::RGBA8_SRGB).unwrap();
         let pixels = buf.as_view();
 
         let config = GifEncoderConfig::new();
@@ -2451,7 +2469,7 @@ mod tests {
         for i in 0u32..16 * 16 {
             rgba_bytes.extend_from_slice(&[(i % 256) as u8, 128, 64, 255]);
         }
-        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, ImageSpec::rgba8_srgb()).unwrap();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, ImageSpec::RGBA8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2474,7 +2492,7 @@ mod tests {
         for i in 0u32..16 * 16 {
             rgb_bytes.extend_from_slice(&[(i % 256) as u8, 128, 64]);
         }
-        let buf = PixelBuf::from_bytes(rgb_bytes, 16, 16, ImageSpec::rgb8_srgb()).unwrap();
+        let buf = PixelBuf::from_bytes(rgb_bytes, 16, 16, ImageSpec::RGB8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2494,7 +2512,7 @@ mod tests {
         use zencodec::encode::Encoder as _;
 
         let gray_bytes: Vec<u8> = (0..16 * 16).map(|i| (i % 256) as u8).collect();
-        let buf = PixelBuf::from_bytes(gray_bytes, 16, 16, ImageSpec::gray8_srgb()).unwrap();
+        let buf = PixelBuf::from_bytes(gray_bytes, 16, 16, ImageSpec::GRAY8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2520,7 +2538,7 @@ mod tests {
             f32_bytes.extend_from_slice(&0.5f32.to_ne_bytes());
             f32_bytes.extend_from_slice(&0.25f32.to_ne_bytes());
         }
-        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::rgbf32_linear()).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::RGBF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2547,7 +2565,7 @@ mod tests {
             f32_bytes.extend_from_slice(&0.25f32.to_ne_bytes());
             f32_bytes.extend_from_slice(&1.0f32.to_ne_bytes());
         }
-        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::rgbaf32_linear()).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::RGBAF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2571,7 +2589,7 @@ mod tests {
             let v = (i % 256) as f32 / 255.0;
             f32_bytes.extend_from_slice(&v.to_ne_bytes());
         }
-        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::grayf32_linear()).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, ImageSpec::GRAYF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(buf.as_view()).unwrap();
@@ -2594,7 +2612,7 @@ mod tests {
         for _ in 0..32 * 32 {
             rgba_bytes.extend_from_slice(&[100, 150, 200, 255]);
         }
-        let buf = PixelBuf::from_bytes(rgba_bytes, 32, 32, ImageSpec::rgba8_srgb()).unwrap();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 32, 32, ImageSpec::RGBA8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let dyn_enc = config.job().dyn_encoder().unwrap();
         let output = dyn_enc.encode(buf.as_view()).unwrap();
@@ -2607,11 +2625,11 @@ mod tests {
         use zencodec::encode::EncoderConfig as _;
         let desc = GifEncoderConfig::supported_descriptors();
         assert!(
-            desc.contains(&ImageSpec::rgbx8_srgb()),
+            desc.contains(&ImageSpec::RGBX8_SRGB),
             "RGBX8_SRGB must be in supported_descriptors"
         );
         assert!(
-            desc.contains(&ImageSpec::bgrx8_srgb()),
+            desc.contains(&ImageSpec::BGRX8_SRGB),
             "BGRX8_SRGB must be in supported_descriptors"
         );
     }
@@ -2635,7 +2653,7 @@ mod tests {
         for _ in 0..(w * h) {
             buf.extend_from_slice(&[255, 128, 0, 0x13]);
         }
-        let pbuf = PixelBuf::from_bytes(buf, w, h, ImageSpec::rgbx8_srgb()).unwrap();
+        let pbuf = PixelBuf::from_bytes(buf, w, h, ImageSpec::RGBX8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(pbuf.as_view()).unwrap();
@@ -2648,7 +2666,7 @@ mod tests {
         let dec = GifDecoderConfig::new();
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
-        assert_eq!(out_buf.spec(), &ImageSpec::rgba8_srgb());
+        assert_eq!(out_buf.spec(), &ImageSpec::RGBA8_SRGB);
         let px = out_buf.as_view();
         let px = px.row(0);
         // First pixel: R=255, G=128, B=0, A=255 (padding byte must not leak)
@@ -2678,7 +2696,7 @@ mod tests {
         for _ in 0..(w * h) {
             buf.extend_from_slice(&[0, 128, 255, 0x42]);
         }
-        let pbuf = PixelBuf::from_bytes(buf, w, h, ImageSpec::bgrx8_srgb()).unwrap();
+        let pbuf = PixelBuf::from_bytes(buf, w, h, ImageSpec::BGRX8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
         let output = encoder.encode(pbuf.as_view()).unwrap();
@@ -2688,7 +2706,7 @@ mod tests {
         let dec = GifDecoderConfig::new();
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
-        assert_eq!(out_buf.spec(), &ImageSpec::rgba8_srgb());
+        assert_eq!(out_buf.spec(), &ImageSpec::RGBA8_SRGB);
         let px = out_buf.as_view();
         let px = px.row(0);
         // BGRX → RGBA: B=0, G=128, R=255 → R=255, G=128, B=0; alpha=255.
@@ -2730,8 +2748,8 @@ mod tests {
             rgb.extend_from_slice(&[r, g, b]);
         }
 
-        let rgbx_buf = PixelBuf::from_bytes(rgbx, w, h, ImageSpec::rgbx8_srgb()).unwrap();
-        let rgb_buf = PixelBuf::from_bytes(rgb, w, h, ImageSpec::rgb8_srgb()).unwrap();
+        let rgbx_buf = PixelBuf::from_bytes(rgbx, w, h, ImageSpec::RGBX8_SRGB).unwrap();
+        let rgb_buf = PixelBuf::from_bytes(rgb, w, h, ImageSpec::RGB8_SRGB).unwrap();
 
         let rgbx_out = GifEncoderConfig::new()
             .job()
@@ -2774,13 +2792,13 @@ mod tests {
         for _ in 0..8 * 8 {
             frame1_bytes.extend_from_slice(&[255, 0, 0, 255]); // red
         }
-        let buf1 = PixelBuf::from_bytes(frame1_bytes, 8, 8, ImageSpec::rgba8_srgb()).unwrap();
+        let buf1 = PixelBuf::from_bytes(frame1_bytes, 8, 8, ImageSpec::RGBA8_SRGB).unwrap();
 
         let mut frame2_bytes = Vec::with_capacity(8 * 8 * 4);
         for _ in 0..8 * 8 {
             frame2_bytes.extend_from_slice(&[0, 0, 255, 255]); // blue
         }
-        let buf2 = PixelBuf::from_bytes(frame2_bytes, 8, 8, ImageSpec::rgba8_srgb()).unwrap();
+        let buf2 = PixelBuf::from_bytes(frame2_bytes, 8, 8, ImageSpec::RGBA8_SRGB).unwrap();
 
         let config = GifEncoderConfig::new();
         let mut enc = config
@@ -3271,7 +3289,7 @@ mod tests {
                 .unwrap()
                 .decode()
                 .unwrap();
-            out.into_buffer().try_into_vec::<u8>().unwrap()
+            out.into_buffer().into_vec::<u8>().unwrap()
         };
 
         // All three modes must agree, for the same encoded input.

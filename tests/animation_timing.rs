@@ -17,7 +17,7 @@ use zengif::{GifDecoderConfig, GifEncoderConfig};
 use zenpixels::{ImageSpec, PixelBuf};
 
 fn pixels() -> PixelBuf {
-    PixelBuf::from_bytes([255, 0, 0, 255].repeat(16), 4, 4, ImageSpec::rgba8_srgb()).unwrap()
+    PixelBuf::from_bytes([255, 0, 0, 255].repeat(16), 4, 4, ImageSpec::RGBA8_SRGB).unwrap()
 }
 fn wire_repeat(bytes: &[u8]) -> Option<u16> {
     let offset = bytes.windows(11).position(|w| w == b"NETSCAPE2.0")?;
@@ -250,7 +250,7 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
             ]
         })
         .collect();
-    let pixels = PixelBuf::from_bytes(bytes, 128, 128, ImageSpec::rgba8_srgb()).unwrap();
+    let pixels = PixelBuf::from_bytes(bytes, 128, 128, ImageSpec::RGBA8_SRGB).unwrap();
     for shared in [false, true] {
         for job_stop in [false, true] {
             let calls = Arc::new(AtomicUsize::new(0));

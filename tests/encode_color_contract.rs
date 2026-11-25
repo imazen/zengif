@@ -30,8 +30,7 @@ fn rejected(pixels: PixelBuf, metadata: zencodec::Metadata) {
         pixels.spec()
     );
     // Bad input must not initialize or poison an otherwise valid encoder.
-    let valid =
-        PixelBuf::from_bytes(vec![127, 0, 255, 255], 1, 1, ImageSpec::rgba8_srgb()).unwrap();
+    let valid = PixelBuf::from_bytes(vec![127, 0, 255, 255], 1, 1, ImageSpec::RGBA8_SRGB).unwrap();
     // A separate frame can satisfy the job's declared color when a prior
     // frame conflicted with it.
     animation.push_frame(valid.as_view(), 10, None).unwrap();
@@ -40,17 +39,18 @@ fn rejected(pixels: PixelBuf, metadata: zencodec::Metadata) {
 #[test]
 fn unsupported_color_and_alpha_are_rejected_before_admission() {
     for desc in [
-        ImageSpec::rgba8_srgb().with_primaries(Primaries::DisplayP3),
-        ImageSpec::rgba8_srgb().with_transfer(Transfer::Linear),
-        ImageSpec::rgba8_srgb().with_transfer(Transfer::Unknown),
-        ImageSpec::rgba8_srgb().with_range(SignalRange::Narrow),
-        ImageSpec::rgba8_srgb().with_alpha(AlphaMode::Premultiplied),
+        ImageSpec::RGBA8_SRGB.with_primaries(Primaries::DisplayP3),
+        ImageSpec::RGBA8_SRGB.with_transfer(Transfer::Linear),
+        ImageSpec::RGBA8_SRGB.with_transfer(Transfer::Unknown),
+        ImageSpec::RGBA8_SRGB.with_range(SignalRange::Narrow),
+        ImageSpec::RGBA8_SRGB.with_alpha(AlphaMode::Premultiplied),
     ] {
         rejected(
             PixelBuf::from_bytes(vec![20, 30, 40, 127], 1, 1, desc).unwrap(),
             zencodec::Metadata::default(),
         );
     }
+    let srgb_icc: Arc<[u8]> = moxcms::ColorProfile::new_srgb().encode().unwrap().into();
     rejected(
         PixelBuf::from_bytes(
             vec![20, 30, 40, 255],
@@ -59,7 +59,7 @@ fn unsupported_color_and_alpha_are_rejected_before_admission() {
             ImageSpec::new(
                 SampleLayout::RGBA8,
                 ColorSpace::Icc {
-                    profile: Arc::from([1, 2, 3]),
+                    profile: srgb_icc,
                     channels: 3,
                     alpha: AlphaMode::Straight,
                     intent: RenderingIntent::default(),
@@ -72,7 +72,7 @@ fn unsupported_color_and_alpha_are_rejected_before_admission() {
     let mut metadata = zencodec::Metadata::default();
     metadata.cicp = Some(Cicp::new(1, 13, 0, true));
     rejected(
-        PixelBuf::from_vec([0.5f32; 4].to_vec(), 1, 1, ImageSpec::rgbaf32_linear()).unwrap(),
+        PixelBuf::from_typed([0.5f32; 4].to_vec(), 1, 1, ImageSpec::RGBAF32_LINEAR).unwrap(),
         metadata,
     );
 }
@@ -80,13 +80,13 @@ fn unsupported_color_and_alpha_are_rejected_before_admission() {
 fn floats_must_be_declared_linear_sdr_and_finite() {
     for (desc, value) in [
         (
-            ImageSpec::rgbf32_linear().with_transfer(Transfer::Srgb),
+            ImageSpec::RGBF32_LINEAR.with_transfer(Transfer::Srgb),
             0.5f32,
         ),
-        (ImageSpec::rgbf32_linear(), f32::NAN),
-        (ImageSpec::rgbf32_linear(), f32::INFINITY),
-        (ImageSpec::rgbf32_linear(), -0.01),
-        (ImageSpec::rgbf32_linear(), 1.01),
+        (ImageSpec::RGBF32_LINEAR, f32::NAN),
+        (ImageSpec::RGBF32_LINEAR, f32::INFINITY),
+        (ImageSpec::RGBF32_LINEAR, -0.01),
+        (ImageSpec::RGBF32_LINEAR, 1.01),
     ] {
         let bytes: Vec<_> = [value; 3].into_iter().flat_map(f32::to_ne_bytes).collect();
         rejected(
@@ -114,7 +114,7 @@ fn required_icc_and_cicp_refuse_before_output_with_explicit_srgb_fallback() {
     let source_icc = Metadata::none().with_icc(profile);
     let source_cicp = Metadata::none().with_cicp(Cicp::SRGB);
     let output_pixels = [11, 22, 33, 255];
-    let view = PixelView::from_packed(&output_pixels, 1, 1, ImageSpec::rgba8_srgb()).unwrap();
+    let view = PixelView::from_bytes(&output_pixels, 1, 1, &zenpixels::specs::RGBA8_SRGB).unwrap();
     let cfg = zengif::GifEncoderConfig::new();
     for source in [source_icc, source_cicp] {
         let still = cfg
@@ -156,7 +156,7 @@ fn required_icc_and_cicp_refuse_before_output_with_explicit_srgb_fallback() {
                 .decode(output.data())
                 .unwrap();
             assert_eq!(decoded.pixels().row(0), output_pixels);
-            assert_eq!(decoded.pixels().spec(), &ImageSpec::rgba8_srgb());
+            assert_eq!(decoded.pixels().spec(), &ImageSpec::RGBA8_SRGB);
             assert_eq!(
                 decoded.buffer().origin(),
                 &zenpixels::ColorOrigin::assumed()
