@@ -58,20 +58,22 @@ mod encode_checks {
         use zencodec::decode::AnimationFrameDecoder as _;
         use zencodec::encode::AnimationFrameEncoder as _;
         use zencodec::{CodecErrorExt, UnsupportedOperation, animation::FrameDuration};
-        use zenpixels::{ImageSpec, PixelView, Primaries};
+        use zenpixels::{PixelFormat, PixelView, Primaries};
 
-        let spec = ImageSpec::RGBA8_SRGB;
+        let spec = PixelFormat::RGBA8_SRGB;
         let pixels = [11, 22, 33, 255];
-        let srgb = PixelView::from_bytes(&pixels, 1, 1, &zenpixels::specs::RGBA8_SRGB).unwrap();
-        let p3_spec = ImageSpec::RGBA8_SRGB.with_primaries(Primaries::DisplayP3);
+        let srgb = PixelView::from_bytes(&pixels, 1, 1, &zenpixels::formats::RGBA8_SRGB).unwrap();
+        let p3_spec = PixelFormat::RGBA8_SRGB.with_primaries(Primaries::DisplayP3);
         let p3 = PixelView::from_bytes(&pixels, 1, 1, &p3_spec).unwrap();
-        let bgra =
-            PixelView::from_bytes(&[33, 22, 11, 255], 1, 1, &zenpixels::specs::BGRA8_SRGB).unwrap();
+        let bgra = PixelView::from_bytes(&[33, 22, 11, 255], 1, 1, &zenpixels::formats::BGRA8_SRGB)
+            .unwrap();
         let expected = tk::ExpectedError::Unsupported(UnsupportedOperation::PixelFormat);
         tk::check_animation_begin_refusal(E::new(), srgb.clone(), p3.clone(), expected).unwrap();
 
         let mut encoder = E::new().job().animation_frame_encoder().unwrap();
-        let rejected = encoder.begin(1, 1, p3.spec().clone(), Some(2)).unwrap_err();
+        let rejected = encoder
+            .begin(1, 1, p3.format().clone(), Some(2))
+            .unwrap_err();
         assert_eq!(
             rejected.unsupported_operation(),
             Some(&UnsupportedOperation::PixelFormat)
@@ -202,29 +204,29 @@ fn ranked_preferences_preserve_alpha_and_deliver_exact_animation_timing() {
     use zencodec::{OrientationHint, animation::FrameDuration, decode::FrameCompletion};
     use zencodec_testkit::{DisplayFrameCase, check_animation_delivery, check_decode_preferences};
     use zengif::GifDecoderConfig;
-    use zenpixels::{ImageSpec, PixelView};
+    use zenpixels::{PixelFormat, PixelView};
 
     // The first patch leaves a clear pixel and the second makes the display
     // fully opaque, without any transparent index on either frame.
     let data = preference_fixture(2, &[(0, 0), (1, u16::MAX)]);
-    let rgba = ImageSpec::RGBA8_SRGB;
-    let rgb = ImageSpec::RGB8_SRGB;
-    let bgra = ImageSpec::BGRA8_SRGB;
+    let rgba = PixelFormat::RGBA8_SRGB;
+    let rgb = PixelFormat::RGB8_SRGB;
+    let bgra = PixelFormat::BGRA8_SRGB;
     let partial = [11, 22, 33, 255, 0, 0, 0, 0];
     let opaque = [11, 22, 33, 255, 44, 55, 66, 255];
     for (preferred, opaque_bytes, opaque_spec) in [
         (
             vec![rgba.clone(), rgb.clone(), bgra],
             opaque.as_slice(),
-            &zenpixels::specs::RGBA8_SRGB,
+            &zenpixels::formats::RGBA8_SRGB,
         ),
         (
             vec![rgb.clone()],
             &[11, 22, 33, 44, 55, 66][..],
-            &zenpixels::specs::RGB8_SRGB,
+            &zenpixels::formats::RGB8_SRGB,
         ),
     ] {
-        let first = PixelView::from_bytes(&partial, 2, 1, &zenpixels::specs::RGBA8_SRGB).unwrap();
+        let first = PixelView::from_bytes(&partial, 2, 1, &zenpixels::formats::RGBA8_SRGB).unwrap();
         check_decode_preferences(GifDecoderConfig::new(), &data, &preferred, first.clone())
             .unwrap();
         check_animation_delivery(
@@ -260,14 +262,14 @@ fn ranked_preferences_preserve_alpha_and_deliver_exact_animation_timing() {
 fn verified_opaque_still_prefers_rgb_when_ranked_first() {
     let data = preference_fixture(1, &[(0, 7)]);
     let expected =
-        zenpixels::PixelView::from_bytes(&[11, 22, 33], 1, 1, &zenpixels::specs::RGB8_SRGB)
+        zenpixels::PixelView::from_bytes(&[11, 22, 33], 1, 1, &zenpixels::formats::RGB8_SRGB)
             .unwrap();
     zencodec_testkit::check_decode_preferences(
         zengif::GifDecoderConfig::new(),
         &data,
         &[
-            zenpixels::ImageSpec::RGB8_SRGB,
-            zenpixels::ImageSpec::RGBA8_SRGB,
+            zenpixels::PixelFormat::RGB8_SRGB,
+            zenpixels::PixelFormat::RGBA8_SRGB,
         ],
         expected,
     )
