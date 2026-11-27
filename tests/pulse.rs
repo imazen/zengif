@@ -1,8 +1,8 @@
 //! The operation pulse reaches every zencodec operation. A job's pulse stops
 //! the probes, every decoder (sink and streaming included) and both encoders;
 //! a call's pulse stops each animation call, including the exact-timing pushes
-//! and the sink render; the deprecated `with_stop` still cancels, through the
-//! pulse it builds. Each stop keeps its reason.
+//! and the sink render; stop-only tokens cancel through `StopOnly` on both
+//! concrete and type-erased jobs. Each stop keeps its reason.
 #![cfg(all(
     feature = "std",
     any(
@@ -107,20 +107,18 @@ struct Rows {
 impl DecodeRowSink for Rows {
     fn provide_next_buffer(
         &mut self,
-        _y: u32,
-        height: u32,
-        width: u32,
-        descriptor: PixelFormat,
+        strip: zencodec::decode::RowStrip,
+        pixel_format: PixelFormat,
     ) -> Result<PixelViewMut<'_>, zencodec::decode::SinkError> {
-        let stride = width as usize * descriptor.layout.bytes_per_pixel();
-        self.buf.resize(height as usize * stride, 0);
-        self.rows += height;
+        let stride = strip.width as usize * pixel_format.layout.bytes_per_pixel();
+        self.buf.resize(strip.height as usize * stride, 0);
+        self.rows += strip.height;
         Ok(PixelViewMut::new_with_format_cow(
             &mut self.buf,
-            width,
-            height,
+            strip.width,
+            strip.height,
             stride,
-            zenpixels::FormatCow::from_owned(descriptor),
+            zenpixels::FormatCow::from_owned(pixel_format),
         )
         .unwrap())
     }
@@ -283,17 +281,13 @@ fn a_stopped_timed_push_keeps_the_timing_phase() {
 }
 
 #[test]
-#[allow(deprecated)] // Exercises the legacy cancellation-only setters on purpose.
-fn the_legacy_stop_setter_still_cancels() {
+fn stop_only_pulse_cancels_concrete_and_dyn_jobs() {
+    use zencodec::CodecErrorExt;
     use zencodec::decode::DynDecoderConfig;
-    use zencodec::{CodecErrorExt, StopToken};
     let data = animation();
     let frame = frame();
-    let decode = || {
-        GifDecoderConfig::new()
-            .job()
-            .with_stop(StopToken::new(Expired))
-    };
+    let expired_pulse = || SharedPulse::new(StopOnly::new(Expired));
+    let decode = || GifDecoderConfig::new().job().with_pulse(expired_pulse());
     assert_timed_out("probe", decode().probe(&data));
     assert_timed_out(
         "decode",
@@ -305,11 +299,7 @@ fn the_legacy_stop_setter_still_cancels() {
         "animation_frame_decoder",
         decode().animation_frame_decoder(Cow::Borrowed(&data), &[]),
     );
-    let encode = || {
-        GifEncoderConfig::new()
-            .job()
-            .with_stop(StopToken::new(Expired))
-    };
+    let encode = || GifEncoderConfig::new().job().with_pulse(expired_pulse());
     assert_timed_out(
         "still encode",
         encode()
@@ -322,7 +312,7 @@ fn the_legacy_stop_setter_still_cancels() {
     let config = GifDecoderConfig::new();
     let dynamic: &dyn DynDecoderConfig = &config;
     let mut job = dynamic.dyn_job();
-    job.set_stop(StopToken::new(Expired));
+    job.set_pulse(expired_pulse());
     let error = job.probe(&data).unwrap_err();
     assert_eq!(
         error.error_category(),

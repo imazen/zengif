@@ -6,12 +6,11 @@ use zenpixels::{
     SignalRange, Transfer,
 };
 
-#[allow(deprecated)] // Exercise frame admission with the legacy metadata path.
 fn rejected(pixels: PixelBuf, metadata: zencodec::Metadata) {
     assert!(
         zengif::GifEncoderConfig::new()
             .job()
-            .with_metadata(metadata.clone())
+            .with_unfiltered_metadata(metadata.clone())
             .encoder()
             .unwrap()
             .encode(pixels.as_view())
@@ -21,7 +20,7 @@ fn rejected(pixels: PixelBuf, metadata: zencodec::Metadata) {
     );
     let mut animation = zengif::GifEncoderConfig::new()
         .job()
-        .with_metadata(metadata)
+        .with_unfiltered_metadata(metadata)
         .animation_frame_encoder()
         .unwrap();
     assert!(

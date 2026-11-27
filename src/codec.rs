@@ -474,7 +474,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         ImageFormat::Gif
     }
 
-    fn supported_descriptors() -> &'static [PixelFormat] {
+    fn supported_pixel_formats() -> &'static [PixelFormat] {
         ENCODE_DESCRIPTORS
     }
 
@@ -578,12 +578,12 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         // heuristics models the encoder's working set (VmHWM marginal); the zencodec
         // convention (ResourceEstimate::conservative) is total peak = input buffer
         // (held during encode) + working, so add the caller's input buffer.
-        let input = image.input_bytes();
+        let input = image.uncompressed_frame_bytes();
         ResourceEstimate::new(
             est.peak_memory_bytes.saturating_add(input),
             est.time_ms as u64,
         )
-        .with_peak_max(est.peak_memory_bytes_max.saturating_add(input))
+        .with_peak_memory_bytes_max(est.peak_memory_bytes_max.saturating_add(input))
         .with_threading(ThreadingInformation::SERIAL)
         .at_cores(compute.cores())
     }
@@ -606,8 +606,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
 /// Per-operation GIF encode job.
 pub struct GifEncodeJob {
     config: GifEncoderConfig,
-    /// The operation pulse, kept whole for every encoder made from this job
-    /// (a legacy `with_stop` token arrives wrapped in one).
+    /// The operation pulse, kept whole for every encoder made from this job.
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     /// Encode policy. Its `ColorEmitPolicy` is consulted in the color decision
@@ -615,7 +614,7 @@ pub struct GifEncodeJob {
     policy: Option<zencodec::encode::EncodePolicy>,
     /// Caller-supplied metadata. Retained (not discarded); GIF can represent
     /// none of its carriers, so it is consulted by the color resolver but
-    /// nothing is emitted (see [`GifEncodeJob::with_metadata`]).
+    /// nothing is emitted (see [`GifEncodeJob::with_unfiltered_metadata`]).
     metadata: Option<Metadata>,
     canvas_size: Option<(u32, u32)>,
     loop_count: Option<Option<u32>>,
@@ -631,13 +630,23 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
         self
     }
 
-    fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
+    fn try_set_policy(
+        &mut self,
+        policy: zencodec::encode::EncodePolicy,
+    ) -> Result<(), zencodec::UnsupportedOperation> {
+        let supported = match policy.color {
+            Some(color) => zencodec::encode::EncodePolicy::none().with_color(color),
+            None => zencodec::encode::EncodePolicy::none(),
+        };
+        if policy != supported {
+            return Err(zencodec::UnsupportedOperation::EncodePolicy);
+        }
         // The emission policy is separate from input color validation.
         self.policy = Some(policy);
-        self
+        Ok(())
     }
 
-    fn with_metadata(mut self, meta: Metadata) -> Self {
+    fn with_unfiltered_metadata(mut self, meta: Metadata) -> Self {
         // This adapter does not write metadata extensions. Preserve source
         // color claims for validation instead of silently relabeling pixels.
         self.metadata = Some(meta);
@@ -1042,7 +1051,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         duration: zencodec::animation::FrameDuration,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<zencodec::animation::FrameDuration, At<CodecError>> {
-        let mut next = self.timing;
+        let mut next = self.timing.clone();
         let encoded = next
             .quantize(duration)
             .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
@@ -1088,13 +1097,13 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         declaration
             .validate_format()
             .map_err(|_| GifError::from(zencodec::UnsupportedOperation::PixelFormat))?;
-        validate_input_spec(&declaration.descriptor)?;
-        validate_gif_metadata(&declaration.descriptor, self.metadata.as_ref())?;
+        validate_input_spec(&declaration.pixel_format)?;
+        validate_gif_metadata(&declaration.pixel_format, self.metadata.as_ref())?;
         let held = self
             .ensure_encoder(width as u16, height as u16)?
             .max_held_frames();
         self.canvas_size = Some((width, height));
-        self.declared_spec = Some(declaration.descriptor);
+        self.declared_spec = Some(declaration.pixel_format);
         self.declared_frames = frame_count;
         let lag = u32::try_from(held).unwrap_or(u32::MAX);
         if frame_count.is_some_and(|n| lag >= n) {
@@ -1269,7 +1278,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         &[ImageFormat::Gif]
     }
 
-    fn supported_descriptors() -> &'static [PixelFormat] {
+    fn supported_pixel_formats() -> &'static [PixelFormat] {
         DECODE_DESCRIPTORS
     }
 
@@ -1292,7 +1301,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         let frame_count = image.frame_count().max(1);
         let est = crate::heuristics::estimate_decode(image.width(), image.height(), frame_count);
         ResourceEstimate::new(est.peak_memory_bytes, est.time_ms as u64)
-            .with_peak_max(est.peak_memory_bytes_max)
+            .with_peak_memory_bytes_max(est.peak_memory_bytes_max)
             .with_threading(ThreadingInformation::SERIAL)
             .at_cores(compute.cores())
     }
@@ -1313,8 +1322,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 /// Per-operation GIF decode job.
 pub struct GifDecodeJob {
     config: GifDecoderConfig,
-    /// The operation pulse, kept whole for every decoder made from this job
-    /// (a legacy `with_stop` token arrives wrapped in one).
+    /// The operation pulse, kept whole for every decoder made from this job.
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     policy: Option<zencodec::decode::DecodePolicy>,
@@ -1404,9 +1412,19 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         self
     }
 
-    fn with_policy(mut self, policy: zencodec::decode::DecodePolicy) -> Self {
+    fn try_set_policy(
+        &mut self,
+        policy: zencodec::decode::DecodePolicy,
+    ) -> Result<(), zencodec::UnsupportedOperation> {
+        let supported = match policy.allow_animation {
+            Some(allow) => zencodec::decode::DecodePolicy::none().with_allow_animation(allow),
+            None => zencodec::decode::DecodePolicy::none(),
+        };
+        if policy != supported {
+            return Err(zencodec::UnsupportedOperation::DecodePolicy);
+        }
         self.policy = Some(policy);
-        self
+        Ok(())
     }
 
     fn with_start_frame_index(mut self, index: u32) -> Self {
@@ -2132,45 +2150,45 @@ mod tests {
     use zencodec::encode::{EncodeJob as _, Encoder as _};
 
     #[test]
-    #[allow(deprecated)] // Verify the legacy metadata path through encoder creation.
     fn retained_icc_is_rejected_for_still_and_animation_jobs() {
         use zencodec::encode::EncodeJob as _;
         let config = GifEncoderConfig::new;
         let metadata = Metadata::none().with_icc(alloc::vec![0; 256]);
+        let policy = zencodec::MetadataPolicy::PreserveExact;
         assert!(
             config()
                 .job()
-                .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(metadata.filtered(&policy))
                 .encoder()
                 .is_err()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(metadata.filtered(&policy))
                 .animation_frame_encoder()
                 .is_err()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(Metadata::none().filtered(&policy))
                 .encoder()
                 .is_ok()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(Metadata::none().filtered(&policy))
                 .animation_frame_encoder()
                 .is_ok()
         );
     }
 
     #[test]
-    #[allow(deprecated)] // Verify the legacy metadata path through encoder creation.
     fn explicit_srgb_cicp_is_admitted_but_other_cicp_is_rejected() {
         use zencodec::encode::EncodeJob as _;
+        let policy = zencodec::MetadataPolicy::PreserveExact;
         let mut wide_gamut = zencodec::Cicp::SRGB;
         wide_gamut.color_primaries = 9;
         for (cicp, accepted) in [(zencodec::Cicp::SRGB, true), (wide_gamut, false)] {
@@ -2179,7 +2197,7 @@ mod tests {
             assert_eq!(
                 GifEncoderConfig::new()
                     .job()
-                    .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                    .with_unfiltered_metadata(metadata.filtered(&policy))
                     .encoder()
                     .is_ok(),
                 accepted
@@ -2187,7 +2205,7 @@ mod tests {
             assert_eq!(
                 GifEncoderConfig::new()
                     .job()
-                    .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                    .with_unfiltered_metadata(metadata.filtered(&policy))
                     .animation_frame_encoder()
                     .is_ok(),
                 accepted
@@ -2621,16 +2639,16 @@ mod tests {
     }
 
     #[test]
-    fn supported_descriptors_includes_rgbx_and_bgrx() {
+    fn supported_pixel_formats_includes_rgbx_and_bgrx() {
         use zencodec::encode::EncoderConfig as _;
-        let desc = GifEncoderConfig::supported_descriptors();
+        let formats = GifEncoderConfig::supported_pixel_formats();
         assert!(
-            desc.contains(&PixelFormat::RGBX8_SRGB),
-            "RGBX8_SRGB must be in supported_descriptors"
+            formats.contains(&PixelFormat::RGBX8_SRGB),
+            "RGBX8_SRGB must be in supported_pixel_formats"
         );
         assert!(
-            desc.contains(&PixelFormat::BGRX8_SRGB),
-            "BGRX8_SRGB must be in supported_descriptors"
+            formats.contains(&PixelFormat::BGRX8_SRGB),
+            "BGRX8_SRGB must be in supported_pixel_formats"
         );
     }
 
@@ -3319,5 +3337,53 @@ mod tests {
         // (3) Multi-frame transparent animation — transparency + disposal.
         let anim_t = build_multi_frame_gif(3, true);
         assert_all_modes_agree(&anim_t);
+    }
+
+    #[test]
+    fn try_set_policy_enforces_supported_fields_and_preserves_state_on_refusal() {
+        use zencodec::decode::{DecodeJob as _, DecodePolicy};
+        use zencodec::encode::{EncodeJob as _, EncodePolicy};
+        use zencodec::{CodecErrorExt, ColorEmitPolicy, UnsupportedOperation};
+
+        // Encode job: color policy is enforced; unsupported fields refuse without mutating.
+        let mut enc_job = GifEncoderConfig::new().job();
+        assert_eq!(enc_job.try_set_policy(EncodePolicy::none()), Ok(()));
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::none().with_color(ColorEmitPolicy::Balanced)),
+            Ok(())
+        );
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::strip_all()),
+            Err(UnsupportedOperation::EncodePolicy)
+        );
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::preserve_all()),
+            Err(UnsupportedOperation::EncodePolicy)
+        );
+        assert_eq!(
+            enc_job.policy,
+            Some(EncodePolicy::none().with_color(ColorEmitPolicy::Balanced))
+        );
+
+        // Decode job: allow_animation is enforced; unsupported fields refuse without mutating.
+        let anim = build_multi_frame_gif(2, false);
+        let mut dec_job = GifDecoderConfig::new().job();
+        assert_eq!(dec_job.try_set_policy(DecodePolicy::none()), Ok(()));
+        assert_eq!(
+            dec_job.try_set_policy(DecodePolicy::none().with_allow_animation(false)),
+            Ok(())
+        );
+        assert_eq!(
+            dec_job.try_set_policy(DecodePolicy::untrusted_minimal()),
+            Err(UnsupportedOperation::DecodePolicy)
+        );
+        let err = dec_job
+            .animation_frame_decoder(Cow::Borrowed(&anim), &[])
+            .err()
+            .expect("allow_animation=false must remain active after refused policy update");
+        assert_eq!(
+            err.unsupported_operation(),
+            Some(&UnsupportedOperation::AnimationDecode)
+        );
     }
 }

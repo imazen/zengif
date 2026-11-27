@@ -133,7 +133,7 @@ mod encode_checks {
         }
         for (policy, accepted) in [
             (DecodePolicy::none(), true),
-            (DecodePolicy::strict(), false),
+            (DecodePolicy::untrusted_minimal(), false),
         ] {
             tk::check_decode_policy_admission(
                 D::new(),
@@ -168,7 +168,7 @@ fn decoder_contracts_without_requiring_a_quantizer() {
         dec.clone(),
         bytes,
         DecodePolicy::none(),
-        DecodePolicy::strict(),
+        DecodePolicy::untrusted_minimal(),
         false,
         &metadata,
     )

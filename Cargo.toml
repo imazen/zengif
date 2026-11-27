@@ -73,7 +73,7 @@ bytemuck = { version = "1.25.2", features = ["derive", "extern_crate_alloc"] }
 thiserror = { version = "2.0.21", default-features = false }
 
 # Shared codec traits (required, always-on; std-only glue gated on `std`)
-zencodec = { version = ">=0.3.0, <0.5.0", default-features = false }
+zencodec = { version = ">=0.3.0, <0.4.0", default-features = false }
 zenmeta = { version = ">=0.2.0, <0.3.0", default-features = false, optional = true }
 
 # Node definitions (optional)
@@ -100,7 +100,7 @@ imgref = { version = "1.12.3", optional = true }
 # zencodec-testkit: companion crate providing conformance checks
 # (e.g. `check_decode_truncation_series`). The root patch keeps it and the
 # codec on one zencodec, so they share one set of traits.
-zencodec-testkit = ">=0.3.0, <0.5.0"
+zencodec-testkit = ">=0.3.0, <0.4.0"
 # Build and parse standards-compliant ICC fixtures without a binary test asset.
 moxcms = { version = "0.9.2", default-features = false }
 almost-enough = "0.4.5"
@@ -188,10 +188,10 @@ harness = false
 
 [patch.crates-io]
 # Keep the unpublished pixel and codec families on the same integration cohort.
-zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "d40a957e95d19ea3fb5c29472820c86e8a34b09e" }
-zenpixels-convert = { git = "https://github.com/imazen/zenpixels", rev = "d40a957e95d19ea3fb5c29472820c86e8a34b09e" }
+zenpixels = { git = "https://github.com/imazen/zenpixels", rev = "7fa068834f8074c2630a352b25f355f7c90751f8" }
+zenpixels-convert = { git = "https://github.com/imazen/zenpixels", rev = "7fa068834f8074c2630a352b25f355f7c90751f8" }
 garb = { git = "https://github.com/imazen/garb", rev = "457ff8b9153e9d675a39dc098052b2ffeb6206fa" }
 linear-srgb = { git = "https://github.com/imazen/linear-srgb", rev = "ae83f19426737635fee3dd16f228681019f52585" }
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "26326a6e1ab59086c7f8683eb27f4c8e054d5e54" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "26326a6e1ab59086c7f8683eb27f4c8e054d5e54" }
-zenmeta = { git = "https://github.com/imazen/zencodec", rev = "26326a6e1ab59086c7f8683eb27f4c8e054d5e54" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "5d4f6c473404c09c95f404543f8a16a1e3cb8477" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "5d4f6c473404c09c95f404543f8a16a1e3cb8477" }
+zenmeta = { git = "https://github.com/imazen/zencodec", rev = "5d4f6c473404c09c95f404543f8a16a1e3cb8477" }
