@@ -61,7 +61,7 @@ fn unsupported_color_and_alpha_are_rejected_before_admission() {
                 SampleLayout::RGBA8,
                 ColorSpace::Icc {
                     profile: srgb_icc,
-                    channels: 3,
+                    color_channels: 3,
                     alpha: AlphaMode::Straight,
                     intent: RenderingIntent::default(),
                 },

@@ -320,8 +320,8 @@ fn n5_palette_entries_beyond_the_code_size_are_unreachable() {
     let da = GifDecoderConfig::new().decode(&a).unwrap();
     let db = GifDecoderConfig::new().decode(&b).unwrap();
     assert_eq!(
-        da.pixels().contiguous_bytes().unwrap(),
-        db.pixels().contiguous_bytes().unwrap()
+        da.pixels().to_contiguous_bytes().unwrap(),
+        db.pixels().to_contiguous_bytes().unwrap()
     );
     assert_eq!(da.info(), db.info());
     let i = inv(&b);
@@ -545,7 +545,7 @@ fn n7_interlaced_multirow_differential_and_tail_invariance() {
                 .find(|p| p.label() == Some("image data tail")),
         ) {
             tails += 1;
-            let reference = o.pixels().contiguous_bytes().unwrap().into_owned();
+            let reference = o.pixels().to_contiguous_bytes().unwrap().into_owned();
             for _ in 0..4 {
                 let mut m = g.clone();
                 for &d in &data_bytes {
@@ -554,7 +554,7 @@ fn n7_interlaced_multirow_differential_and_tail_invariance() {
                     }
                 }
                 let ok = GifDecoderConfig::new().decode(&m).is_ok_and(|o2| {
-                    o2.pixels().contiguous_bytes().unwrap().into_owned() == reference
+                    o2.pixels().to_contiguous_bytes().unwrap().into_owned() == reference
                 });
                 if !ok {
                     tail_changed += 1;
@@ -623,13 +623,13 @@ fn global_table_reach_follows_the_frames_code_size() {
             .decode(&a)
             .unwrap()
             .pixels()
-            .contiguous_bytes()
+            .to_contiguous_bytes()
             .unwrap(),
         GifDecoderConfig::new()
             .decode(&b)
             .unwrap()
             .pixels()
-            .contiguous_bytes()
+            .to_contiguous_bytes()
             .unwrap()
     );
     let i = inv(&b);

@@ -29,7 +29,7 @@ fn verify(bytes: &[u8], expected: &[Vec<Rgba>]) {
         );
         let actual = frame.pixels();
         let expected: Vec<_> = pixels.iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
-        for y in 0..actual.rows() {
+        for y in 0..actual.height() {
             let stride = actual.width() as usize * 4;
             assert_eq!(
                 actual.row(y),

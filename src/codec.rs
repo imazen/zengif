@@ -812,7 +812,7 @@ fn pixels_to_gif_rgba(
     let desc = pixels.format();
     validate_input_spec(desc)?;
     let w = u16::try_from(pixels.width()).map_err(|_| invalid("GIF width exceeds 65535"))?;
-    let h = u16::try_from(pixels.rows()).map_err(|_| invalid("GIF height exceeds 65535"))?;
+    let h = u16::try_from(pixels.height()).map_err(|_| invalid("GIF height exceeds 65535"))?;
     if w == 0 || h == 0 {
         return Err(invalid("GIF canvas must be nonempty").into());
     }
@@ -833,7 +833,7 @@ fn pixels_to_gif_rgba(
     rgba.try_reserve_exact(count)
         .map_err(|_| GifError::AllocationFailed { requested: bytes })?;
     let bpp = desc.layout.bytes_per_pixel();
-    for y in 0..pixels.rows() {
+    for y in 0..pixels.height() {
         stop.check().map_err(GifError::Cancelled)?;
         for pixel in pixels.row(y).chunks_exact(bpp) {
             let value = match (desc.layout.sample, desc.layout.order) {
@@ -1135,10 +1135,10 @@ impl GifAnimationFrameEncoder {
         let stop = crate::stop::AnimationStops(&job, &pulse);
         enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
         if pixels.width() == 0
-            || pixels.rows() == 0
+            || pixels.height() == 0
             || self
                 .canvas_size
-                .is_some_and(|size| size != (pixels.width(), pixels.rows()))
+                .is_some_and(|size| size != (pixels.width(), pixels.height()))
         {
             return Err(GifError::InvalidEncoderState {
                 message: "animation frame must match its nonempty canvas",
@@ -1781,7 +1781,7 @@ fn convert_decoded_format(pixels: PixelBuf, target: GifOutput) -> PixelBuf {
     // The decoder's byte backing is reusable. Compact active rows and drop the
     // alignment prefix before running packed pixel operations.
     let mut parts = pixels
-        .into_tight_buf()
+        .into_tight_rows()
         .expect("owned GIF RGBA backing")
         .into_parts();
     let zenpixels::PixelStorage::U8(mut bytes) = parts.storage else {
@@ -1801,7 +1801,7 @@ fn convert_decoded_format(pixels: PixelBuf, target: GifOutput) -> PixelBuf {
     }
     let format = target.format();
     parts.storage = zenpixels::PixelStorage::U8(bytes);
-    parts.stride = parts.width as usize * format.layout.bytes_per_pixel();
+    parts.stride_bytes = parts.width as usize * format.layout.bytes_per_pixel();
     parts.format = format;
     PixelBuf::from_parts(parts).expect("packed GIF output dimensions")
 }
@@ -1842,7 +1842,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             .ok_or(GifError::UnexpectedEof)?;
 
         let format = self.preferences.for_canvas(&frame.pixels);
-        let buf = PixelBuf::from_raw_pod(
+        let buf = PixelBuf::from_pod_bytes_unchecked(
             frame.pixels,
             metadata.width as u32,
             metadata.height as u32,
@@ -2041,7 +2041,7 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
                 .into());
             }
             copy.extend_from_slice(src);
-            PixelBuf::from_raw_pod(copy, width, height, spec)
+            PixelBuf::from_pod_bytes_unchecked(copy, width, height, spec)
         } else {
             if let Err(err) = self.convert_canvas(format) {
                 self.failed = true;
@@ -2090,7 +2090,7 @@ mod tests {
             let before = input.as_view().row(0).as_ptr();
             let target = GifPreferences::new(&[preferred.format()]).select(|| {
                 let view = input.as_view();
-                (0..view.rows()).all(|y| {
+                (0..view.height()).all(|y| {
                     view.row(y)
                         .as_chunks::<4>()
                         .0
@@ -2110,7 +2110,7 @@ mod tests {
                 assert_eq!(rows.row(0).as_ptr(), before);
                 assert_eq!(rows.row(0), &[1, 2, 3, 4, 5, 6, 7, 8]);
                 assert_eq!(rows.row(1), &[9, 10, 11, 12, 13, 14, 15, 16]);
-                assert_eq!(output.stride(), 16);
+                assert_eq!(output.stride_bytes(), 16);
             }
         }
     }

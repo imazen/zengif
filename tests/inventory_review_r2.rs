@@ -579,8 +579,8 @@ fn q7_gct_counted_used_by_an_unreachable_frame() {
     let fa = GifDecoderConfig::new().decode(&a).unwrap();
     let fb = GifDecoderConfig::new().decode(&b).unwrap();
     assert_eq!(
-        fa.pixels().contiguous_bytes().unwrap(),
-        fb.pixels().contiguous_bytes().unwrap()
+        fa.pixels().to_contiguous_bytes().unwrap(),
+        fb.pixels().to_contiguous_bytes().unwrap()
     );
     let i = inv(&b);
     println!("{i}");

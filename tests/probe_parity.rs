@@ -61,7 +61,7 @@ fn gce_multi_subblock_probe_matches_decoder() {
     let output = cfg.decode(&g).unwrap();
     assert!(output.info().has_alpha);
     assert_eq!(
-        output.pixels().contiguous_bytes().unwrap().as_ref(),
+        output.pixels().to_contiguous_bytes().unwrap().as_ref(),
         &[0, 0, 0, 0]
     );
 
