@@ -11,11 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### QUEUED BREAKING CHANGES
 
+- GIF's zencodec adapter uses zenpixels 0.5 `ImageSpec`, `PixelView` and `PixelBuf`.
+  RGB/gray color must be declared in the active spec. ICC source provenance lives
+  on the owner, and retained file metadata is still submitted through the encode job.
+
 - zencodec 0.2 (operation Pulse): the jobs implement `with_pulse`, and the animation methods take
-  `Option<&dyn zencodec::Pulse>` instead of `Option<&dyn Stop>`. zengif requires zencodec `>=0.2.0`
+  `Option<&dyn zencodec::Pulse>` instead of `Option<&dyn Stop>`
   (`0b4221c2`, `b3b9463d`).
 
 ### Changed
+
+- Update the integration pins to zencodec 0.3 and the paired zenpixels 0.5
+  revision. Animation sink completions carry exact duration, frame index, and
+  source presentation timestamp when available.
+- Honor ranked GIF decode preferences for each displayed frame. RGB output
+  requires a fully opaque canvas. Bind animation input interpretation at
+  `begin` and reject mismatched pushes before accepting a frame.
+- Refuse required ICC or CICP retention before output. Explicitly discarded
+  metadata permits ordinary untagged sRGB GIF output.
+
+- Borrow native RGBA directly from the GIF compositor in animation decode, and
+  keep owned output independent while preserving exact GIF timing. RGB and BGRA
+  reuse conversion storage for borrowed frames. Streaming still decode retains
+  the original pixel owner across row batches.
+- Pin the unpublished zenpixels and zencodec integration cohort in the package
+  and fuzz manifests.
 
 - Upgrade `archmage` dev-dependency to `0.9.33` and advance the `zenquant` git pin to `54da0ca5` (`archmage`/`magetypes` `0.9.33`). Retain existing `zenpixels` (`789d69db`) and `zencodec` (`e59b3803`) pins because newer `zenpixels` revisions require the coordinated `PixelStorage` / `zencodec` migration.
 

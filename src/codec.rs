@@ -8,7 +8,7 @@
 //! type-erased [`Encoder`](zencodec::encode::Encoder) and [`AnimationFrameEncoder`](zencodec::encode::AnimationFrameEncoder)
 //! traits.
 //!
-//! Requires `zencodec` feature (GIF codec uses `std::io`).
+//! Available with the `std` feature.
 
 extern crate alloc;
 use alloc::borrow::Cow;
@@ -16,10 +16,11 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use zencodec::OwnedAnimationFrame;
+use zencodec::animation::FrameDuration;
 use zencodec::decode::{AnimationFrame, DecodeOutput, OutputInfo, SinkError};
 use zencodec::encode::EncodeOutput;
 use zencodec::{CodecError, ImageFormat, ImageInfo, ImageSequence, Metadata, ResourceLimits};
-use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
+use zenpixels::{ChannelOrder, ColorSpace, PixelBuf, PixelFormat, PixelView, SampleType};
 
 // Import traits for inherent method forwarding
 use zencodec::decode::{Decode as _, DecoderConfig as _};
@@ -78,33 +79,20 @@ fn alloc_pref_from_zencodec(pref: zencodec::AllocPreference) -> crate::alloc_uti
     }
 }
 
-/// Resolve GIF color emission under the encode policy.
-///
-/// Builds a [`zencodec::SourceColor`] from the caller's metadata (ICC / CICP)
-/// and the pixel channel count, then runs [`zencodec::resolve_color_emit`]
-/// against [`GIF_ENCODE_CAPS`]. This puts GIF on the same color-emission
-/// contract as every other zen codec.
-///
-/// This adapter writes no ICC or CICP extension. Input is separately validated
-/// as sRGB U8 or linear BT.709 F32 and the latter is converted to sRGB. A color
-/// emission plan never substitutes for pixel conversion. A retained ICC profile,
-/// or CICP no accepted input can carry, is rejected here, before any frame;
-/// other CICP is checked against each frame's pixel descriptor
-/// (`validate_gif_metadata`) before frame admission.
-fn resolve_gif_color_emit(
+/// Check color admission before creating an encoder. The emitted GIF palette
+/// is sRGB, including when the input is linear BT.709 and needs conversion.
+fn validate_gif_output_color(
     metadata: Option<&Metadata>,
     policy: Option<&zencodec::encode::EncodePolicy>,
-    channel_count: u8,
-) -> Result<zencodec::ColorEmitPlan, At<CodecError>> {
-    // CICP that no accepted input descriptor carries (wide gamut, HDR) can
-    // never match a frame; refuse it now. A matching CICP is checked against
-    // each frame's descriptor in `validate_gif_metadata`.
+) -> Result<(), At<CodecError>> {
+    // Keep the legacy admission checks for file metadata. Matching CICP
+    // describes input pixels and is checked again at frame admission.
     if metadata.is_some_and(|meta| {
         meta.icc_profile.is_some()
             || meta.cicp.is_some_and(|c| {
                 !ENCODE_DESCRIPTORS
                     .iter()
-                    .any(|d| zenpixels::Cicp::from_descriptor(d) == Some(c))
+                    .any(|spec| gif_input_cicp(spec) == Some(c))
             })
     }) {
         return Err(GifError::InvalidEncoderState {
@@ -115,26 +103,24 @@ fn resolve_gif_color_emit(
     let color_policy = policy
         .map(|p| p.resolve_color(zencodec::ColorEmitPolicy::Balanced))
         .unwrap_or(zencodec::ColorEmitPolicy::Balanced);
-
-    let mut src = zencodec::SourceColor::default().with_channel_count(channel_count);
-    if let Some(meta) = metadata {
-        if let Some(c) = meta.cicp {
-            src = src
-                .with_cicp(c)
-                .with_color_authority(zencodec::ColorAuthority::Cicp);
-        }
-        if let Some(icc) = &meta.icc_profile {
-            src = src
-                .with_icc_profile(icc.clone())
-                .with_color_authority(zencodec::ColorAuthority::Icc);
-        }
+    let mut source = zencodec::SourceColor::default().with_channel_count(3);
+    if let Some(cicp) = metadata.and_then(|meta| meta.cicp) {
+        source = source
+            .with_cicp(cicp)
+            .with_color_authority(zencodec::ColorAuthority::Cicp);
     }
 
-    Ok(zencodec::resolve_color_emit(
-        &src,
-        &GIF_ENCODE_CAPS,
-        color_policy,
-    ))
+    zencodec::resolve_color_emit(&source, &ColorSpace::SRGB, &GIF_ENCODE_CAPS, color_policy)
+        .map(|_| ())
+        .map_err(|error| {
+            at!(CodecError::from_parts(
+                Some("zengif"),
+                zencodec::ErrorCategory::Request(zencodec::RequestError::Unsupported(
+                    zencodec::UnsupportedOperation::PixelFormat,
+                )),
+                Box::new(error),
+            ))
+        })
 }
 
 fn limits_from_resource(rl: &ResourceLimits) -> Limits {
@@ -201,22 +187,22 @@ fn merge_resource_limits(base: &Limits, rl: &ResourceLimits) -> Limits {
 
 // ── Supported descriptors ────────────────────────────────────────────
 
-static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
-    PixelDescriptor::RGBA8_SRGB,
-    PixelDescriptor::RGB8_SRGB,
-    PixelDescriptor::GRAY8_SRGB,
-    PixelDescriptor::BGRA8_SRGB,
-    PixelDescriptor::RGBX8_SRGB,
-    PixelDescriptor::BGRX8_SRGB,
-    PixelDescriptor::RGBF32_LINEAR,
-    PixelDescriptor::RGBAF32_LINEAR,
-    PixelDescriptor::GRAYF32_LINEAR,
+static ENCODE_DESCRIPTORS: &[PixelFormat] = &[
+    PixelFormat::RGBA8_SRGB,
+    PixelFormat::RGB8_SRGB,
+    PixelFormat::GRAY8_SRGB,
+    PixelFormat::BGRA8_SRGB,
+    PixelFormat::RGBX8_SRGB,
+    PixelFormat::BGRX8_SRGB,
+    PixelFormat::RGBF32_LINEAR,
+    PixelFormat::RGBAF32_LINEAR,
+    PixelFormat::GRAYF32_LINEAR,
 ];
 
-static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
-    PixelDescriptor::RGBA8_SRGB,
-    PixelDescriptor::RGB8_SRGB,
-    PixelDescriptor::BGRA8_SRGB,
+static DECODE_DESCRIPTORS: &[PixelFormat] = &[
+    PixelFormat::RGBA8_SRGB,
+    PixelFormat::RGB8_SRGB,
+    PixelFormat::BGRA8_SRGB,
 ];
 
 // ── Capabilities ─────────────────────────────────────────────────────
@@ -488,7 +474,7 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         ImageFormat::Gif
     }
 
-    fn supported_descriptors() -> &'static [PixelDescriptor] {
+    fn supported_pixel_formats() -> &'static [PixelFormat] {
         ENCODE_DESCRIPTORS
     }
 
@@ -592,12 +578,12 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
         // heuristics models the encoder's working set (VmHWM marginal); the zencodec
         // convention (ResourceEstimate::conservative) is total peak = input buffer
         // (held during encode) + working, so add the caller's input buffer.
-        let input = image.input_bytes();
+        let input = image.uncompressed_frame_bytes();
         ResourceEstimate::new(
             est.peak_memory_bytes.saturating_add(input),
             est.time_ms as u64,
         )
-        .with_peak_max(est.peak_memory_bytes_max.saturating_add(input))
+        .with_peak_memory_bytes_max(est.peak_memory_bytes_max.saturating_add(input))
         .with_threading(ThreadingInformation::SERIAL)
         .at_cores(compute.cores())
     }
@@ -620,17 +606,15 @@ impl zencodec::encode::EncoderConfig for GifEncoderConfig {
 /// Per-operation GIF encode job.
 pub struct GifEncodeJob {
     config: GifEncoderConfig,
-    /// The operation pulse, kept whole for every encoder made from this job
-    /// (a legacy `with_stop` token arrives wrapped in one).
+    /// The operation pulse, kept whole for every encoder made from this job.
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     /// Encode policy. Its `ColorEmitPolicy` is consulted in the color decision
-    /// via [`resolve_gif_color_emit`]; GIF embeds no ICC/CICP, so it never
-    /// changes the bitstream but keeps GIF on the shared color contract.
+    /// via [`validate_gif_output_color`].
     policy: Option<zencodec::encode::EncodePolicy>,
     /// Caller-supplied metadata. Retained (not discarded); GIF can represent
     /// none of its carriers, so it is consulted by the color resolver but
-    /// nothing is emitted (see [`GifEncodeJob::with_metadata`]).
+    /// nothing is emitted (see [`GifEncodeJob::with_unfiltered_metadata`]).
     metadata: Option<Metadata>,
     canvas_size: Option<(u32, u32)>,
     loop_count: Option<Option<u32>>,
@@ -646,17 +630,43 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
         self
     }
 
-    fn with_policy(mut self, policy: zencodec::encode::EncodePolicy) -> Self {
+    fn try_set_policy(
+        &mut self,
+        policy: zencodec::encode::EncodePolicy,
+    ) -> Result<(), zencodec::UnsupportedOperation> {
+        let supported = match policy.color {
+            Some(color) => zencodec::encode::EncodePolicy::none().with_color(color),
+            None => zencodec::encode::EncodePolicy::none(),
+        };
+        if policy != supported {
+            return Err(zencodec::UnsupportedOperation::EncodePolicy);
+        }
         // The emission policy is separate from input color validation.
         self.policy = Some(policy);
-        self
+        Ok(())
     }
 
-    fn with_metadata(mut self, meta: Metadata) -> Self {
+    fn with_unfiltered_metadata(mut self, meta: Metadata) -> Self {
         // This adapter does not write metadata extensions. Preserve source
         // color claims for validation instead of silently relabeling pixels.
         self.metadata = Some(meta);
         self
+    }
+
+    fn try_set_metadata_policy(
+        &mut self,
+        meta: Metadata,
+        policy: zencodec::MetadataPolicy,
+    ) -> Result<(), zencodec::encode::BoxedError> {
+        // Required retention is all-or-nothing. This adapter has no metadata
+        // writer, so it can only admit an empty filtered record.
+        if zenmeta::metadata::filter(&meta, &policy) != Metadata::none() {
+            let error: At<CodecError> =
+                GifError::from(zencodec::UnsupportedOperation::MetadataRetention).into();
+            return Err(Box::new(error));
+        }
+        self.metadata = None;
+        Ok(())
     }
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
@@ -675,12 +685,11 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
     }
 
     fn encoder(self) -> Result<GifEncoder, At<CodecError>> {
-        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
+        validate_gif_output_color(self.metadata.as_ref(), self.policy.as_ref())?;
         Ok(GifEncoder {
             config: self.config,
             pulse: self.pulse,
             limits: self.limits,
-            policy: self.policy,
             metadata: self.metadata,
         })
     }
@@ -700,7 +709,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             };
         }
         // Rejects ICC and unrepresentable CICP now; the rest is checked per frame.
-        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
+        validate_gif_output_color(self.metadata.as_ref(), self.policy.as_ref())?;
         // Pre-compute limits so they're ready when the encoder is created
         let base = limits_from_resource(&self.config.limits);
         let gif_limits = match self.limits {
@@ -715,7 +724,7 @@ impl zencodec::encode::EncodeJob for GifEncodeJob {
             has_frames: false,
             pulse: self.pulse,
             metadata: self.metadata,
-            begun: false,
+            declared_spec: None,
             declared_frames: None,
             pushed: 0,
             timing: GIF_TIMING,
@@ -730,8 +739,6 @@ pub struct GifEncoder {
     config: GifEncoderConfig,
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
-    /// Encode policy (color emission). See [`resolve_gif_color_emit`].
-    policy: Option<zencodec::encode::EncodePolicy>,
     /// Caller-supplied metadata. GIF carries none of its signals; retained for
     /// the color decision and future GIF-representable extensions.
     metadata: Option<Metadata>,
@@ -768,9 +775,6 @@ impl GifEncoder {
             .into());
         }
 
-        // Input color was validated before quantization; no extension is written.
-        resolve_gif_color_emit(self.metadata.as_ref(), self.policy.as_ref(), 4)?;
-
         let limits = self.build_limits();
         let frame = FrameInput::new(w, h, 0, rgba_pixels);
 
@@ -791,39 +795,33 @@ impl zencodec::encode::Encoder for GifEncoder {
         GifError::from(op).into()
     }
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<CodecError>> {
-        validate_gif_metadata(&pixels, self.metadata.as_ref())?;
+    fn encode(self, pixels: PixelView<'_>) -> Result<EncodeOutput, At<CodecError>> {
+        validate_gif_metadata(pixels.format(), self.metadata.as_ref())?;
         let (rgba, w, h) =
             pixels_to_gif_rgba(&pixels, &self.pulse, self.build_limits().max_memory)?;
         self.do_encode(rgba, w, h)
     }
 }
 
+fn validate_input_spec(spec: &PixelFormat) -> Result<(), At<CodecError>> {
+    if ENCODE_DESCRIPTORS.contains(spec) {
+        return Ok(());
+    }
+    Err(GifError::from(zencodec::UnsupportedOperation::PixelFormat).into())
+}
+
 /// Convert supported, explicitly interpreted packed pixels to sRGB GIF colors.
 fn pixels_to_gif_rgba(
-    pixels: &PixelSlice<'_>,
+    pixels: &PixelView<'_>,
     stop: &dyn enough::Stop,
     max_bytes: Option<u64>,
 ) -> Result<(Vec<crate::Rgba>, u16, u16), At<CodecError>> {
-    use zenpixels::{ChannelLayout, ChannelType};
     stop.check().map_err(GifError::Cancelled)?;
     let invalid = |message| GifError::InvalidEncoderState { message };
-    let desc = pixels.descriptor();
-    if !ENCODE_DESCRIPTORS.contains(&desc) {
-        return Err(invalid("GIF requires straight sRGB U8 or linear BT.709 F32 pixels; convert color, range and alpha explicitly").into());
-    }
-    if let Some(context) = pixels.color_context()
-        && (context.icc.is_some()
-            || context
-                .cicp
-                .is_some_and(|c| Some(c) != zenpixels::Cicp::from_descriptor(&desc)))
-    {
-        return Err(
-            invalid("resolve ICC or conflicting pixel color context before GIF encoding").into(),
-        );
-    }
+    let desc = pixels.format();
+    validate_input_spec(desc)?;
     let w = u16::try_from(pixels.width()).map_err(|_| invalid("GIF width exceeds 65535"))?;
-    let h = u16::try_from(pixels.rows()).map_err(|_| invalid("GIF height exceeds 65535"))?;
+    let h = u16::try_from(pixels.height()).map_err(|_| invalid("GIF height exceeds 65535"))?;
     if w == 0 || h == 0 {
         return Err(invalid("GIF canvas must be nonempty").into());
     }
@@ -843,33 +841,37 @@ fn pixels_to_gif_rgba(
     let mut rgba = Vec::new();
     rgba.try_reserve_exact(count)
         .map_err(|_| GifError::AllocationFailed { requested: bytes })?;
-    let bpp = desc.bytes_per_pixel();
-    for y in 0..pixels.rows() {
+    let bpp = desc.layout.bytes_per_pixel();
+    for y in 0..pixels.height() {
         stop.check().map_err(GifError::Cancelled)?;
         for pixel in pixels.row(y).chunks_exact(bpp) {
-            let value = match (desc.channel_type(), desc.layout()) {
-                (ChannelType::U8, ChannelLayout::Rgb) => {
+            let value = match (desc.layout.sample, desc.layout.order) {
+                (SampleType::U8, ChannelOrder::Rgb) => {
                     crate::Rgba::rgb(pixel[0], pixel[1], pixel[2])
                 }
-                (ChannelType::U8, ChannelLayout::Gray) => {
+                (SampleType::U8, ChannelOrder::Gray) => {
                     crate::Rgba::rgb(pixel[0], pixel[0], pixel[0])
                 }
-                (ChannelType::U8, ChannelLayout::Rgba | ChannelLayout::Bgra) => {
-                    let (r, b) = if desc.layout() == ChannelLayout::Bgra {
+                (
+                    SampleType::U8,
+                    ChannelOrder::Rgba
+                    | ChannelOrder::Bgra
+                    | ChannelOrder::Rgbx
+                    | ChannelOrder::Bgrx,
+                ) => {
+                    let (r, b) = if desc.layout.order.is_bgr() {
                         (pixel[2], pixel[0])
                     } else {
                         (pixel[0], pixel[2])
                     };
-                    let a = if desc == PixelDescriptor::RGBX8_SRGB
-                        || desc == PixelDescriptor::BGRX8_SRGB
-                    {
+                    let a = if desc.layout.order.has_padding_slot() {
                         255
                     } else {
                         pixel[3]
                     };
                     crate::Rgba::new(r, pixel[1], b, a)
                 }
-                (ChannelType::F32, layout) => {
+                (SampleType::F32, layout) => {
                     let mut channels = [0.0; 4];
                     for (i, bytes) in pixel.as_chunks::<4>().0.iter().enumerate() {
                         let value = f32::from_ne_bytes(*bytes);
@@ -879,11 +881,11 @@ fn pixels_to_gif_rgba(
                         channels[i] = value;
                     }
                     let to_srgb = linear_srgb::default::linear_to_srgb_u8;
-                    if layout == ChannelLayout::Gray {
+                    if layout == ChannelOrder::Gray {
                         let value = to_srgb(channels[0]);
                         crate::Rgba::rgb(value, value, value)
                     } else {
-                        let a = if layout == ChannelLayout::Rgba {
+                        let a = if layout == ChannelOrder::Rgba {
                             (channels[3] * 255.0 + 0.5) as u8
                         } else {
                             255
@@ -904,14 +906,27 @@ fn pixels_to_gif_rgba(
     Ok((rgba, w, h))
 }
 
+// GIF's admitted gray specs use the same transfer and range as its BT.709 RGB specs.
+fn gif_input_cicp(spec: &PixelFormat) -> Option<zenpixels::Cicp> {
+    match spec.color {
+        ColorSpace::Gray {
+            transfer, range, ..
+        } => Some(zenpixels::Cicp::new(
+            1,
+            transfer.to_cicp()?,
+            0,
+            range == zenpixels::SignalRange::Full,
+        )),
+        _ => spec.color.project_cicp().ok(),
+    }
+}
+
 fn validate_gif_metadata(
-    pixels: &PixelSlice<'_>,
+    spec: &PixelFormat,
     metadata: Option<&Metadata>,
 ) -> Result<(), At<CodecError>> {
     if metadata.is_some_and(|m| {
-        m.icc_profile.is_some()
-            || m.cicp
-                .is_some_and(|c| Some(c) != zenpixels::Cicp::from_descriptor(&pixels.descriptor()))
+        m.icc_profile.is_some() || m.cicp.is_some_and(|c| Some(c) != gif_input_cicp(spec))
     }) {
         return Err(GifError::InvalidEncoderState {
             message: "resolve source ICC and conflicting color metadata before GIF encoding",
@@ -925,8 +940,8 @@ fn validate_gif_metadata(
 
 /// Animation GIF encoder — streams frames to the underlying encoder.
 ///
-/// Frames are encoded immediately on [`push_frame`](Self::push_frame)
-/// rather than buffering all source pixels until [`finish`](Self::finish).
+/// Frames are encoded immediately on [`push_frame`](zencodec::encode::AnimationFrameEncoder::push_frame)
+/// rather than buffering all source pixels until [`finish`](zencodec::encode::AnimationFrameEncoder::finish).
 /// Shared-palette mode can retain its configured frame window. The native
 /// writer retains compressed output bytes until finish.
 ///
@@ -948,8 +963,8 @@ pub struct GifAnimationFrameEncoder {
     /// The job's pulse, checked with each call's pulse.
     pulse: zencodec::SharedPulse,
     metadata: Option<Metadata>,
-    /// `begin` succeeded.
-    begun: bool,
+    /// Input interpretation bound by a successful `begin`.
+    declared_spec: Option<PixelFormat>,
     /// The frame count `begin` declared, binding on `finish`.
     declared_frames: Option<u32>,
     /// Frames pushed.
@@ -1002,7 +1017,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
 
     fn push_frame(
         &mut self,
-        pixels: PixelSlice<'_>,
+        pixels: PixelView<'_>,
         duration_ms: u32,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
@@ -1015,7 +1030,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
 
     fn push_frame_exact(
         &mut self,
-        pixels: PixelSlice<'_>,
+        pixels: PixelView<'_>,
         duration: zencodec::animation::FrameDuration,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
@@ -1032,11 +1047,11 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
     /// advances only when the frame is accepted.
     fn push_frame_timed(
         &mut self,
-        pixels: PixelSlice<'_>,
+        pixels: PixelView<'_>,
         duration: zencodec::animation::FrameDuration,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<zencodec::animation::FrameDuration, At<CodecError>> {
-        let mut next = self.timing;
+        let mut next = self.timing.clone();
         let encoded = next
             .quantize(duration)
             .map_err(|_| Self::reject(zencodec::UnsupportedOperation::AnimationTiming))?;
@@ -1055,14 +1070,14 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         &mut self,
         width: u32,
         height: u32,
-        _descriptor: PixelDescriptor,
+        descriptor: PixelFormat,
         frame_count: Option<u32>,
     ) -> Result<zencodec::encode::AnimationOutputTiming, At<CodecError>> {
         use zencodec::encode::AnimationOutputTiming;
         let refuse = |message: &'static str| -> At<CodecError> {
             GifError::InvalidEncoderState { message }.into()
         };
-        if self.begun {
+        if self.declared_spec.is_some() {
             return Err(refuse("begin called twice"));
         }
         if self.has_frames {
@@ -1078,15 +1093,17 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
         if frame_count == Some(0) {
             return Err(refuse("GIF needs at least one frame"));
         }
-        let previous = self.canvas_size.replace((width, height));
-        let held = match self.ensure_encoder(width as u16, height as u16) {
-            Ok(enc) => enc.max_held_frames(),
-            Err(e) => {
-                self.canvas_size = previous;
-                return Err(e);
-            }
-        };
-        self.begun = true;
+        let declaration = zencodec::encode::EncodeDeclaration::new(width, height, descriptor);
+        declaration
+            .validate_format()
+            .map_err(|_| GifError::from(zencodec::UnsupportedOperation::PixelFormat))?;
+        validate_input_spec(&declaration.pixel_format)?;
+        validate_gif_metadata(&declaration.pixel_format, self.metadata.as_ref())?;
+        let held = self
+            .ensure_encoder(width as u16, height as u16)?
+            .max_held_frames();
+        self.canvas_size = Some((width, height));
+        self.declared_spec = Some(declaration.pixel_format);
         self.declared_frames = frame_count;
         let lag = u32::try_from(held).unwrap_or(u32::MAX);
         if frame_count.is_some_and(|n| lag >= n) {
@@ -1119,7 +1136,7 @@ impl zencodec::encode::AnimationFrameEncoder for GifAnimationFrameEncoder {
 impl GifAnimationFrameEncoder {
     fn push_frame_centiseconds(
         &mut self,
-        pixels: PixelSlice<'_>,
+        pixels: PixelView<'_>,
         delay_cs: u16,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<(), At<CodecError>> {
@@ -1127,17 +1144,24 @@ impl GifAnimationFrameEncoder {
         let stop = crate::stop::AnimationStops(&job, &pulse);
         enough::Stop::check(&stop).map_err(GifError::Cancelled)?;
         if pixels.width() == 0
-            || pixels.rows() == 0
+            || pixels.height() == 0
             || self
                 .canvas_size
-                .is_some_and(|size| size != (pixels.width(), pixels.rows()))
+                .is_some_and(|size| size != (pixels.width(), pixels.height()))
         {
             return Err(GifError::InvalidEncoderState {
                 message: "animation frame must match its nonempty canvas",
             }
             .into());
         }
-        validate_gif_metadata(&pixels, self.metadata.as_ref())?;
+        if self
+            .declared_spec
+            .as_ref()
+            .is_some_and(|spec| spec != pixels.format())
+        {
+            return Err(GifError::from(zencodec::UnsupportedOperation::PixelFormat).into());
+        }
+        validate_gif_metadata(pixels.format(), self.metadata.as_ref())?;
         if let Some(n) = self.declared_frames
             && self.pushed >= n
         {
@@ -1254,7 +1278,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         &[ImageFormat::Gif]
     }
 
-    fn supported_descriptors() -> &'static [PixelDescriptor] {
+    fn supported_pixel_formats() -> &'static [PixelFormat] {
         DECODE_DESCRIPTORS
     }
 
@@ -1277,7 +1301,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
         let frame_count = image.frame_count().max(1);
         let est = crate::heuristics::estimate_decode(image.width(), image.height(), frame_count);
         ResourceEstimate::new(est.peak_memory_bytes, est.time_ms as u64)
-            .with_peak_max(est.peak_memory_bytes_max)
+            .with_peak_memory_bytes_max(est.peak_memory_bytes_max)
             .with_threading(ThreadingInformation::SERIAL)
             .at_cores(compute.cores())
     }
@@ -1298,8 +1322,7 @@ impl zencodec::decode::DecoderConfig for GifDecoderConfig {
 /// Per-operation GIF decode job.
 pub struct GifDecodeJob {
     config: GifDecoderConfig,
-    /// The operation pulse, kept whole for every decoder made from this job
-    /// (a legacy `with_stop` token arrives wrapped in one).
+    /// The operation pulse, kept whole for every decoder made from this job.
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     policy: Option<zencodec::decode::DecodePolicy>,
@@ -1337,12 +1360,8 @@ impl GifDecodeJob {
 /// GIF is frame-based, not row-based — this decodes the first frame fully on
 /// construction, then yields rows in batches via [`StreamingDecode::next_batch`].
 pub struct GifStreamingDecoder {
-    /// Decoded RGBA pixel data (contiguous, no padding).
-    data: Vec<u8>,
-    descriptor: PixelDescriptor,
+    pixels: PixelBuf,
     info: ImageInfo,
-    /// Bytes per row (width * bpp, no padding).
-    stride: usize,
     /// Row offset for next batch.
     y: u32,
     /// Rows per batch.
@@ -1356,23 +1375,16 @@ impl GifStreamingDecoder {
 impl zencodec::decode::StreamingDecode for GifStreamingDecoder {
     type Error = At<CodecError>;
 
-    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, At<CodecError>> {
+    fn next_batch(&mut self) -> Result<Option<(u32, PixelView<'_>)>, At<CodecError>> {
         let h = self.info.height;
         if self.y >= h {
             return Ok(None);
         }
         let rows = self.batch_size.min(h - self.y);
-        let start = self.y as usize * self.stride;
-        let end = start + rows as usize * self.stride;
-        let slice = PixelSlice::new(
-            &self.data[start..end],
-            self.info.width,
-            rows,
-            self.stride,
-            self.descriptor,
-        )
-        .map_err(|_| GifError::InvalidEncoderState {
-            message: "streaming slice",
+        let slice = self.pixels.as_view().sub_rows(self.y, rows).map_err(|_| {
+            GifError::InvalidEncoderState {
+                message: "streaming row range",
+            }
         })?;
         let y = self.y;
         self.y += rows;
@@ -1400,9 +1412,19 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         self
     }
 
-    fn with_policy(mut self, policy: zencodec::decode::DecodePolicy) -> Self {
+    fn try_set_policy(
+        &mut self,
+        policy: zencodec::decode::DecodePolicy,
+    ) -> Result<(), zencodec::UnsupportedOperation> {
+        let supported = match policy.allow_animation {
+            Some(allow) => zencodec::decode::DecodePolicy::none().with_allow_animation(allow),
+            None => zencodec::decode::DecodePolicy::none(),
+        };
+        if policy != supported {
+            return Err(zencodec::UnsupportedOperation::DecodePolicy);
+        }
         self.policy = Some(policy);
-        self
+        Ok(())
     }
 
     fn with_start_frame_index(mut self, index: u32) -> Self {
@@ -1559,7 +1581,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         Ok(OutputInfo::full_decode(
             metadata.width as u32,
             metadata.height as u32,
-            PixelDescriptor::RGBA8_SRGB,
+            PixelFormat::RGBA8_SRGB,
         )
         .with_alpha(has_alpha))
     }
@@ -1567,14 +1589,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     fn decoder(
         self,
         data: Cow<'a, [u8]>,
-        preferred: &[PixelDescriptor],
+        preferred: &[PixelFormat],
     ) -> Result<GifDecoder<'a>, At<CodecError>> {
         Ok(GifDecoder {
             config: self.config,
             pulse: self.pulse,
             limits: self.limits,
             data,
-            preferred: preferred.to_vec(),
+            preferences: GifPreferences::new(preferred),
         })
     }
 
@@ -1582,7 +1604,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         sink: &mut dyn zencodec::decode::DecodeRowSink,
-        preferred: &[PixelDescriptor],
+        preferred: &[PixelFormat],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, wrap_sink)
     }
@@ -1590,22 +1612,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     fn streaming_decoder(
         self,
         data: Cow<'a, [u8]>,
-        preferred: &[PixelDescriptor],
+        preferred: &[PixelFormat],
     ) -> Result<GifStreamingDecoder, At<CodecError>> {
         // Decode first frame fully, then yield rows via next_batch().
         let decoder_obj = self.decoder(data, preferred)?;
         let output = decoder_obj.decode()?;
         let info = output.info().clone();
-        let buf = output.into_buffer();
-        let descriptor = buf.descriptor();
-        let w = buf.width();
-        let stride = w as usize * descriptor.bytes_per_pixel();
-        let pixel_data = buf.copy_to_contiguous_bytes();
         Ok(GifStreamingDecoder {
-            data: pixel_data,
-            descriptor,
+            pixels: output.into_buffer(),
             info,
-            stride,
             y: 0,
             batch_size: GifStreamingDecoder::DEFAULT_BATCH,
         })
@@ -1614,7 +1629,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     fn animation_frame_decoder(
         self,
         data: Cow<'a, [u8]>,
-        preferred: &[PixelDescriptor],
+        preferred: &[PixelFormat],
     ) -> Result<GifAnimationFrameDecoder, At<CodecError>> {
         // Policy: reject animation decode if policy disallows it
         if let Some(ref policy) = self.policy
@@ -1666,10 +1681,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
                     1
                 }
             }),
-            current_frame: None,
+            converted: Vec::new(),
             frame_index: 0,
             start_frame_index: self.start_frame_index,
-            preferred: preferred.to_vec(),
+            preferences: GifPreferences::new(preferred),
         })
     }
 
@@ -1679,7 +1694,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for GifDecodeJob {
     /// through `push_decoder` once the whole file is offered.
     fn dyn_incremental_decoder(
         self,
-        preferred: &[PixelDescriptor],
+        preferred: &[PixelFormat],
     ) -> Result<
         alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
         zencodec::decode::BoxedError,
@@ -1698,7 +1713,7 @@ pub struct GifDecoder<'a> {
     pulse: zencodec::SharedPulse,
     limits: Option<ResourceLimits>,
     data: Cow<'a, [u8]>,
-    preferred: Vec<PixelDescriptor>,
+    preferences: GifPreferences,
 }
 
 impl GifDecoder<'_> {
@@ -1712,48 +1727,101 @@ impl GifDecoder<'_> {
 }
 
 /// Apply preferred format negotiation to decoded RGBA output.
-fn negotiate_format(pixels: PixelBuffer, preferred: &[PixelDescriptor]) -> PixelBuffer {
-    if preferred.is_empty() {
-        return pixels;
-    }
-    let desc = pixels.descriptor();
-    if desc != PixelDescriptor::RGBA8_SRGB {
-        return pixels;
-    }
-    let target = if preferred.contains(&PixelDescriptor::RGB8_SRGB) {
-        PixelDescriptor::RGB8_SRGB
-    } else if preferred.contains(&PixelDescriptor::BGRA8_SRGB) {
-        PixelDescriptor::BGRA8_SRGB
-    } else {
-        return pixels;
-    };
-    let mut parts = pixels.into_contiguous().into_parts();
-    // Packing preserves an alignment prefix. Move only active pixels to zero
-    // before handing the allocation to packed byte operations.
-    let len = parts.stride_bytes * parts.height as usize;
-    parts.data.copy_within(parts.offset..parts.offset + len, 0);
-    parts.data.truncate(len);
-    parts.offset = 0;
-    if target == PixelDescriptor::RGB8_SRGB {
-        for i in 0..len / 4 {
-            parts.data.copy_within(i * 4..i * 4 + 3, i * 3);
-        }
-        parts.data.truncate(len / 4 * 3);
-        parts.stride_bytes = parts.width as usize * 3;
-    } else {
-        garb::bytes::rgba_to_bgra_inplace(&mut parts.data)
-            .expect("negotiate_format: packed RGBA pixels");
-    }
-    parts.descriptor = target;
-    PixelBuffer::try_from_parts(parts).expect("negotiate_format: dimensions unchanged")
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GifOutput {
+    Rgba,
+    Rgb,
+    Bgra,
 }
 
-/// Convert owned GIF RGBA pixels to raw bytes, zero-copy.
-///
-/// `Rgba` is `#[repr(C)]` `Pod` with layout `[r, g, b, a]` — identical to
-/// raw RGBA8 bytes. `bytemuck::cast_vec` reinterprets without copying.
-fn rgba_pixels_to_bytes(pixels: Vec<crate::Rgba>) -> Vec<u8> {
-    bytemuck::allocation::cast_vec(pixels)
+impl GifOutput {
+    const fn format(self) -> PixelFormat {
+        match self {
+            Self::Rgba => PixelFormat::RGBA8_SRGB,
+            Self::Rgb => PixelFormat::RGB8_SRGB,
+            Self::Bgra => PixelFormat::BGRA8_SRGB,
+        }
+    }
+
+    const fn format_ref(self) -> &'static PixelFormat {
+        match self {
+            Self::Rgba => &zenpixels::formats::RGBA8_SRGB,
+            Self::Rgb => &zenpixels::formats::RGB8_SRGB,
+            Self::Bgra => &zenpixels::formats::BGRA8_SRGB,
+        }
+    }
+}
+
+/// Precompute both ranked choices so reading a native canvas only needs an
+/// alpha scan when the RGB preference could change the selected format.
+struct GifPreferences {
+    with_alpha: GifOutput,
+    opaque: GifOutput,
+}
+
+impl GifPreferences {
+    fn new(preferred: &[PixelFormat]) -> Self {
+        let candidates = [GifOutput::Rgba, GifOutput::Rgb, GifOutput::Bgra];
+        let first = |allow_rgb| {
+            preferred
+                .iter()
+                .find_map(|spec| {
+                    candidates.into_iter().find(|&candidate| {
+                        (allow_rgb || candidate != GifOutput::Rgb) && candidate.format() == *spec
+                    })
+                })
+                .unwrap_or(GifOutput::Rgba)
+        };
+        Self {
+            with_alpha: first(false),
+            opaque: first(true),
+        }
+    }
+
+    fn select(&self, all_opaque: impl FnOnce() -> bool) -> GifOutput {
+        if self.with_alpha != self.opaque && all_opaque() {
+            self.opaque
+        } else {
+            self.with_alpha
+        }
+    }
+
+    fn for_canvas(&self, pixels: &[crate::Rgba]) -> GifOutput {
+        self.select(|| pixels.iter().all(|pixel| pixel.a == u8::MAX))
+    }
+}
+
+fn convert_decoded_format(pixels: PixelBuf, target: GifOutput) -> PixelBuf {
+    if target == GifOutput::Rgba || pixels.format() != &PixelFormat::RGBA8_SRGB {
+        return pixels;
+    }
+
+    // The decoder's byte backing is reusable. Compact active rows and drop the
+    // alignment prefix before running packed pixel operations.
+    let mut parts = pixels
+        .into_tight_rows()
+        .expect("owned GIF RGBA backing")
+        .into_parts();
+    let zenpixels::PixelStorage::U8(mut bytes) = parts.storage else {
+        unreachable!("GIF RGBA is backed by bytes");
+    };
+    match target {
+        GifOutput::Rgb => {
+            for i in 0..bytes.len() / 4 {
+                bytes.copy_within(i * 4..i * 4 + 3, i * 3);
+            }
+            bytes.truncate(bytes.len() / 4 * 3);
+        }
+        GifOutput::Bgra => {
+            garb::bytes::rgba_to_bgra_inplace(&mut bytes).expect("packed RGBA pixels");
+        }
+        GifOutput::Rgba => unreachable!(),
+    }
+    let format = target.format();
+    parts.storage = zenpixels::PixelStorage::U8(bytes);
+    parts.stride_bytes = parts.width as usize * format.layout.bytes_per_pixel();
+    parts.format = format;
+    PixelBuf::from_parts(parts).expect("packed GIF output dimensions")
 }
 
 impl zencodec::decode::Decode for GifDecoder<'_> {
@@ -1791,12 +1859,12 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             .map_err(CodecError::of)?
             .ok_or(GifError::UnexpectedEof)?;
 
-        let rgba_bytes = rgba_pixels_to_bytes(frame.pixels);
-        let buf = PixelBuffer::from_vec(
-            rgba_bytes,
+        let format = self.preferences.for_canvas(&frame.pixels);
+        let buf = PixelBuf::from_pod_bytes_unchecked(
+            frame.pixels,
             metadata.width as u32,
             metadata.height as u32,
-            PixelDescriptor::RGBA8_SRGB,
+            PixelFormat::RGBA8_SRGB,
         )
         .map_err(|_| GifError::InvalidEncoderState {
             message: "frame size mismatch",
@@ -1822,7 +1890,7 @@ impl zencodec::decode::Decode for GifDecoder<'_> {
             ImageSequence::Single
         });
 
-        let buf = negotiate_format(buf, &self.preferred);
+        let buf = convert_decoded_format(buf, format);
 
         let mut output = DecodeOutput::new(buf, info);
         if let Some(probe) = source_probe {
@@ -1849,15 +1917,69 @@ pub struct GifAnimationFrameDecoder {
     failed: bool,
     shared_info: Arc<ImageInfo>,
     loop_count: Option<u32>,
-    /// Stores the current frame's pixel data so `render_next_frame` can
-    /// return a borrowing `AnimationFrame<'_>`.
-    current_frame: Option<(PixelBuffer, u32, u32)>,
+    /// Reusable staging for requested RGB or BGRA output.
+    converted: Vec<u8>,
     frame_index: u32,
     /// First frame index to yield. Frames before this are decoded (to maintain
     /// correct compositing/disposal state) but not returned to the caller.
     start_frame_index: u32,
-    /// Preferred output pixel formats for format negotiation.
-    preferred: Vec<PixelDescriptor>,
+    preferences: GifPreferences,
+}
+
+impl GifAnimationFrameDecoder {
+    fn advance(
+        &mut self,
+        pulse: Option<&dyn zencodec::Pulse>,
+    ) -> Result<Option<(u32, FrameDuration)>, At<CodecError>> {
+        if self.failed {
+            return Err(GifError::InvalidEncoderState {
+                message: "animation decoder failed",
+            }
+            .into());
+        }
+        self.failed = true;
+        loop {
+            if let Some(pulse) = pulse {
+                enough::Stop::check(pulse).map_err(GifError::Cancelled)?;
+            }
+            let Some((_index, delay)) = self
+                .decoder
+                .advance_composited_frame()
+                .map_err(CodecError::of)?
+            else {
+                self.converted = Vec::new();
+                self.failed = false;
+                return Ok(None);
+            };
+            let index = self.frame_index;
+            self.frame_index += 1;
+            if index >= self.start_frame_index {
+                self.failed = false;
+                let duration =
+                    FrameDuration::new(u64::from(delay), 100).expect("GIF clock is nonzero");
+                return Ok(Some((index, duration)));
+            }
+        }
+    }
+
+    fn convert_canvas(&mut self, format: GifOutput) -> Result<(), At<CodecError>> {
+        let pixels = self.decoder.canvas_pixels();
+        let src = bytemuck::cast_slice(pixels);
+        let len = pixels.len() * format.format().layout.bytes_per_pixel();
+        self.converted
+            .try_reserve_exact(len.saturating_sub(self.converted.len()))
+            .map_err(|_| GifError::AllocationFailed {
+                requested: len as u64,
+            })?;
+        self.converted.resize(len, 0);
+        match format {
+            GifOutput::Rgb => garb::bytes::rgba_to_rgb(src, &mut self.converted),
+            GifOutput::Bgra => garb::bytes::rgba_to_bgra(src, &mut self.converted),
+            GifOutput::Rgba => unreachable!(),
+        }
+        .expect("GIF staging matches packed canvas dimensions");
+        Ok(())
+    }
 }
 
 impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
@@ -1895,137 +2017,60 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
         &mut self,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<Option<AnimationFrame<'_>>, At<CodecError>> {
-        // The call's pulse; the job's pulse is owned by the native decoder.
-        let stop = pulse.map(|p| p as &dyn enough::Stop);
-        if self.failed {
-            return Err(GifError::InvalidEncoderState {
-                message: "animation decoder failed",
+        let Some((index, duration)) = self.advance(pulse)? else {
+            return Ok(None);
+        };
+        let width = self.decoder.width().into();
+        let height = self.decoder.height().into();
+        let format = self.preferences.for_canvas(self.decoder.canvas_pixels());
+        let bytes = if format == GifOutput::Rgba {
+            bytemuck::cast_slice(self.decoder.canvas_pixels())
+        } else {
+            if let Err(err) = self.convert_canvas(format) {
+                self.failed = true;
+                return Err(err);
             }
-            .into());
-        }
-        self.failed = true;
-        // GIF AnimationFrameDecoder returns fully composited RGBA frames — the internal
-        // compositor applies disposal before returning each frame. AnimationFrame
-        // borrows the decoder's stored buffer, so callers get ready-to-display
-        // frames with no further compositing needed.
-        //
-        // Uses with_next_frame (in-place compositing, no 64 MB canvas clone)
-        // and reuses the output buffer from the previous frame to avoid
-        // per-frame allocation.
-        //
-        // Frames before `start_frame_index` are decoded (to advance compositing
-        // and disposal state correctly) but not yielded to the caller.
-        loop {
-            if let Some(stop) = stop {
-                stop.check().map_err(GifError::Cancelled)?;
-            }
-            let w = self.decoder.width() as u32;
-            let h = self.decoder.height() as u32;
-            let preferred = &self.preferred;
-            let wants_bgra = preferred.contains(&PixelDescriptor::BGRA8_SRGB);
-
-            // Reclaim the output buffer from the previous frame's PixelBuffer.
-            // This avoids a fresh 64 MB allocation every frame at 4096².
-            let mut reuse_buf = self
-                .current_frame
-                .take()
-                .map(|(pb, _, _)| pb.into_parts().data)
-                .unwrap_or_default();
-
-            let result = self
-                .decoder
-                .with_next_frame(
-                    |_index, delay, pixels| -> Result<(PixelBuffer, u32), At<GifError>> {
-                        if let Some(stop) = stop {
-                            stop.check().map_err(|r| at!(GifError::Cancelled(r)))?;
-                        }
-                        let duration_ms = delay as u32 * 10;
-                        let src = bytemuck::cast_slice::<crate::Rgba, u8>(pixels);
-
-                        let buf = if wants_bgra {
-                            // Fused copy + R↔B swizzle in one SIMD pass.
-                            reuse_buf.resize(src.len(), 0);
-                            garb::bytes::rgba_to_bgra(src, &mut reuse_buf)
-                                .expect("src/dst same length, multiple of 4");
-                            PixelBuffer::from_vec(
-                                core::mem::take(&mut reuse_buf),
-                                w,
-                                h,
-                                PixelDescriptor::BGRA8_SRGB,
-                            )
-                            .map_err(|_| {
-                                at!(GifError::InvalidEncoderState {
-                                    message: "frame size mismatch",
-                                })
-                            })?
-                        } else {
-                            // Reuse buffer for copy
-                            reuse_buf.resize(src.len(), 0);
-                            reuse_buf.copy_from_slice(src);
-                            let pb = PixelBuffer::from_vec(
-                                core::mem::take(&mut reuse_buf),
-                                w,
-                                h,
-                                PixelDescriptor::RGBA8_SRGB,
-                            )
-                            .map_err(|_| {
-                                at!(GifError::InvalidEncoderState {
-                                    message: "frame size mismatch",
-                                })
-                            })?;
-                            negotiate_format(pb, preferred)
-                        };
-
-                        Ok((buf, duration_ms))
-                    },
-                )
-                .map_err(CodecError::of)?;
-
-            match result {
-                None => {
-                    self.current_frame = None;
-                    self.failed = false;
-                    return Ok(None);
-                }
-                Some(inner_result) => {
-                    let (buf, duration_ms) = inner_result.map_err(CodecError::of)?;
-                    let index = self.frame_index;
-                    self.frame_index += 1;
-
-                    // Skip frames before start_frame_index — decode for
-                    // correct compositing state, but don't yield.
-                    if index < self.start_frame_index {
-                        // For skipped frames: inner_result was computed but we
-                        // discard it. The PixelBuffer's Vec will be dropped,
-                        // but that's OK — skipped frames are rare.
-                        continue;
-                    }
-
-                    self.failed = false;
-                    self.current_frame = Some((buf, duration_ms, index));
-                    let (ref buf, duration_ms, index) = *self.current_frame.as_ref().unwrap();
-                    return Ok(Some(AnimationFrame::new(
-                        buf.as_slice(),
-                        duration_ms,
-                        index,
-                    )));
-                }
-            }
-        }
+            &self.converted
+        };
+        let view = PixelView::from_bytes(bytes, width, height, format.format_ref())
+            .expect("GIF canvas or staging has matching dimensions");
+        Ok(Some(AnimationFrame::with_duration(view, duration, index)))
     }
 
-    /// Move the rendered canvas into the caller without another pixel copy.
     fn render_next_frame_owned(
         &mut self,
         pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<Option<OwnedAnimationFrame>, At<CodecError>> {
-        if self.render_next_frame(pulse)?.is_none() {
+        let Some((index, duration)) = self.advance(pulse)? else {
             return Ok(None);
+        };
+        let width = self.decoder.width().into();
+        let height = self.decoder.height().into();
+        let format = self.preferences.for_canvas(self.decoder.canvas_pixels());
+        let spec = format.format();
+        let buf = if format == GifOutput::Rgba {
+            let src = self.decoder.canvas_pixels();
+            let mut copy = Vec::new();
+            if copy.try_reserve_exact(src.len()).is_err() {
+                self.failed = true;
+                return Err(GifError::AllocationFailed {
+                    requested: (src.len() as u64) * 4,
+                }
+                .into());
+            }
+            copy.extend_from_slice(src);
+            PixelBuf::from_pod_bytes_unchecked(copy, width, height, spec)
+        } else {
+            if let Err(err) = self.convert_canvas(format) {
+                self.failed = true;
+                return Err(err);
+            }
+            PixelBuf::from_bytes(core::mem::take(&mut self.converted), width, height, spec)
         }
-        Ok(self
-            .current_frame
-            .take()
-            .map(|(pixels, ms, index)| OwnedAnimationFrame::new(pixels, ms, index)))
+        .expect("GIF output buffer has matching dimensions");
+        Ok(Some(OwnedAnimationFrame::with_duration(
+            buf, duration, index,
+        )))
     }
 
     fn render_next_frame_to_sink(
@@ -2042,40 +2087,48 @@ impl zencodec::decode::AnimationFrameDecoder for GifAnimationFrameDecoder {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn negotiate_padded_pixels_preserves_samples_and_context() {
+    fn negotiate_padded_pixels_preserves_samples_and_origin_token() {
         use alloc::sync::Arc;
-        use zenpixels::ColorContext;
-        let context = Arc::new(ColorContext::from_icc([1u8, 2, 3]));
-        for target in [
-            PixelDescriptor::RGBA8_SRGB,
-            PixelDescriptor::RGB8_SRGB,
-            PixelDescriptor::BGRA8_SRGB,
-        ] {
+        use zenpixels::{ColorOrigin, PixelStorage};
+        let profile: Arc<[u8]> = Arc::from([1, 2, 3]);
+        for preferred in [GifOutput::Rgba, GifOutput::Rgb, GifOutput::Bgra] {
             let mut data = vec![0xEE; 40];
             data[3..11].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
             data[19..27].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
-            let mut parts = PixelBuffer::new(2, 2, PixelDescriptor::RGBA8_SRGB).into_parts();
-            parts.data = data;
-            parts.stride_bytes = 16;
-            parts.offset = 3;
-            parts.color_context = Some(context.clone());
-            let input = PixelBuffer::try_from_parts(parts).unwrap();
-            let before = input.as_slice().row(0).as_ptr();
-            let output = negotiate_format(input, &[target]);
-            assert!(Arc::ptr_eq(output.color_context().unwrap(), &context));
-            assert_eq!(output.descriptor(), target);
-            let rows = output.as_slice();
-            if target == PixelDescriptor::RGB8_SRGB {
-                assert_eq!(rows.row(0), &[1, 2, 3, 5, 6, 7]);
-                assert_eq!(rows.row(1), &[9, 10, 11, 13, 14, 15]);
-            } else if target == PixelDescriptor::BGRA8_SRGB {
+            let input = PixelBuf::from_storage_parts(
+                PixelStorage::U8(data),
+                3,
+                2,
+                2,
+                16,
+                PixelFormat::RGBA8_SRGB,
+            )
+            .unwrap()
+            .with_origin(ColorOrigin::from_icc(profile.clone()));
+            let before = input.as_view().row(0).as_ptr();
+            let target = GifPreferences::new(&[preferred.format()]).select(|| {
+                let view = input.as_view();
+                (0..view.height()).all(|y| {
+                    view.row(y)
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .all(|pixel| pixel[3] == 255)
+                })
+            });
+            let output = convert_decoded_format(input, target);
+            assert!(Arc::ptr_eq(output.origin().icc.as_ref().unwrap(), &profile));
+            let rows = output.as_view();
+            if preferred == GifOutput::Bgra {
+                assert_eq!(output.format(), &PixelFormat::BGRA8_SRGB);
                 assert_eq!(rows.row(0), &[3, 2, 1, 4, 7, 6, 5, 8]);
                 assert_eq!(rows.row(1), &[11, 10, 9, 12, 15, 14, 13, 16]);
             } else {
+                assert_eq!(output.format(), &PixelFormat::RGBA8_SRGB);
                 assert_eq!(rows.row(0).as_ptr(), before);
                 assert_eq!(rows.row(0), &[1, 2, 3, 4, 5, 6, 7, 8]);
                 assert_eq!(rows.row(1), &[9, 10, 11, 12, 13, 14, 15, 16]);
-                assert_eq!(output.stride(), 16);
+                assert_eq!(output.stride_bytes(), 16);
             }
         }
     }
@@ -2101,31 +2154,32 @@ mod tests {
         use zencodec::encode::EncodeJob as _;
         let config = GifEncoderConfig::new;
         let metadata = Metadata::none().with_icc(alloc::vec![0; 256]);
+        let policy = zencodec::MetadataPolicy::PreserveExact;
         assert!(
             config()
                 .job()
-                .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(metadata.filtered(&policy))
                 .encoder()
                 .is_err()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(metadata.filtered(&policy))
                 .animation_frame_encoder()
                 .is_err()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(Metadata::none().filtered(&policy))
                 .encoder()
                 .is_ok()
         );
         assert!(
             config()
                 .job()
-                .with_metadata_policy(Metadata::none(), zencodec::MetadataPolicy::PreserveExact)
+                .with_unfiltered_metadata(Metadata::none().filtered(&policy))
                 .animation_frame_encoder()
                 .is_ok()
         );
@@ -2134,6 +2188,7 @@ mod tests {
     #[test]
     fn explicit_srgb_cicp_is_admitted_but_other_cicp_is_rejected() {
         use zencodec::encode::EncodeJob as _;
+        let policy = zencodec::MetadataPolicy::PreserveExact;
         let mut wide_gamut = zencodec::Cicp::SRGB;
         wide_gamut.color_primaries = 9;
         for (cicp, accepted) in [(zencodec::Cicp::SRGB, true), (wide_gamut, false)] {
@@ -2142,7 +2197,7 @@ mod tests {
             assert_eq!(
                 GifEncoderConfig::new()
                     .job()
-                    .with_metadata_policy(metadata.clone(), zencodec::MetadataPolicy::PreserveExact)
+                    .with_unfiltered_metadata(metadata.filtered(&policy))
                     .encoder()
                     .is_ok(),
                 accepted
@@ -2150,12 +2205,69 @@ mod tests {
             assert_eq!(
                 GifEncoderConfig::new()
                     .job()
-                    .with_metadata_policy(metadata, zencodec::MetadataPolicy::PreserveExact)
+                    .with_unfiltered_metadata(metadata.filtered(&policy))
                     .animation_frame_encoder()
                     .is_ok(),
                 accepted
             );
         }
+    }
+
+    #[test]
+    fn swizzle_preserves_valid_srgb_icc_through_borrow_and_copy() {
+        use zenpixels::ColorOrigin;
+
+        let profile: Arc<[u8]> = moxcms::ColorProfile::new_srgb().encode().unwrap().into();
+        assert_eq!(
+            moxcms::ColorProfile::new_from_slice(&profile)
+                .unwrap()
+                .color_space,
+            moxcms::DataColorSpace::Rgb,
+        );
+        let input = PixelBuf::from_bytes(vec![11, 22, 33, 255], 1, 1, PixelFormat::RGBA8_SRGB)
+            .unwrap()
+            .with_origin(ColorOrigin::from_icc(profile.clone()));
+        let output = convert_decoded_format(input, GifOutput::Bgra);
+        let view = output.as_view();
+        assert_eq!(view.format(), &PixelFormat::BGRA8_SRGB);
+        assert_eq!(view.row(0), &[33, 22, 11, 255]);
+        assert!(Arc::ptr_eq(
+            view.origin().unwrap().icc.as_ref().unwrap(),
+            &profile
+        ));
+        let frame = AnimationFrame::with_duration(view, FrameDuration::from_millis(20), 0);
+        let owned = frame.try_to_owned_frame().unwrap().into_buffer();
+        assert_eq!(owned.origin(), output.origin());
+        assert_eq!(owned.as_view().row(0), &[33, 22, 11, 255]);
+    }
+
+    #[test]
+    fn color_planner_refuses_linear_output_without_a_gif_carrier() {
+        use zencodec::{Cicp, ColorEmitError, ColorEmitPolicy, IccDisposition, SourceColor};
+
+        assert!(!GIF_ENCODE_CAPS.icc());
+        assert!(!GIF_ENCODE_CAPS.cicp());
+        let source = SourceColor::default()
+            .with_cicp(Cicp::new(1, 8, 0, true))
+            .with_color_authority(zencodec::ColorAuthority::Cicp);
+        assert_eq!(
+            zencodec::resolve_color_emit(
+                &source,
+                &ColorSpace::LINEAR_SRGB,
+                &GIF_ENCODE_CAPS,
+                ColorEmitPolicy::Balanced,
+            ),
+            Err(ColorEmitError::Unrepresentable),
+        );
+        let plan = zencodec::resolve_color_emit(
+            &source,
+            &ColorSpace::SRGB,
+            &GIF_ENCODE_CAPS,
+            ColorEmitPolicy::Balanced,
+        )
+        .unwrap();
+        assert_eq!(plan.icc, IccDisposition::Drop);
+        assert_eq!(plan.cicp, None);
     }
 
     // Minimal valid GIF89a (1x1 red pixel)
@@ -2331,8 +2443,8 @@ mod tests {
         for _ in 0..16 * 16 {
             rgba_bytes.extend_from_slice(&[255, 0, 0, 255]);
         }
-        let buf = PixelBuffer::from_vec(rgba_bytes, 16, 16, PixelDescriptor::RGBA8_SRGB).unwrap();
-        let pixels = buf.as_slice();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, PixelFormat::RGBA8_SRGB).unwrap();
+        let pixels = buf.as_view();
 
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
@@ -2375,10 +2487,10 @@ mod tests {
         for i in 0u32..16 * 16 {
             rgba_bytes.extend_from_slice(&[(i % 256) as u8, 128, 64, 255]);
         }
-        let buf = PixelBuffer::from_vec(rgba_bytes, 16, 16, PixelDescriptor::RGBA8_SRGB).unwrap();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 16, 16, PixelFormat::RGBA8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2398,10 +2510,10 @@ mod tests {
         for i in 0u32..16 * 16 {
             rgb_bytes.extend_from_slice(&[(i % 256) as u8, 128, 64]);
         }
-        let buf = PixelBuffer::from_vec(rgb_bytes, 16, 16, PixelDescriptor::RGB8_SRGB).unwrap();
+        let buf = PixelBuf::from_bytes(rgb_bytes, 16, 16, PixelFormat::RGB8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2418,10 +2530,10 @@ mod tests {
         use zencodec::encode::Encoder as _;
 
         let gray_bytes: Vec<u8> = (0..16 * 16).map(|i| (i % 256) as u8).collect();
-        let buf = PixelBuffer::from_vec(gray_bytes, 16, 16, PixelDescriptor::GRAY8_SRGB).unwrap();
+        let buf = PixelBuf::from_bytes(gray_bytes, 16, 16, PixelFormat::GRAY8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2444,10 +2556,10 @@ mod tests {
             f32_bytes.extend_from_slice(&0.5f32.to_ne_bytes());
             f32_bytes.extend_from_slice(&0.25f32.to_ne_bytes());
         }
-        let buf = PixelBuffer::from_vec(f32_bytes, 16, 16, PixelDescriptor::RGBF32_LINEAR).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, PixelFormat::RGBF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2471,11 +2583,10 @@ mod tests {
             f32_bytes.extend_from_slice(&0.25f32.to_ne_bytes());
             f32_bytes.extend_from_slice(&1.0f32.to_ne_bytes());
         }
-        let buf =
-            PixelBuffer::from_vec(f32_bytes, 16, 16, PixelDescriptor::RGBAF32_LINEAR).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, PixelFormat::RGBAF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2496,11 +2607,10 @@ mod tests {
             let v = (i % 256) as f32 / 255.0;
             f32_bytes.extend_from_slice(&v.to_ne_bytes());
         }
-        let buf =
-            PixelBuffer::from_vec(f32_bytes, 16, 16, PixelDescriptor::GRAYF32_LINEAR).unwrap();
+        let buf = PixelBuf::from_bytes(f32_bytes, 16, 16, PixelFormat::GRAYF32_LINEAR).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(buf.as_slice()).unwrap();
+        let output = encoder.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
@@ -2520,25 +2630,25 @@ mod tests {
         for _ in 0..32 * 32 {
             rgba_bytes.extend_from_slice(&[100, 150, 200, 255]);
         }
-        let buf = PixelBuffer::from_vec(rgba_bytes, 32, 32, PixelDescriptor::RGBA8_SRGB).unwrap();
+        let buf = PixelBuf::from_bytes(rgba_bytes, 32, 32, PixelFormat::RGBA8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let dyn_enc = config.job().dyn_encoder().unwrap();
-        let output = dyn_enc.encode(buf.as_slice()).unwrap();
+        let output = dyn_enc.encode(buf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
     }
 
     #[test]
-    fn supported_descriptors_includes_rgbx_and_bgrx() {
+    fn supported_pixel_formats_includes_rgbx_and_bgrx() {
         use zencodec::encode::EncoderConfig as _;
-        let desc = GifEncoderConfig::supported_descriptors();
+        let formats = GifEncoderConfig::supported_pixel_formats();
         assert!(
-            desc.contains(&PixelDescriptor::RGBX8_SRGB),
-            "RGBX8_SRGB must be in supported_descriptors"
+            formats.contains(&PixelFormat::RGBX8_SRGB),
+            "RGBX8_SRGB must be in supported_pixel_formats"
         );
         assert!(
-            desc.contains(&PixelDescriptor::BGRX8_SRGB),
-            "BGRX8_SRGB must be in supported_descriptors"
+            formats.contains(&PixelFormat::BGRX8_SRGB),
+            "BGRX8_SRGB must be in supported_pixel_formats"
         );
     }
 
@@ -2561,10 +2671,10 @@ mod tests {
         for _ in 0..(w * h) {
             buf.extend_from_slice(&[255, 128, 0, 0x13]);
         }
-        let pbuf = PixelBuffer::from_vec(buf, w, h, PixelDescriptor::RGBX8_SRGB).unwrap();
+        let pbuf = PixelBuf::from_bytes(buf, w, h, PixelFormat::RGBX8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(pbuf.as_slice()).unwrap();
+        let output = encoder.encode(pbuf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
 
@@ -2574,8 +2684,8 @@ mod tests {
         let dec = GifDecoderConfig::new();
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
-        assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
-        let px = out_buf.as_slice();
+        assert_eq!(out_buf.format(), &PixelFormat::RGBA8_SRGB);
+        let px = out_buf.as_view();
         let px = px.row(0);
         // First pixel: R=255, G=128, B=0, A=255 (padding byte must not leak)
         assert_eq!(
@@ -2604,18 +2714,18 @@ mod tests {
         for _ in 0..(w * h) {
             buf.extend_from_slice(&[0, 128, 255, 0x42]);
         }
-        let pbuf = PixelBuffer::from_vec(buf, w, h, PixelDescriptor::BGRX8_SRGB).unwrap();
+        let pbuf = PixelBuf::from_bytes(buf, w, h, PixelFormat::BGRX8_SRGB).unwrap();
         let config = GifEncoderConfig::new();
         let encoder = config.job().encoder().unwrap();
-        let output = encoder.encode(pbuf.as_slice()).unwrap();
+        let output = encoder.encode(pbuf.as_view()).unwrap();
         assert!(!output.is_empty());
         assert_eq!(output.format(), ImageFormat::Gif);
 
         let dec = GifDecoderConfig::new();
         let decoded = dec.decode(output.data()).unwrap();
         let out_buf = decoded.into_buffer();
-        assert_eq!(out_buf.descriptor(), PixelDescriptor::RGBA8_SRGB);
-        let px = out_buf.as_slice();
+        assert_eq!(out_buf.format(), &PixelFormat::RGBA8_SRGB);
+        let px = out_buf.as_view();
         let px = px.row(0);
         // BGRX → RGBA: B=0, G=128, R=255 → R=255, G=128, B=0; alpha=255.
         assert_eq!(
@@ -2656,20 +2766,20 @@ mod tests {
             rgb.extend_from_slice(&[r, g, b]);
         }
 
-        let rgbx_buf = PixelBuffer::from_vec(rgbx, w, h, PixelDescriptor::RGBX8_SRGB).unwrap();
-        let rgb_buf = PixelBuffer::from_vec(rgb, w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+        let rgbx_buf = PixelBuf::from_bytes(rgbx, w, h, PixelFormat::RGBX8_SRGB).unwrap();
+        let rgb_buf = PixelBuf::from_bytes(rgb, w, h, PixelFormat::RGB8_SRGB).unwrap();
 
         let rgbx_out = GifEncoderConfig::new()
             .job()
             .encoder()
             .unwrap()
-            .encode(rgbx_buf.as_slice())
+            .encode(rgbx_buf.as_view())
             .unwrap();
         let rgb_out = GifEncoderConfig::new()
             .job()
             .encoder()
             .unwrap()
-            .encode(rgb_buf.as_slice())
+            .encode(rgb_buf.as_view())
             .unwrap();
 
         let rgbx_len = rgbx_out.data().len();
@@ -2700,13 +2810,13 @@ mod tests {
         for _ in 0..8 * 8 {
             frame1_bytes.extend_from_slice(&[255, 0, 0, 255]); // red
         }
-        let buf1 = PixelBuffer::from_vec(frame1_bytes, 8, 8, PixelDescriptor::RGBA8_SRGB).unwrap();
+        let buf1 = PixelBuf::from_bytes(frame1_bytes, 8, 8, PixelFormat::RGBA8_SRGB).unwrap();
 
         let mut frame2_bytes = Vec::with_capacity(8 * 8 * 4);
         for _ in 0..8 * 8 {
             frame2_bytes.extend_from_slice(&[0, 0, 255, 255]); // blue
         }
-        let buf2 = PixelBuffer::from_vec(frame2_bytes, 8, 8, PixelDescriptor::RGBA8_SRGB).unwrap();
+        let buf2 = PixelBuf::from_bytes(frame2_bytes, 8, 8, PixelFormat::RGBA8_SRGB).unwrap();
 
         let config = GifEncoderConfig::new();
         let mut enc = config
@@ -2715,8 +2825,8 @@ mod tests {
             .animation_frame_encoder()
             .unwrap();
 
-        enc.push_frame(buf1.as_slice(), 100, None).unwrap();
-        enc.push_frame(buf2.as_slice(), 100, None).unwrap();
+        enc.push_frame(buf1.as_view(), 100, None).unwrap();
+        enc.push_frame(buf2.as_view(), 100, None).unwrap();
         let output = enc.finish(None).unwrap();
         assert!(!output.is_empty());
 
@@ -2743,6 +2853,110 @@ mod tests {
     fn decoding_clone_send_sync() {
         fn assert_traits<T: Clone + Send + Sync>() {}
         assert_traits::<GifDecoderConfig>();
+    }
+
+    #[test]
+    fn animation_lends_native_canvas_and_retains_owned_frames() {
+        use zencodec::decode::AnimationFrameDecoder as _;
+
+        let (red, blue, green, clear) = (
+            [11, 22, 33, 255],
+            [44, 55, 66, 255],
+            [77, 88, 99, 255],
+            [0, 0, 0, 0],
+        );
+        let mut bytes = Vec::new();
+        {
+            let palette = [0, 0, 0, 11, 22, 33, 44, 55, 66, 77, 88, 99];
+            let mut enc = gif::Encoder::new(&mut bytes, 2, 1, &palette).unwrap();
+            for (left, color, delay, dispose) in [
+                (0, 1, 0, gif::DisposalMethod::Keep),
+                (1, 2, u16::MAX, gif::DisposalMethod::Previous),
+                (0, 3, 7, gif::DisposalMethod::Background),
+                (1, 2, 11, gif::DisposalMethod::Keep),
+            ] {
+                enc.write_frame(&gif::Frame {
+                    left,
+                    width: 1,
+                    height: 1,
+                    delay,
+                    dispose,
+                    transparent: Some(0),
+                    buffer: Cow::Owned(vec![color]),
+                    ..gif::Frame::default()
+                })
+                .unwrap();
+            }
+        }
+        let expected = [
+            ([red, clear], 0),
+            ([red, blue], u16::MAX),
+            ([green, clear], 7),
+            ([clear, blue], 11),
+        ];
+
+        for preferred in [GifOutput::Rgba, GifOutput::Rgb, GifOutput::Bgra] {
+            let mut dec = GifDecoderConfig::new()
+                .job()
+                .animation_frame_decoder(Cow::Borrowed(&bytes), &[preferred.format()])
+                .unwrap();
+            let canvas = dec.decoder.canvas_pixels().as_ptr().cast::<u8>();
+            let mut owned = Vec::new();
+            for (index, (rgba, delay)) in expected.into_iter().enumerate() {
+                // Only the second display is fully opaque.
+                let format = if preferred == GifOutput::Rgb && index != 1 {
+                    GifOutput::Rgba
+                } else {
+                    preferred
+                };
+                let spec = format.format();
+                let bpp = spec.layout.bytes_per_pixel();
+                let expected_row: Vec<u8> = rgba
+                    .into_iter()
+                    .flat_map(|[r, g, b, a]| {
+                        match format {
+                            GifOutput::Rgba => [r, g, b, a],
+                            GifOutput::Rgb => [r, g, b, 0],
+                            GifOutput::Bgra => [b, g, r, a],
+                        }
+                        .into_iter()
+                        .take(bpp)
+                    })
+                    .collect();
+                let (pixels, duration, frame_index) = if index % 2 == 0 {
+                    let frame = dec.render_next_frame(None).unwrap().unwrap();
+                    let pixels = frame.pixels().clone();
+                    if format == GifOutput::Rgba {
+                        assert_eq!(pixels.row(0).as_ptr(), canvas);
+                    }
+                    (pixels, frame.duration(), frame.frame_index())
+                } else {
+                    owned.push((
+                        dec.render_next_frame_owned(None).unwrap().unwrap(),
+                        expected_row.clone(),
+                    ));
+                    let frame = &owned.last().unwrap().0;
+                    (frame.pixels(), frame.duration(), frame.frame_index())
+                };
+                assert_eq!(pixels.format(), &spec);
+                assert_eq!(pixels.row(0), expected_row);
+                assert_eq!(duration.ticks_at(100), Ok(u64::from(delay)));
+                assert_eq!(frame_index, index as u32);
+            }
+            assert!(dec.render_next_frame(None).unwrap().is_none());
+            for (frame, row) in owned {
+                assert_eq!(frame.pixels().row(0), row);
+            }
+        }
+
+        let mut dec = GifDecoderConfig::new()
+            .job()
+            .with_start_frame_index(2)
+            .animation_frame_decoder(Cow::Owned(bytes), &[])
+            .unwrap();
+        let frame = dec.render_next_frame(None).unwrap().unwrap();
+        assert_eq!(frame.frame_index(), 2);
+        assert_eq!(frame.pixels().row(0), [green, clear].as_flattened());
     }
 
     #[test]
@@ -3093,7 +3307,7 @@ mod tests {
                 .unwrap()
                 .decode()
                 .unwrap();
-            out.into_buffer().copy_to_contiguous_bytes()
+            out.into_buffer().into_vec::<u8>().unwrap()
         };
 
         // All three modes must agree, for the same encoded input.
@@ -3123,5 +3337,53 @@ mod tests {
         // (3) Multi-frame transparent animation — transparency + disposal.
         let anim_t = build_multi_frame_gif(3, true);
         assert_all_modes_agree(&anim_t);
+    }
+
+    #[test]
+    fn try_set_policy_enforces_supported_fields_and_preserves_state_on_refusal() {
+        use zencodec::decode::{DecodeJob as _, DecodePolicy};
+        use zencodec::encode::{EncodeJob as _, EncodePolicy};
+        use zencodec::{CodecErrorExt, ColorEmitPolicy, UnsupportedOperation};
+
+        // Encode job: color policy is enforced; unsupported fields refuse without mutating.
+        let mut enc_job = GifEncoderConfig::new().job();
+        assert_eq!(enc_job.try_set_policy(EncodePolicy::none()), Ok(()));
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::none().with_color(ColorEmitPolicy::Balanced)),
+            Ok(())
+        );
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::strip_all()),
+            Err(UnsupportedOperation::EncodePolicy)
+        );
+        assert_eq!(
+            enc_job.try_set_policy(EncodePolicy::preserve_all()),
+            Err(UnsupportedOperation::EncodePolicy)
+        );
+        assert_eq!(
+            enc_job.policy,
+            Some(EncodePolicy::none().with_color(ColorEmitPolicy::Balanced))
+        );
+
+        // Decode job: allow_animation is enforced; unsupported fields refuse without mutating.
+        let anim = build_multi_frame_gif(2, false);
+        let mut dec_job = GifDecoderConfig::new().job();
+        assert_eq!(dec_job.try_set_policy(DecodePolicy::none()), Ok(()));
+        assert_eq!(
+            dec_job.try_set_policy(DecodePolicy::none().with_allow_animation(false)),
+            Ok(())
+        );
+        assert_eq!(
+            dec_job.try_set_policy(DecodePolicy::untrusted_minimal()),
+            Err(UnsupportedOperation::DecodePolicy)
+        );
+        let err = dec_job
+            .animation_frame_decoder(Cow::Borrowed(&anim), &[])
+            .err()
+            .expect("allow_animation=false must remain active after refused policy update");
+        assert_eq!(
+            err.unsupported_operation(),
+            Some(&UnsupportedOperation::AnimationDecode)
+        );
     }
 }

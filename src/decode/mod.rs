@@ -616,6 +616,17 @@ impl<'a, R: Read> Decoder<'a, R> {
     where
         F: FnOnce(usize, u16, &[Rgba]) -> T,
     {
+        Ok(self
+            .advance_composited_frame()?
+            .map(|(index, delay)| f(index, delay, self.canvas_pixels())))
+    }
+
+    pub(crate) fn canvas_pixels(&self) -> &[Rgba] {
+        self.screen.pixels()
+    }
+
+    /// Advance the compositor before a caller borrows or copies its canvas.
+    pub(crate) fn advance_composited_frame(&mut self) -> Result<Option<(usize, u16)>> {
         if self.finished {
             return Ok(None);
         }
@@ -719,8 +730,7 @@ impl<'a, R: Read> Decoder<'a, R> {
         // Update metadata with repeat value (parsed from NETSCAPE extension during frame read)
         self.metadata.repeat = Repeat::from(self.reader.repeat());
 
-        // Call user callback with reference to composed pixels
-        Ok(Some(f(index, delay, self.screen.pixels())))
+        Ok(Some((index, delay)))
     }
 
     /// Create an iterator over all frames.

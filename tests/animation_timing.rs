@@ -14,16 +14,10 @@ use zencodec::animation::FrameDuration;
 use zencodec::decode::{AnimationFrameDecoder, Decode, DecodeJob, DecoderConfig};
 use zencodec::encode::{AnimationFrameEncoder, EncodeJob, EncoderConfig};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
-use zenpixels::{PixelBuffer, PixelDescriptor};
+use zenpixels::{PixelBuf, PixelFormat};
 
-fn pixels() -> PixelBuffer {
-    PixelBuffer::from_vec(
-        [255, 0, 0, 255].repeat(16),
-        4,
-        4,
-        PixelDescriptor::RGBA8_SRGB,
-    )
-    .unwrap()
+fn pixels() -> PixelBuf {
+    PixelBuf::from_bytes([255, 0, 0, 255].repeat(16), 4, 4, PixelFormat::RGBA8_SRGB).unwrap()
 }
 fn wire_repeat(bytes: &[u8]) -> Option<u16> {
     let offset = bytes.windows(11).position(|w| w == b"NETSCAPE2.0")?;
@@ -51,7 +45,7 @@ fn total_plays_are_converted_to_native_repeats_on_every_decode_path() {
         for milliseconds in [10, 20] {
             encoder
                 .push_frame_timed(
-                    pixels.as_slice(),
+                    pixels.as_view(),
                     FrameDuration::from_millis(milliseconds),
                     None,
                 )
@@ -114,19 +108,19 @@ fn exact_delays_preserve_zero_and_u16_max_and_reject_before_accepting() {
     ] {
         assert!(
             encoder
-                .push_frame_exact(pixels.as_slice(), duration, None)
+                .push_frame_exact(pixels.as_view(), duration, None)
                 .is_err()
         );
     }
     assert!(
         encoder
-            .push_frame(pixels.as_slice(), u32::MAX, None)
+            .push_frame(pixels.as_view(), u32::MAX, None)
             .is_err()
     );
     for centiseconds in [0, 1, 65535] {
         encoder
             .push_frame_exact(
-                pixels.as_slice(),
+                pixels.as_view(),
                 FrameDuration::new(centiseconds, 100).unwrap(),
                 None,
             )
@@ -157,14 +151,14 @@ fn timed_delays_round_cumulative_endpoints_without_drift() {
     let third = FrameDuration::new(1, 30).unwrap();
     assert!(
         encoder
-            .push_frame_exact(pixels.as_slice(), third, None)
+            .push_frame_exact(pixels.as_view(), third, None)
             .is_err()
     );
     // A rejected frame must not advance the rounding phase.
     assert!(
         encoder
             .push_frame_timed(
-                pixels.as_slice(),
+                pixels.as_view(),
                 FrameDuration::new(65536, 100).unwrap(),
                 None
             )
@@ -174,7 +168,7 @@ fn timed_delays_round_cumulative_endpoints_without_drift() {
     for _ in 0..6 {
         returned.push(
             encoder
-                .push_frame_timed(pixels.as_slice(), third, None)
+                .push_frame_timed(pixels.as_view(), third, None)
                 .unwrap(),
         );
     }
@@ -256,7 +250,7 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
             ]
         })
         .collect();
-    let pixels = PixelBuffer::from_vec(bytes, 128, 128, PixelDescriptor::RGBA8_SRGB).unwrap();
+    let pixels = PixelBuf::from_bytes(bytes, 128, 128, PixelFormat::RGBA8_SRGB).unwrap();
     for shared in [false, true] {
         for job_stop in [false, true] {
             let calls = Arc::new(AtomicUsize::new(0));
@@ -272,7 +266,7 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
             let call_pulse = zencodec::how_far::StopOnly::borrowed(&call_token);
             let token = (!job_stop).then_some(&call_pulse as &dyn zencodec::Pulse);
             // Admit the lookahead frame before arming cancellation.
-            encoder.push_frame(pixels.as_slice(), 10, token).unwrap();
+            encoder.push_frame(pixels.as_view(), 10, token).unwrap();
             calls.store(0, Ordering::Relaxed);
             let budget = if shared { 8 } else { 140 };
             limit.store(budget, Ordering::Relaxed);
@@ -285,7 +279,7 @@ fn cancellation_reaches_quantization_and_buffered_finish_from_both_tokens() {
                 // The next push packs 128 rows before reaching native
                 // quantization of the first frame. Let packing complete.
                 assert!(
-                    encoder.push_frame(pixels.as_slice(), 10, token).is_err(),
+                    encoder.push_frame(pixels.as_view(), 10, token).is_err(),
                     "shared={shared} job={job_stop}"
                 );
                 assert!(

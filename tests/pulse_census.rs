@@ -2,8 +2,7 @@
 //! cancellation, and which of those polls, timing out once, end the operation
 //! with the timeout. One line per operation, for comparing revisions
 //! (`just pulse-census`). It asserts only that the operations that must poll
-//! do. Written against the setter both the stop and the pulse APIs have,
-//! `with_stop`, so the same file builds on either side of the migration.
+//! do.
 #![cfg(all(
     feature = "std",
     any(
@@ -14,19 +13,18 @@
         feature = "color_quant"
     )
 ))]
-#![allow(deprecated)]
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use enough::{Stop, StopReason};
-use zencodec::StopToken;
 use zencodec::animation::FrameDuration;
 use zencodec::decode::{AnimationFrameDecoder, Decode, DecodeJob, DecodeRowSink, DecoderConfig};
 use zencodec::encode::{AnimationFrameEncoder, EncodeJob, Encoder, EncoderConfig};
-use zencodec::{At, CodecError, ErrorCategory};
+use zencodec::how_far::StopOnly;
+use zencodec::{At, CodecError, ErrorCategory, SharedPulse};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
-use zenpixels::{PixelBuffer, PixelDescriptor, PixelSliceMut};
+use zenpixels::{PixelBuf, PixelFormat, PixelViewMut};
 
 /// Three 17x13 frames.
 fn animation() -> Vec<u8> {
@@ -48,11 +46,11 @@ fn animation() -> Vec<u8> {
 }
 
 /// Opaque 16x16 RGBA with enough colors to quantize.
-fn frame() -> PixelBuffer {
+fn frame() -> PixelBuf {
     let bytes = (0..16 * 16u32)
         .flat_map(|i| [(i * 37) as u8, (i * 113 + i / 5) as u8, (i * 67) as u8, 255])
         .collect();
-    PixelBuffer::from_vec(bytes, 16, 16, PixelDescriptor::RGBA8_SRGB).unwrap()
+    PixelBuf::from_bytes(bytes, 16, 16, PixelFormat::RGBA8_SRGB).unwrap()
 }
 
 /// Counts its polls; poll number `at` reports a timeout, once.
@@ -80,36 +78,41 @@ struct Rows {
 impl DecodeRowSink for Rows {
     fn provide_next_buffer(
         &mut self,
-        _y: u32,
-        height: u32,
-        width: u32,
-        descriptor: PixelDescriptor,
-    ) -> Result<PixelSliceMut<'_>, zencodec::decode::SinkError> {
-        let stride = width as usize * descriptor.bytes_per_pixel();
-        self.buf.resize(height as usize * stride, 0);
-        Ok(PixelSliceMut::new(&mut self.buf, width, height, stride, descriptor).unwrap())
+        strip: zencodec::decode::RowStrip,
+        pixel_format: PixelFormat,
+    ) -> Result<PixelViewMut<'_>, zencodec::decode::SinkError> {
+        let stride = strip.width as usize * pixel_format.layout.bytes_per_pixel();
+        self.buf.resize(strip.height as usize * stride, 0);
+        Ok(PixelViewMut::new_with_format_cow(
+            &mut self.buf,
+            strip.width,
+            strip.height,
+            stride,
+            zenpixels::FormatCow::from_owned(pixel_format),
+        )
+        .unwrap())
     }
 }
 
-type Run<'a> = &'a dyn Fn(StopToken) -> Result<(), At<CodecError>>;
+type Run<'a> = &'a dyn Fn(SharedPulse) -> Result<(), At<CodecError>>;
 
 /// Print one census line per operation: its polls, and for each poll that
 /// did not end the operation with the timeout, what happened instead.
 fn census(ops: &[(&str, bool, Run<'_>)]) {
     for (what, must_poll, run) in ops {
         let seen = Arc::new(AtomicUsize::new(0));
-        let token = |at| {
-            StopToken::new(Polls {
+        let pulse = |at| {
+            SharedPulse::new(StopOnly::new(Polls {
                 seen: seen.clone(),
                 at,
-            })
+            }))
         };
-        run(token(usize::MAX)).unwrap_or_else(|error| panic!("{what}: {error}"));
+        run(pulse(usize::MAX)).unwrap_or_else(|error| panic!("{what}: {error}"));
         let polls = seen.load(Ordering::Relaxed);
         let mut missed = Vec::new();
         for at in 0..polls {
             seen.store(0, Ordering::Relaxed);
-            match run(token(at)) {
+            match run(pulse(at)) {
                 Err(error)
                     if error.error().category() == ErrorCategory::Stopped(StopReason::TimedOut) => {
                 }
@@ -129,7 +132,7 @@ fn census(ops: &[(&str, bool, Run<'_>)]) {
 #[test]
 fn decode_poll_census() {
     let data = animation();
-    let job = |token| GifDecoderConfig::new().job().with_stop(token);
+    let job = |pulse| GifDecoderConfig::new().job().with_pulse(pulse);
     census(&[
         ("probe", true, &|t| job(t).probe(&data).map(drop)),
         ("probe_full", true, &|t| job(t).probe_full(&data).map(drop)),
@@ -178,22 +181,22 @@ fn decode_poll_census() {
 #[test]
 fn encode_poll_census() {
     let frame = frame();
-    let job = |token, shared| {
+    let job = |pulse, shared| {
         GifEncoderConfig::new()
             .with_shared_palette(shared)
             .job()
-            .with_stop(token)
+            .with_pulse(pulse)
     };
     let animate = |token, shared| -> Result<(), At<CodecError>> {
         let mut encoder = job(token, shared).animation_frame_encoder()?;
-        encoder.push_frame(frame.as_slice(), 10, None)?;
-        encoder.push_frame_exact(frame.as_slice(), FrameDuration::new(2, 100).unwrap(), None)?;
-        encoder.push_frame_timed(frame.as_slice(), FrameDuration::new(1, 30).unwrap(), None)?;
+        encoder.push_frame(frame.as_view(), 10, None)?;
+        encoder.push_frame_exact(frame.as_view(), FrameDuration::new(2, 100).unwrap(), None)?;
+        encoder.push_frame_timed(frame.as_view(), FrameDuration::new(1, 30).unwrap(), None)?;
         encoder.finish(None).map(drop)
     };
     census(&[
         ("still encode", true, &|t| {
-            job(t, false).encoder()?.encode(frame.as_slice()).map(drop)
+            job(t, false).encoder()?.encode(frame.as_view()).map(drop)
         }),
         ("animation", true, &|t| animate(t, false)),
         ("shared-palette animation", true, &|t| animate(t, true)),

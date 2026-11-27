@@ -17,9 +17,9 @@
 
 use zencodec::encode::{AnimationFrameEncoder, AnimationOutputTiming, EncodeJob, EncoderConfig};
 use zengif::{GifDecoderConfig, GifEncoderConfig};
-use zenpixels::{PixelDescriptor, PixelSlice};
+use zenpixels::{PixelFormat, PixelView};
 
-const RGBA8: PixelDescriptor = PixelDescriptor::RGBA8_SRGB;
+const RGBA8: PixelFormat = PixelFormat::RGBA8_SRGB;
 const W: u32 = 24;
 const H: u32 = 16;
 
@@ -61,7 +61,7 @@ fn encode(
     let mut out = Vec::new();
     let mut seen = vec![a.pending_output().len()];
     for (i, f) in frames.iter().enumerate() {
-        let s = PixelSlice::new(f, W, H, W as usize * 4, RGBA8).unwrap();
+        let s = PixelView::new(f, W, H, W as usize * 4, &zenpixels::formats::RGBA8_SRGB).unwrap();
         a.push_frame(s, 40 + i as u32 * 10, None).unwrap();
         seen.push(out.len() + a.pending_output().len());
         let mut chunk = Vec::new();
@@ -122,8 +122,8 @@ fn an_animation_that_fits_the_palette_buffer_comes_at_finish() {
 fn the_declaration_binds() {
     let cfg = GifEncoderConfig::new().with_shared_palette(false);
     let fr = frames(3);
-    fn slice(f: &[u8]) -> PixelSlice<'_> {
-        PixelSlice::new(f, W, H, W as usize * 4, RGBA8).unwrap()
+    fn slice(f: &[u8]) -> PixelView<'_> {
+        PixelView::new(f, W, H, W as usize * 4, &zenpixels::formats::RGBA8_SRGB).unwrap()
     }
     let job = || cfg.clone().job().animation_frame_encoder().unwrap();
     let mut a = job();

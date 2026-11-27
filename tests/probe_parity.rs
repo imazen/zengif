@@ -60,7 +60,10 @@ fn gce_multi_subblock_probe_matches_decoder() {
     assert!(full_probe.has_alpha);
     let output = cfg.decode(&g).unwrap();
     assert!(output.info().has_alpha);
-    assert_eq!(output.pixels().contiguous_bytes().as_ref(), &[0, 0, 0, 0]);
+    assert_eq!(
+        output.pixels().to_contiguous_bytes().unwrap().as_ref(),
+        &[0, 0, 0, 0]
+    );
 
     // Last sub-block also supplies the frame delay in centiseconds.
     let mut g_delay = header_1x1();
